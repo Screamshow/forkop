@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PODKOP PLUS\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-01 15:57+0300\n"
-"PO-Revision-Date: 2026-05-01 15:57+0300\n"
+"POT-Creation-Date: 2026-05-01 18:19+0300\n"
+"PO-Revision-Date: 2026-05-01 18:19+0300\n"
 "Last-Translator: automation\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -16,9 +16,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
-
-msgid "/etc/config/zapret present"
-msgstr ""
 
 msgid "✔ Running"
 msgstr "✔ Работает"
@@ -506,9 +503,6 @@ msgstr "Ключевое слово не должно содержать про�
 msgid "Latest"
 msgstr "Последняя"
 
-msgid "Legacy runtime paths"
-msgstr ""
-
 msgid "List must be a direct .lst URL or a local .lst path"
 msgstr "Список должен быть прямым URL на .lst или локальным путём к .lst"
 
@@ -523,9 +517,6 @@ msgstr "Локальный путь к набору правил sing-box"
 
 msgid "Log Level"
 msgstr "Уровень логов"
-
-msgid "luci-app-zapret installed"
-msgstr ""
 
 msgid "Main DNS"
 msgstr "Основной DNS"
@@ -563,8 +554,11 @@ msgstr "Наблюдаемые интерфейсы"
 msgid "Must be a number in the range of 50 - 1000"
 msgstr "Должно быть числом от 50 до 1000"
 
-msgid "NFQUEUE range"
-msgstr ""
+msgid "NFQUEUE range is available"
+msgstr "Диапазон NFQUEUE свободен"
+
+msgid "NFQUEUE range overlaps with another rule"
+msgstr "Диапазон NFQUEUE пересекается с другим правилом"
 
 msgid "NFQWS Strategy"
 msgstr "Стратегия NFQWS"
@@ -572,14 +566,11 @@ msgstr "Стратегия NFQWS"
 msgid "NFQWS strategy cannot be empty"
 msgstr "Стратегия NFQWS не может быть пустой"
 
-msgid "no"
-msgstr ""
-
 msgid "No other marking rules found"
 msgstr "Другие правила маркировки не найдены"
 
-msgid "No rules use zapret"
-msgstr "Нет правил использующих zapret"
+msgid "No rules use Zapret"
+msgstr "Нет правил, использующих Zapret"
 
 msgid "Node Type"
 msgstr "Тип узла"
@@ -635,9 +626,6 @@ msgstr "Путь должен заканчиваться на cache.db"
 msgid "Pending"
 msgstr "Ожидает запуска"
 
-msgid "Podkop nfqws supervisors"
-msgstr ""
-
 msgid "Podkop Plus manages the nfqws process lifecycle itself, so daemon mode is not allowed here."
 msgstr "Podkop Plus сам управляет жизненным циклом nfqws, поэтому режим daemon здесь запрещён."
 
@@ -647,23 +635,23 @@ msgstr "Настройки Podkop Plus"
 msgid "Podkop Plus will not modify your DHCP configuration"
 msgstr "Podkop Plus не будет изменять вашу конфигурацию DHCP"
 
-msgid "Podkop-managed nfqws is not ready"
-msgstr ""
+msgid "Podkop-managed nfqws runtime is not ready"
+msgstr "NFQWS Podkop Plus не готов"
 
-msgid "Podkop-managed nfqws processes"
-msgstr ""
+msgid "Podkop-managed nfqws runtime is not running"
+msgstr "NFQWS Podkop Plus не запущен"
+
+msgid "Podkop-managed nfqws runtime is ready"
+msgstr "NFQWS Podkop Plus готов"
+
+msgid "Podkop-managed Zapret runtime is not ready"
+msgstr "Zapret в Podkop Plus не готов"
 
 msgid "Port cannot be empty"
 msgstr "Порт не может быть пустым"
 
 msgid "Port for the local mixed proxy of this section"
 msgstr "Порт локального смешанного прокси для этой секции"
-
-msgid "Possible packet-level overlap"
-msgstr ""
-
-msgid "Provider binary"
-msgstr ""
 
 msgid "Proxy Configuration URL"
 msgstr "URL конфигурации прокси"
@@ -830,14 +818,8 @@ msgstr "Сетевой интерфейс источника"
 msgid "Specify a local IP address to be excluded from routing"
 msgstr "Укажите локальный IP-адрес, который следует исключить из маршрутизации."
 
-msgid "Standalone zapret enabled"
-msgstr ""
-
-msgid "Standalone zapret may overlap with Podkop Plus"
-msgstr ""
-
-msgid "Standalone zapret running"
-msgstr ""
+msgid "Standalone Zapret is active together with Podkop Zapret rules"
+msgstr "Отдельная служба Zapret активна вместе с правилами Zapret в Podkop Plus"
 
 msgid "Start Podkop Plus"
 msgstr "Запустить Podkop Plus"
@@ -869,8 +851,8 @@ msgstr "DNS-сервер, используемый для поиска IP-адр
 msgid "The NFQUEUE number is assigned by Podkop Plus for each rule and must not be overridden here."
 msgstr "Номер NFQUEUE назначается Podkop Plus для каждого правила и не должен переопределяться здесь."
 
-msgid "There are rules using zapret"
-msgstr "Есть правила использующие zapret"
+msgid "There are rules using Zapret"
+msgstr "Есть правила, использующие Zapret"
 
 msgid "This field must start a working nfqws strategy; --dry-run exits immediately and is not allowed here."
 msgstr "Это поле должно запускать рабочую стратегию nfqws; --dry-run сразу завершает процесс и здесь запрещён."
@@ -913,6 +895,9 @@ msgstr "UDP через TCP"
 
 msgid "Unable to validate the NFQWS strategy through the backend parser."
 msgstr "Не удалось проверить стратегию NFQWS через backend-парсер."
+
+msgid "Unexpected Podkop-managed nfqws runtime is running"
+msgstr "Обнаружен лишний NFQWS Podkop Plus"
 
 msgid "Unexpected standalone token. Use explicit flags such as --name or --name=value."
 msgstr "Неожиданный отдельный токен. Используйте явные флаги вида --имя или --имя=значение."
@@ -1001,26 +986,32 @@ msgstr "Что Podkop Plus должен делать при совпадении
 msgid "YACD Secret Key"
 msgstr "Секретный ключ YACD"
 
-msgid "yes"
-msgstr ""
-
 msgid "You can select Output Network Interface, by default autodetect"
 msgstr "Вы можете выбрать выходной сетевой интерфейс, по умолчанию он определяется автоматически."
 
 msgid "Zapret (provider not available)"
-msgstr ""
-
-msgid "Zapret conflict detected"
-msgstr ""
+msgstr "Zapret (провайдер недоступен)"
 
 msgid "Zapret hostlist templates are not supported here because Podkop Plus does not expand them for per-rule NFQWS strategies."
 msgstr "Шаблоны hostlist zapret здесь не поддерживаются, потому что Podkop Plus не разворачивает их для per-rule стратегий NFQWS."
 
-msgid "Zapret package installed"
-msgstr ""
+msgid "Zapret integration conflict detected"
+msgstr "Обнаружен конфликт интеграции Zapret"
 
-msgid "Zapret provider is not available"
-msgstr ""
+msgid "Zapret package is installed"
+msgstr "Пакет Zapret установлен"
 
-msgid "Zapret provider is not installed"
-msgstr ""
+msgid "Zapret package is not installed"
+msgstr "Пакет Zapret не установлен"
+
+msgid "Zapret provider binary is available"
+msgstr "Бинарник провайдера Zapret доступен"
+
+msgid "Zapret provider binary is not available"
+msgstr "Бинарник провайдера Zapret недоступен"
+
+msgid "Zapret provider is not installed; action=zapret is unavailable"
+msgstr "Провайдер Zapret не установлен; action=zapret недоступен"
+
+msgid "Zapret provider is unavailable while zapret rules are enabled"
+msgstr "Провайдер Zapret недоступен, хотя включены правила Zapret"
