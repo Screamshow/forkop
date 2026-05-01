@@ -1,15 +1,15 @@
 # RU translations for PODKOP PLUS package.
 # Copyright (C) 2026 THE PODKOP PLUS COPYRIGHT HOLDER
 # This file is distributed under the same license as the PODKOP PLUS package.
-# automation, 2026.
+# ushan0v, 2026.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: PODKOP PLUS\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-01 18:39+0300\n"
-"PO-Revision-Date: 2026-05-01 18:39+0300\n"
-"Last-Translator: automation\n"
+"POT-Creation-Date: 2026-05-01 23:07+0300\n"
+"PO-Revision-Date: 2026-05-01 23:07+0300\n"
+"Last-Translator: ushan0v\n"
 "Language-Team: none\n"
 "Language: ru\n"
 "MIME-Version: 1.0\n"
@@ -251,10 +251,6 @@ msgstr "Скачивать списки через выбранную секци
 msgid "Download Node"
 msgstr "Узел для скачивания"
 
-msgctxt "Rule row action"
-msgid "Edit"
-msgstr "Изменить"
-
 msgid "Downloading all lists via specific Proxy/VPN"
 msgstr "Загрузка всех списков через указанный прокси/VPN"
 
@@ -263,6 +259,10 @@ msgstr "Перетаскивайте строки, чтобы изменить �
 
 msgid "Duplicate value"
 msgstr "Дублирующееся значение"
+
+msgctxt "Rule row action"
+msgid "Edit"
+msgstr "Изменить"
 
 msgid "Enable"
 msgstr "Включить"
@@ -687,12 +687,6 @@ msgstr "Выбор ресурсов по IP или CIDR внутри nfqws зд�
 msgid "Restart Podkop Plus"
 msgstr "Перезапустить Podkop Plus"
 
-msgid "Router DNS is not routed through sing-box"
-msgstr "DNS роутера не проходит через sing-box"
-
-msgid "Router DNS is routed through sing-box"
-msgstr "DNS роутера проходит через sing-box"
-
 msgid "Routing Excluded IPs"
 msgstr "Исключённые из маршрутизации IP-адреса"
 
@@ -791,6 +785,12 @@ msgstr "Показать sing-box конфигурацию"
 
 msgid "Sing-box autostart disabled"
 msgstr "Автостарт sing-box отключен"
+
+msgid "Sing-box FakeIP DNS does not work"
+msgstr "FakeIP DNS sing-box не работает"
+
+msgid "Sing-box FakeIP DNS works"
+msgstr "FakeIP DNS sing-box работает"
 
 msgid "Sing-box installed"
 msgstr "Sing-box установлен"
