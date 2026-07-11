@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$SCRIPT_DIR"
 
 RELEASE_VERSION="${1:-}"
 OUTPUT_DIR_INPUT="${2:-}"
@@ -95,7 +95,7 @@ copy_to_native_root() {
   echo "Synced repository to native WSL path: $target_root" >&2
   export SOURCE_ROOT_DIR="$source_root"
   export WINDOWS_ARTIFACTS_DIR="$windows_output"
-  exec bash "$target_root/scripts/build.sh" "$RELEASE_VERSION" "$target_output"
+  exec bash "$target_root/build.sh" "$RELEASE_VERSION" "$target_output"
 }
 
 ensure_native_root() {
