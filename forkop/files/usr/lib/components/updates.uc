@@ -2678,8 +2678,6 @@ function subscription_update_common_locked(force, target_section, target_source_
     }
 
     log_message("Reloading sing-box to apply updated subscriptions", "info");
-    if (!module_success([ LIB_DIR + "/server/service.uc", "prepare-all-defaults" ]))
-        return false;
     if (!module_success([ LIB_DIR + "/config/validator.uc", "validate-runtime" ])) {
         log_message("Runtime config validation failed. Aborted.", "fatal");
         return false;

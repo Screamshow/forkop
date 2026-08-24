@@ -12,9 +12,6 @@
 // Sections
 "require view.forkop.section as section";
 
-// Server
-"require view.forkop.server as server";
-
 // Dashboard
 "require view.forkop.dashboard as dashboard";
 
@@ -108,16 +105,11 @@ const EntryPoint = {
       zapretInstalled: false,
       zapret2Installed: false,
       byedpiInstalled: false,
-      serverInboundsEnabledCount: -1,
+      serverInboundsEnabledCount: 0,
     };
     let uiCapabilitiesPromise = null;
-    let serverSectionRef = null;
 
     const applyUiCapabilities = function () {
-      if (serverSectionRef) {
-        server.applyServerCapabilities(serverSectionRef, uiCapabilities);
-      }
-
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent(main.FORKOP_ACTION_PROVIDERS_AVAILABILITY_EVENT, {
@@ -177,15 +169,7 @@ const EntryPoint = {
       uiCapabilities.byedpiInstalled = Boolean(
         Number(data?.byedpi_installed) === 1,
       );
-      const serverInboundsEnabledCount =
-        typeof data?.server_inbounds_enabled_count !== "undefined"
-          ? Number(data.server_inbounds_enabled_count)
-          : -1;
-      uiCapabilities.serverInboundsEnabledCount = Number.isFinite(
-        serverInboundsEnabledCount,
-      )
-        ? serverInboundsEnabledCount
-        : -1;
+      uiCapabilities.serverInboundsEnabledCount = 0;
 
       applyUiCapabilities();
 
@@ -221,23 +205,15 @@ const EntryPoint = {
 
     const loadFallbackUiCapabilities = function () {
       return Promise.allSettled([
-        main.ForkopShellMethods.getServerCapabilities(),
         main.ForkopShellMethods.checkZapretRuntime(),
         main.ForkopShellMethods.checkZapret2Runtime(),
         main.ForkopShellMethods.checkByedpiRuntime(),
-        main.ForkopShellMethods.checkInboundsConfig(),
       ]).then(
         ([
-          serverCapabilitiesResult,
           zapretRuntimeResult,
           zapret2RuntimeResult,
           byedpiRuntimeResult,
-          inboundsConfigResult,
         ]) => {
-          const serverCapabilities =
-            serverCapabilitiesResult.status === "fulfilled"
-              ? serverCapabilitiesResult.value
-              : null;
           const zapretRuntime =
             zapretRuntimeResult.status === "fulfilled"
               ? zapretRuntimeResult.value
@@ -250,29 +226,7 @@ const EntryPoint = {
             byedpiRuntimeResult.status === "fulfilled"
               ? byedpiRuntimeResult.value
               : null;
-          const inboundsConfig =
-            inboundsConfigResult.status === "fulfilled"
-              ? inboundsConfigResult.value
-              : null;
-
           return updateUiCapabilities({
-            sing_box_extended:
-              serverCapabilities?.success &&
-              Number(serverCapabilities.data?.sing_box_extended) === 1
-                ? 1
-                : 0,
-            sing_box_tiny:
-              serverCapabilities?.success &&
-              Number(serverCapabilities.data?.sing_box_tiny) === 1
-                ? 1
-                : 0,
-            sing_box_tailscale:
-              !serverCapabilities?.success ||
-              typeof serverCapabilities.data?.sing_box_tailscale ===
-                "undefined" ||
-              Number(serverCapabilities.data?.sing_box_tailscale) === 1
-                ? 1
-                : 0,
             zapret_installed:
               zapretRuntime?.success &&
               Number(zapretRuntime.data?.zapret_installed) === 1
@@ -288,11 +242,7 @@ const EntryPoint = {
               Number(byedpiRuntime.data?.byedpi_installed) === 1
                 ? 1
                 : 0,
-            server_inbounds_enabled_count:
-              inboundsConfig?.success &&
-              typeof inboundsConfig.data?.enabled_count !== "undefined"
-                ? inboundsConfig.data.enabled_count
-                : -1,
+            server_inbounds_enabled_count: 0,
           });
         },
       );
@@ -399,24 +349,6 @@ const EntryPoint = {
       loadActionProvidersAvailability: loadUiCapabilities,
     });
     section.createSectionContent(rulesSection);
-
-    const serverSection = forkopMap.section(
-      form.GridSection,
-      "server",
-      _("Servers"),
-      _("Accept external proxy connections and route them with sing-box."),
-    );
-    configureGridSection(
-      serverSection,
-      "server",
-      _("Server"),
-      _("Add a server inbound"),
-    );
-    serverSectionRef = serverSection;
-    server.configureServerSection(serverSection, {
-      loadCapabilities: loadUiCapabilities,
-    });
-    server.createServerContent(serverSection, uiCapabilities);
 
     const settingsSection = forkopMap.section(
       form.TypedSection,

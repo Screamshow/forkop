@@ -8,7 +8,6 @@ let runtime_country = require("singbox.country");
 let runtime_dns = require("singbox.dns");
 let runtime_route = require("singbox.route");
 let runtime_rulesets = require("singbox.rulesets");
-let runtime_servers = require("singbox.servers");
 let runtime_subscription = require("singbox.subscription");
 let runtime_url = require("core.url");
 let runtime_urltest = require("singbox.urltest");
@@ -2942,67 +2941,12 @@ function enabled_sections(deferred_sections) {
     return result;
 }
 
-function enabled_servers() {
-    let result = [];
-    uci_cursor().foreach(CONFIG_NAME, "server", function(section) {
-        if (section_enabled(section))
-            push(result, section);
-    });
-    return result;
-}
-
 function section_by_name(sections, name) {
     name = as_string(name);
     for (let section in sections)
         if (as_string(section[".name"]) == name)
             return section;
     return null;
-}
-
-function add_server_routes(config, servers, sections) {
-    for (let server in servers) {
-        runtime_servers.add_sniff_rule(config, server);
-
-        let inbound = runtime_constants.server_inbound_tag(server[".name"]);
-        let routing_mode = option(server, "routing_mode", "rules");
-        if (routing_mode == "rules") {
-            runtime_servers.clone_rules_for_inbound(
-                config,
-                runtime_constants.TPROXY_INBOUND_TAG,
-                inbound,
-                runtime_constants.CHECK_PROXY_IP_DOMAIN
-            );
-        }
-        else if (routing_mode == "direct") {
-            push(config.route.rules, {
-                action: "route",
-                inbound,
-                outbound: runtime_constants.DIRECT_OUTBOUND_TAG
-            });
-        }
-        else if (routing_mode == "section") {
-            let routing_section_name = option(server, "routing_section", "");
-            let routing_section = section_by_name(sections, routing_section_name);
-            if (routing_section == null)
-                runtime_generate_unsupported("server references missing routing section " + routing_section_name);
-            let action = option(routing_section, "action", "");
-            if (action == "bypass" || action == "block")
-                runtime_generate_unsupported("server routing section " + routing_section_name + " cannot use action " + action);
-            let target = runtime_route.target(routing_section, outbound_tag(routing_section[".name"]));
-            if (target.unsupported)
-                runtime_generate_unsupported(target.unsupported);
-            let rule = {
-                action: target.action,
-                inbound
-            };
-            if (target.outbound)
-                rule.outbound = target.outbound;
-            push(config.route.rules, rule);
-        }
-        else {
-            runtime_generate_unsupported("unsupported server routing_mode " + routing_mode);
-        }
-    }
 }
 
 function generate_config(output_path, service_address, mwan3_active, supports_xhttp, deferred_sections) {
@@ -3015,8 +2959,7 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     let settings = runtime_settings_cache;
 
     let sections = enabled_sections(deferred_sections);
-    let servers = enabled_servers();
-    if (length(sections) == 0 && length(servers) == 0 && trim(as_string(deferred_sections)) == "")
+    if (length(sections) == 0 && trim(as_string(deferred_sections)) == "")
         runtime_generate_unsupported("no enabled sections");
 
     let source_aware_dns = source_aware_dns_sources(sections);
@@ -3027,15 +2970,12 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     add_source_aware_dns_support(config, source_aware_dns);
     let taken = reserved_runtime_tag_set(config.outbounds);
     reserve_section_outbound_tags(sections, taken);
-    for (let server in servers)
-        runtime_servers.add_server(config, server);
     for (let section in sections)
         add_outbound_for_section(config, section, taken, sections);
     add_service_route_rules(config, sections);
     for (let section in sections)
         add_route_for_section(config, section);
     add_source_aware_dns_fallback(config, source_aware_dns);
-    add_server_routes(config, servers, sections);
     add_service_mixed_proxy(config, settings, sections);
     for (let section in sections)
         add_mixed_proxy_for_section(config, section, service_address);

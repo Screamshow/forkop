@@ -95,7 +95,6 @@ const BYEDPI_BIN = constant_value("BYEDPI_BIN", "/usr/bin/ciadpi");
 
 const DNS_APPLY_UC = LIB_DIR + "/dns/apply.uc";
 const VALIDATOR_UC = LIB_DIR + "/config/validator.uc";
-const SERVER_UC = LIB_DIR + "/server/service.uc";
 const NFT_UC = LIB_DIR + "/nft/apply.uc";
 const SINGBOX_UC = LIB_DIR + "/singbox/runtime.uc";
 const PRIORITY_UC = LIB_DIR + "/singbox/priority.uc";
@@ -536,10 +535,6 @@ function dnsmasq_has_forkop_managed_state() {
 
 function validate_start_config() {
     let status = module_status(VALIDATOR_UC, [ "check-requirements" ]);
-    if (status != 0)
-        return status;
-
-    status = module_status(SERVER_UC, [ "prepare-all-defaults" ]);
     if (status != 0)
         return status;
 
