@@ -366,32 +366,6 @@ cat >"$WORK_DIR/bad-urltest-tolerance.json" <<'JSON'
 JSON
 assert_rejects "bad URLTest tolerance" "$WORK_DIR/bad-urltest-tolerance.json" "Use a number from 0 to 10000"
 
-cat >"$WORK_DIR/bad-server-routing-bypass.json" <<'JSON'
-{
-  "settings": { ".name": "settings", ".type": "settings" },
-  "section": [
-    { ".name": "bypass", ".type": "section", "enabled": "1", "action": "bypass" }
-  ],
-  "server": [
-    { ".name": "srv", ".type": "server", "enabled": "1", "routing_mode": "section", "routing_section": "bypass" }
-  ]
-}
-JSON
-assert_rejects "bad server routing bypass" "$WORK_DIR/bad-server-routing-bypass.json" "unsupported action 'bypass'"
-
-cat >"$WORK_DIR/bad-server-routing-block.json" <<'JSON'
-{
-  "settings": { ".name": "settings", ".type": "settings" },
-  "section": [
-    { ".name": "block", ".type": "section", "enabled": "1", "action": "block" }
-  ],
-  "server": [
-    { ".name": "srv", ".type": "server", "enabled": "1", "routing_mode": "section", "routing_section": "block" }
-  ]
-}
-JSON
-assert_rejects "bad server routing block" "$WORK_DIR/bad-server-routing-block.json" "unsupported action 'block'"
-
 cat >"$WORK_DIR/bad-detour.json" <<'JSON'
 {
   "settings": { ".name": "settings", ".type": "settings" },

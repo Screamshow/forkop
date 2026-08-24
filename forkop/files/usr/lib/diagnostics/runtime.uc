@@ -1813,14 +1813,6 @@ function global_check(arg1, arg2) {
     else
         print_global("❌ Failed to get sing-box info");
 
-    print_global("---------------------------");
-    print_global("Inbounds checks");
-    let inbounds_check_json = command_capture(command_from_args(module_args(LIB_DIR + "/diagnostics/runtime.uc", [ "check-inbounds" ]))).output;
-    if (inbounds_check_json != "")
-        render_or_fail([ "global-inbounds-check" ], inbounds_check_json, "[FAIL] Failed to parse inbounds check details", [ 0 ]);
-    else
-        print_global("[FAIL] Failed to get inbounds info");
-
     print_global("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     print_global("🧱 NFT rules status");
     let nft_check_json = command_capture(command_from_args(module_args(LIB_DIR + "/diagnostics/runtime.uc", [ "check-nft-rules" ]))).output;
@@ -1914,10 +1906,6 @@ else if (mode == "check-sing-box")
     exit(check_sing_box());
 else if (mode == "sing-box-standard-ports-listening-fixture")
     sing_box_standard_ports_listening_fixture();
-else if (mode == "check-inbounds-config")
-    exit(check_inbounds_config());
-else if (mode == "check-inbounds")
-    exit(check_inbounds());
 else if (mode == "check-logs")
     exit(check_logs());
 else if (mode == "check-sing-box-logs")
@@ -1960,8 +1948,6 @@ else if (mode == "get-byedpi-status")
     exit(module_passthrough(BYEDPI_RUNTIME_UC, [ "status" ]));
 else if (mode == "get-system-info")
     exit(get_system_info());
-else if (mode == "get-server-capabilities")
-    exit(get_server_capabilities());
 else if (mode == "check-dns-available")
     exit(check_dns_available());
 else if (mode == "global-check")

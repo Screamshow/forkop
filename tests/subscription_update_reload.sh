@@ -73,11 +73,6 @@ if (mode == "acquire-runtime-dir-lock" ||
 exit(64);
 '
 
-write_stub "$FAKE_LIB/server/service.uc" "$stub_header"'
-record("server/service:" + as_string(ARGV[0]));
-exit(ARGV[0] == "prepare-all-defaults" ? 0 : 64);
-'
-
 write_stub "$FAKE_LIB/config/validator.uc" "$stub_header"'
 record("config/validator:" + as_string(ARGV[0]));
 exit(ARGV[0] == "validate-runtime" ? 0 : 64);
@@ -145,7 +140,6 @@ const fs = require("fs");
 const calls = fs.readFileSync(process.argv[2], "utf8").trim().split(/\n+/);
 const expected = [
   "subscription/cache:update-request",
-  "server/service:prepare-all-defaults",
   "config/validator:validate-runtime",
   "singbox/runtime:configure-service",
   "service/state:sing-box-service-runtime-pid",
@@ -174,7 +168,7 @@ JS
 unchanged_log="$WORK_DIR/unchanged.log"
 run_update "0 0 1 0" "$unchanged_log"
 
-if grep -Eq 'server/service|config/validator|singbox/runtime|singbox/priority|singbox/dns_failover|reload-sing-box-runtime|write-current-reload-state-clean' "$unchanged_log"; then
+if grep -Eq 'config/validator|singbox/runtime|singbox/priority|singbox/dns_failover|reload-sing-box-runtime|write-current-reload-state-clean' "$unchanged_log"; then
   fail "unchanged subscription update must not rebuild or reload sing-box"
 fi
 

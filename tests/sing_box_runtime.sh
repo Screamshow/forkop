@@ -278,53 +278,6 @@ cat >"$WORK_DIR/default-updates-fixture.json" <<'JSON'
 }
 JSON
 
-cat >"$WORK_DIR/server-inbound-fixture.json" <<'JSON'
-{
-  "settings": {
-    ".name": "settings",
-    ".type": "settings",
-    "config_path": "/tmp/sing-box/config.json",
-    "dns_server": "1.1.1.1",
-    "service_listen_address": "127.0.0.1"
-  },
-  "section": [
-    {
-      ".name": "proxy",
-      ".type": "section",
-      "enabled": "1",
-      "action": "outbound",
-      "outbound_json": "{\"type\":\"direct\"}",
-      "domain_suffix": [ "example.org" ]
-    }
-  ],
-  "server": [
-    {
-      ".name": "edge",
-      ".type": "server",
-      "enabled": "1",
-      "protocol": "socks",
-      "listen": "0.0.0.0",
-      "listen_port": "18080",
-      "server_username": "tester",
-      "server_password": "secret",
-      "routing_mode": "direct"
-    },
-    {
-      ".name": "open",
-      ".type": "server",
-      "enabled": "1",
-      "protocol": "socks",
-      "listen": "0.0.0.0",
-      "listen_port": "18081",
-      "socks_auth_enabled": "0",
-      "server_username": "ignored",
-      "server_password": "ignored",
-      "routing_mode": "direct"
-    }
-  ]
-}
-JSON
-
 cat >"$WORK_DIR/runtime-matchers-fixture.json" <<'JSON'
 {
   "settings": {
@@ -1072,7 +1025,6 @@ printf '%s' 'Happ' >"$WORK_DIR/subscriptions/only_xhttp-subscription-1.user_agen
 
 generate_config "$WORK_DIR/disabled-updates-fixture.json" "$WORK_DIR/disabled.json"
 generate_config "$WORK_DIR/default-updates-fixture.json" "$WORK_DIR/default.json"
-generate_config "$WORK_DIR/server-inbound-fixture.json" "$WORK_DIR/server.json"
 generate_config "$WORK_DIR/runtime-matchers-fixture.json" "$WORK_DIR/matchers.json"
 generate_config "$WORK_DIR/dns-action-fixture.json" "$WORK_DIR/dns-action.json"
 generate_config "$WORK_DIR/urltest-filter-fixture.json" "$WORK_DIR/urltest.json"
@@ -1246,15 +1198,6 @@ let defaults = cfg("default");
 assert(first_remote_ruleset(defaults).update_interval == "1d", "default list update interval");
 assert(defaults.dns.strategy == "prefer_ipv4", "missing DNS strategy keeps the prefer_ipv4 default");
 assert(dns_server(defaults, r => r.tag == "dnsmasq-server") == null, "source-aware DNS server is omitted without device filters");
-
-let server = cfg("server");
-let socks = inbound(server, "server-edge-in");
-assert(socks && socks.type == "socks" && socks.listen_port == 18080, "server socks inbound");
-assert(socks.users && socks.users[0].username == "tester", "legacy server socks auth defaults to enabled");
-let open_socks = inbound(server, "server-open-in");
-assert(open_socks && open_socks.type == "socks" && open_socks.listen_port == 18081, "server open socks inbound");
-assert(open_socks.users == null, "disabled server socks auth omits users");
-assert(route_rule(server, r => r.inbound == "server-edge-in" && r.outbound == "direct-out") != null, "server direct route");
 
 let matchers = cfg("matchers");
 assert(matchers.dns.strategy == "prefer_ipv6", "configured DNS strategy is generated");
