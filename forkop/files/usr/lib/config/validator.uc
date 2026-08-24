@@ -1724,7 +1724,6 @@ function validate_runtime_config(context) {
 
     validate_outbound_detours_rows(detour_rows_from_sections(sections));
     validate_subscription_download_sections(sections, context);
-    validate_server_routing_sections(sections);
 
     for (let section in sections)
         validate_rule(section, sections, context);
@@ -2049,7 +2048,6 @@ function check_runtime_requirements() {
     if (!service_exists("sing-box"))
         fail_requirement("Service 'sing-box' is missing. Install a sing-box package or reinstall the compressed sing-box-extended binary variant. Aborted.", "error");
 
-    validate_extended_server_features(ctx, sing_box_version, sing_box_version_output);
 
     if (coreutils_base64_version == "")
         fail_requirement("Package 'coreutils-base64' is not installed. Aborted.", "error");
