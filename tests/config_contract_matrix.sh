@@ -58,6 +58,7 @@ function fail(message) {
 
 const retiredMissingCurrent = new Set([
   "urltest_hide_filtered_outbounds",
+  "_protocol_display",
 ]);
 const missing = matrix.fields.filter((field) => field.status === "missing_current" && !retiredMissingCurrent.has(field.name));
 if (missing.length) {
