@@ -1011,17 +1011,6 @@ function sing_box_version_info() {
     return info;
 }
 
-function server_inbounds_enabled_count() {
-    let count = 0;
-    for (let section in uci_core.section_objects(CONFIG_NAME, "server")) {
-        section = object_or_empty(section);
-        let enabled = section.enabled == null ? "1" : as_string(section.enabled);
-        if (enabled != "0")
-            count++;
-    }
-    return count;
-}
-
 function capability_flags() {
     let result = {
         sing_box_extended: 0,
@@ -1065,7 +1054,7 @@ function capability_flags() {
         }
     }
 
-    result.server_inbounds_enabled_count = server_inbounds_enabled_count();
+    result.server_inbounds_enabled_count = 0;
     return result;
 }
 
