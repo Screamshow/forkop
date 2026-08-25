@@ -11,8 +11,8 @@ body:
         Спасибо за создание отчета об ошибке!
         
         Перед отправкой, пожалуйста:
-        - Проверьте [существующие issues](https://github.com/ushan0v/forkop/issues)
-        - Просмотрите [README проекта](https://github.com/ushan0v/forkop#readme)
+        - Проверьте [существующие issues](https://github.com/Screamshow/forkop/issues)
+        - Просмотрите [README проекта](https://github.com/Screamshow/forkop#readme)
 
   - type: textarea
     id: description

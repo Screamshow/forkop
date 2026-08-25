@@ -92,6 +92,12 @@ assert_eq $'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subne
 assert_eq 'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/roblox.lst' \
   "$(updates_ucode builtin-subnet-urls roblox)" \
   "Roblox available subnet family"
+assert_eq 'https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/Subnets/IPv4/telegram.lst' \
+  "$(updates_ucode jsdelivr-fallback-url https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/telegram.lst)" \
+  "allow-domains jsDelivr fallback"
+assert_eq '' \
+  "$(updates_ucode jsdelivr-fallback-url https://example.com/custom.lst)" \
+  "custom lists must not be rewritten to jsDelivr"
 assert_eq 7 \
   "$(grep -c 'log_message("Failed to download .*"error");' "$UPDATES_UC")" \
   "terminal list download errors"
