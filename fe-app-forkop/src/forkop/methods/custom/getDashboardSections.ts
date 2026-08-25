@@ -45,6 +45,15 @@ type UrlTestCacheGroup = {
   interrupt_exist_connections?: boolean;
 };
 
+type SingBoxRuntimeConfig = {
+  outbounds?: Array<
+    UrlTestCacheGroup & {
+      type?: string;
+      tag?: string;
+    }
+  >;
+};
+
 type PriorityCacheLevel = {
   id?: string;
   displayName?: string;
@@ -817,6 +826,57 @@ function getUrlTestGroups(dashboardCache?: DashboardSectionCache) {
   return groups;
 }
 
+async function readRuntimeUrlTestGroups(
+  configSections: Forkop.ConfigSection[],
+): Promise<Record<string, UrlTestCacheGroup>> {
+  const configPath =
+    getSettingsSection(configSections)?.config_path ||
+    '/etc/sing-box/config.json';
+
+  try {
+    const parsed = JSON.parse(await fs.read(configPath)) as SingBoxRuntimeConfig;
+    const groups: Record<string, UrlTestCacheGroup> = {};
+
+    for (const outbound of Array.isArray(parsed?.outbounds)
+      ? parsed.outbounds
+      : []) {
+      const tag = `${outbound?.tag || ''}`;
+      if (outbound?.type !== 'urltest' || !tag) {
+        continue;
+      }
+
+      groups[tag] = {
+        displayName: tag,
+        outbounds: Array.isArray(outbound.outbounds) ? outbound.outbounds : [],
+        url: outbound.url,
+        interval: outbound.interval,
+        tolerance: outbound.tolerance,
+        idle_timeout: outbound.idle_timeout,
+        interrupt_exist_connections: outbound.interrupt_exist_connections,
+      };
+    }
+
+    return groups;
+  } catch (_error) {
+    return {};
+  }
+}
+
+function mergeUrlTestGroups(
+  cachedGroups: Record<string, UrlTestCacheGroup>,
+  runtimeGroups: Record<string, UrlTestCacheGroup>,
+) {
+  const merged = { ...cachedGroups };
+  for (const [tag, runtimeGroup] of Object.entries(runtimeGroups)) {
+    merged[tag] = {
+      ...cachedGroups[tag],
+      ...runtimeGroup,
+      displayName: cachedGroups[tag]?.displayName || runtimeGroup.displayName,
+    };
+  }
+  return merged;
+}
+
 function getPriorityGroups(dashboardCache?: DashboardSectionCache) {
   const groups = dashboardCache?.priorityGroups;
 
@@ -1362,7 +1422,10 @@ export async function getDashboardSections(
   const includeSubscriptionCopyState =
     options.includeSubscriptionCopyState ?? true;
   const configSections = hydrateConfigSections(await getConfigSections());
-  const clashProxies = await getClashApiProxies(configSections);
+  const [clashProxies, runtimeUrlTestGroups] = await Promise.all([
+    getClashApiProxies(configSections),
+    readRuntimeUrlTestGroups(configSections),
+  ]);
 
   if (!clashProxies.success || !clashProxies.data?.proxies) {
     return {
@@ -1404,7 +1467,10 @@ export async function getDashboardSections(
           const cachedProxyLinks = includeSubscriptionCopyState
             ? getCachedProxyLinks(dashboardCache)
             : new Map<string, string>();
-          const urltestGroups = getUrlTestGroups(dashboardCache);
+          const urltestGroups = mergeUrlTestGroups(
+            getUrlTestGroups(dashboardCache),
+            runtimeUrlTestGroups,
+          );
           const priorityGroups = getPriorityGroups(dashboardCache);
           const { selector, latencyTestCode, latencyTestCodes, outbounds } =
             buildProxyGroupOutbounds(
