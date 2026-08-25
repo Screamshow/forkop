@@ -1400,7 +1400,7 @@ function sing_box_signature_body(settings, sections, servers, mwan3_active) {
         body = signature_add_value(body, "settings.dns_detour_section", option(settings, "dns_detour_section", ""));
     body = signature_add_value(body, "settings.dns_rewrite_ttl", option(settings, "dns_rewrite_ttl", "60"));
     body = signature_add_value(body, "settings.output_network_interface", option(settings, "output_network_interface", ""));
-    body = signature_add_value(body, "settings.disable_quic", bool_option_value(settings, "disable_quic", false));
+    body = signature_add_value(body, "settings.disable_quic", bool_option_value(settings, "disable_quic", true));
     if (sing_box_signature_has_remote_ruleset_sources(sections))
         body = signature_add_value(body, "settings.update_interval", settings_update_interval(settings));
     body = signature_add_value(body, "settings.cache_path", option(settings, "cache_path", "/tmp/sing-box/cache.db"));
