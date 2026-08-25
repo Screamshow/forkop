@@ -13,6 +13,11 @@ on:
         description: 'Optional release notes/comment (use \n for line breaks; Markdown is preserved)'
         required: false
         type: string
+      publish_release:
+        description: Publish the built packages as a GitHub release
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -86,6 +91,7 @@ jobs:
 
   release:
     name: Create Release
+    if: github.event_name == 'push' || inputs.publish_release
     runs-on: ubuntu-24.04
     permissions:
       contents: write

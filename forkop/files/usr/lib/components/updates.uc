@@ -1935,18 +1935,46 @@ function service_proxy_address(settings, purpose) {
         SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + service_proxy_port_for_purpose(purpose) : "";
 }
 
+function jsdelivr_fallback_url(url) {
+    let prefix = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/";
+    url = as_string(url);
+    if (substr(url, 0, length(prefix)) != prefix)
+        return "";
+
+    return "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" + substr(url, length(prefix));
+}
+
+function download_to_file_once(url, filepath, proxy_address) {
+    let command = command_from_args([ "wget", "-O", filepath, url ]);
+    if (as_string(proxy_address) != "")
+        command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
+            " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + command;
+
+    return command_success(command);
+}
+
 function download_to_file(url, filepath, proxy_address) {
     let attempt = 1;
     while (attempt <= 3) {
-        let command = command_from_args([ "wget", "-O", filepath, url ]);
-        if (as_string(proxy_address) != "")
-            command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
-                " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + command;
-
-        if (command_success(command))
+        if (download_to_file_once(url, filepath, proxy_address))
             return true;
 
         log_message("Attempt " + attempt + "/3 to download " + as_string(url) + " failed", "warn");
+        command_success_from_args([ "sleep", "2" ]);
+        attempt++;
+    }
+
+    let fallback_url = jsdelivr_fallback_url(url);
+    if (fallback_url == "")
+        return false;
+
+    log_message("Primary allow-domains source is unavailable; trying jsDelivr fallback", "warn");
+    attempt = 1;
+    while (attempt <= 3) {
+        if (download_to_file_once(fallback_url, filepath, proxy_address))
+            return true;
+
+        log_message("Attempt " + attempt + "/3 to download " + fallback_url + " failed", "warn");
         command_success_from_args([ "sleep", "2" ]);
         attempt++;
     }
@@ -2876,6 +2904,8 @@ else if (mode == "duration-to-seconds")
     duration_to_seconds(ARGV[1]);
 else if (mode == "builtin-subnet-urls")
     print_builtin_subnet_urls(ARGV[1]);
+else if (mode == "jsdelivr-fallback-url")
+    print(jsdelivr_fallback_url(ARGV[1]), "\n");
 else if (mode == "due-check-cron-schedule")
     due_check_cron_schedule(ARGV[1]);
 else if (mode == "list-update-cron-job")
