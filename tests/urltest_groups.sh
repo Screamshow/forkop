@@ -133,7 +133,12 @@ mkdir -p "$WORK_DIR/metadata"
 : >"$WORK_DIR/xray.headers"
 ucode -L "$FORKOP_LIB" "$PARSER_UC" metadata-extract-ui-file \
   "$WORK_DIR/xray.headers" "$WORK_DIR/xray.json" "$WORK_DIR/metadata/proxy.json"
-grep -Fq '"serverDescription":"Upstream Tube"' "$WORK_DIR/metadata/proxy.json" ||
+ucode -e '
+let fs = require("fs");
+let metadata = json(fs.readfile(ARGV[0]));
+if (metadata.serverDescription != "Upstream Tube")
+    die("missing Xray server description\n");
+' "$WORK_DIR/metadata/proxy.json" ||
   fail "Xray meta.serverDescription must be extracted into subscription metadata"
 
 xray_normalized="$WORK_DIR/xray-normalized.json"
