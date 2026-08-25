@@ -252,7 +252,7 @@ describe('getDashboardSections', () => {
       {
         '.name': 'config',
         '.type': 'settings',
-        config_path: '/etc/sing-box/active.json',
+        config_path: '/etc/sing-box/config.json',
       },
     ]);
     mocks.getClashApiProxies.mockResolvedValue({
@@ -274,7 +274,7 @@ describe('getDashboardSections', () => {
       },
     });
     mocks.fsRead.mockImplementation(async (path: string) => {
-      if (path === '/etc/sing-box/active.json') {
+      if (path === '/etc/sing-box/config.json') {
         return JSON.stringify({
           outbounds: [
             {
