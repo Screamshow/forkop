@@ -133,6 +133,18 @@ ucode -L "$FORKOP_LIB" "$SINGBOX_RUNTIME_UC" save-config-file-fixture \
 [ ! -e "$WORK_DIR/tmp/config.json" ] ||
   fail "singbox/runtime.uc must consume the temp config after save"
 
+mkdir -p "$WORK_DIR/tmp/generated.json.section-cache" "$WORK_DIR/runtime-cache"
+cat >"$WORK_DIR/tmp/generated.json.section-cache/proxy.json" <<'EOF_SECTION_CACHE'
+{"urltestGroups":{"Imported":{"url":"https://www.gstatic.com/generate_204","interval":"70s","tolerance":175,"interrupt_exist_connections":true}}}
+EOF_SECTION_CACHE
+FORKOP_SECTION_CACHE_DIR="$WORK_DIR/runtime-cache" \
+  ucode -L "$FORKOP_LIB" "$SINGBOX_RUNTIME_UC" publish-section-cache-fixture \
+  "$WORK_DIR/tmp/generated.json"
+grep -Fq '"tolerance":175' "$WORK_DIR/runtime-cache/proxy.json" ||
+  fail "singbox/runtime.uc must publish generated URLTest dashboard metadata"
+[ ! -e "$WORK_DIR/tmp/generated.json.section-cache/proxy.json" ] ||
+  fail "singbox/runtime.uc must consume the generated section cache after publish"
+
 generate_config() {
   local fixture="$1"
   local output="$2"
