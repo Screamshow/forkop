@@ -6,6 +6,12 @@
         "/etc/init.d/forkop": [
           "exec"
         ],
+        "/etc/sing-box/config.json": [
+          "read"
+        ],
+        "/tmp/sing-box/config.json": [
+          "read"
+        ],
         "/var/run/forkop/section-cache/*": [
           "read"
         ],
