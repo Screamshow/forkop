@@ -2242,6 +2242,7 @@ function add_connections_outbound(config, section, taken) {
 
     state.urltestCandidateTags = unique_string_array(urltest_candidate_tags);
     add_proxy_selector(config, section, selector_tags, urltest_candidate_tags, state);
+    runtime_subscription.resolve_urltest_profile_aliases(state);
     if (!atomic_write_json_file(runtime_subscription.section_cache_path(section_name), state))
         runtime_generate_unsupported("failed to write section cache for " + section_name);
 }

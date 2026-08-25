@@ -18,6 +18,34 @@ fail() {
   exit 1
 }
 
+ucode -L "$FORKOP_LIB" -e '
+let subscription = require("singbox.subscription");
+let state = {
+    servers: {
+        proxy: "edge-7.example",
+        "🇳🇱 Amsterdam": "edge-7.example"
+    },
+    outboundMetadata: {
+        names: {
+            proxy: "proxy",
+            "🇳🇱 Amsterdam": "🇳🇱 Amsterdam"
+        },
+        countries: { "🇳🇱 Amsterdam": "NL" },
+        descriptions: { "🇳🇱 Amsterdam": "Upstream Tube" }
+    },
+    urltestGroups: {
+        Automatic: { outbounds: [ "proxy" ] }
+    }
+};
+subscription.resolve_urltest_profile_aliases(state);
+if (state.outboundMetadata.names.proxy != "🇳🇱 Amsterdam")
+    die("URLTest member did not inherit the matching profile name\n");
+if (state.outboundMetadata.countries.proxy != "NL")
+    die("URLTest member did not inherit the matching profile country\n");
+if (state.outboundMetadata.descriptions.proxy != "Upstream Tube")
+    die("URLTest member did not inherit the matching profile description\n");
+' || fail "URLTest profile alias metadata"
+
 normalize_subscription() {
   local input="$1"
   local output="$2"
