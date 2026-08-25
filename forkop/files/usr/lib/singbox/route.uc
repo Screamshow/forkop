@@ -41,7 +41,7 @@ function config(settings, runtime) {
 
     if (output_network_interface != "")
         result.default_interface = output_network_interface;
-    if (bool_option(settings, "disable_quic", false))
+    if (bool_option(settings, "disable_quic", true))
         push(result.rules, { action: "reject", inbound: runtime_constants.TPROXY_INBOUND_TAG, protocol: "quic" });
 
     return result;
