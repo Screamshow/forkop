@@ -458,7 +458,6 @@ export namespace Forkop {
   export interface GetOutboundMetadata {
     names?: Record<string, string>;
     countries?: Record<string, string>;
-    servers?: Record<string, string>;
     descriptions?: Record<string, string>;
   }
 

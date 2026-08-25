@@ -255,7 +255,7 @@ describe('getDashboardSections', () => {
     ).toMatchObject({ description: 'Upstream Tube' });
   });
 
-  it('hydrates imported URLTest details from the active sing-box config when the cache is incomplete', async () => {
+  it('hydrates imported URLTest settings from the active sing-box config without guessing missing aliases', async () => {
     mocks.getConfigSections.mockResolvedValue([
       proxySection({
         selector_proxy_links: [],
@@ -342,10 +342,10 @@ describe('getDashboardSections', () => {
       tolerance: 175,
       idleTimeout: '30m',
       interruptExistConnections: true,
-      selectedName: '🇳🇱 Amsterdam (До 05.09 ❗)',
+      selectedName: 'Included 1',
     });
     expect(details?.outbounds[0]).toMatchObject({
-      displayName: '🇳🇱 Amsterdam (До 05.09 ❗)',
+      displayName: 'Included 1',
     });
     expect(
       result.data[0].outbounds.find(

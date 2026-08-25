@@ -27,7 +27,6 @@ type DashboardSectionCache = {
   version?: number;
   section?: string;
   links?: Record<string, string>;
-  servers?: Record<string, string>;
   outboundMetadata?: Forkop.GetOutboundMetadata;
   urltestGroups?: Record<string, UrlTestCacheGroup>;
   priorityGroups?: Record<string, PriorityCacheGroup>;
@@ -51,14 +50,12 @@ type SingBoxRuntimeConfig = {
     UrlTestCacheGroup & {
       type?: string;
       tag?: string;
-      server?: string;
     }
   >;
 };
 
 type SingBoxRuntimeMetadata = {
   urltestGroups: Record<string, UrlTestCacheGroup>;
-  aliases: Record<string, string>;
 };
 
 type PriorityCacheLevel = {
@@ -845,8 +842,6 @@ async function readRuntimeMetadata(
       await fs.read(configPath),
     ) as SingBoxRuntimeConfig;
     const groups: Record<string, UrlTestCacheGroup> = {};
-    const endpoints = new Map<string, string[]>();
-    const urlTestMembers = new Set<string>();
 
     for (const outbound of Array.isArray(parsed?.outbounds)
       ? parsed.outbounds
@@ -854,11 +849,6 @@ async function readRuntimeMetadata(
       const tag = `${outbound?.tag || ''}`;
       if (!tag) {
         continue;
-      }
-
-      const server = `${outbound?.server || ''}`;
-      if (server) {
-        endpoints.set(server, [...(endpoints.get(server) || []), tag]);
       }
 
       if (outbound?.type !== 'urltest') {
@@ -874,33 +864,11 @@ async function readRuntimeMetadata(
         idle_timeout: outbound.idle_timeout,
         interrupt_exist_connections: outbound.interrupt_exist_connections,
       };
-      for (const member of Array.isArray(outbound.outbounds)
-        ? outbound.outbounds
-        : []) {
-        urlTestMembers.add(`${member}`);
-      }
     }
 
-    const aliases: Record<string, string> = {};
-    for (const tags of endpoints.values()) {
-      const profileTag = tags.find(
-        (tag) =>
-          !urlTestMembers.has(tag) &&
-          !['direct', 'block', 'dns-out'].includes(tag),
-      );
-      if (!profileTag) {
-        continue;
-      }
-      for (const tag of tags) {
-        if (urlTestMembers.has(tag)) {
-          aliases[tag] = profileTag;
-        }
-      }
-    }
-
-    return { urltestGroups: groups, aliases };
+    return { urltestGroups: groups };
   } catch (_error) {
-    return { urltestGroups: {}, aliases: {} };
+    return { urltestGroups: {} };
   }
 }
 
@@ -1443,37 +1411,19 @@ function getSubscriptionMetadata(
   return undefined;
 }
 
-function getOutboundMetadata(
-  dashboardCache?: DashboardSectionCache,
-  runtimeAliases: Record<string, string> = {},
-) {
+function getOutboundMetadata(dashboardCache?: DashboardSectionCache) {
   const metadata = dashboardCache?.outboundMetadata;
-  const servers = objectMap(dashboardCache?.servers);
   const names = objectMap(metadata?.names);
   const countries = objectMap(metadata?.countries);
   const descriptions = objectMap(metadata?.descriptions);
 
-  for (const [technicalTag, profileTag] of Object.entries(runtimeAliases)) {
-    names[technicalTag] = names[profileTag] || profileTag;
-    if (countries[profileTag]) {
-      countries[technicalTag] = countries[profileTag];
-    }
-    if (descriptions[profileTag]) {
-      descriptions[technicalTag] = descriptions[profileTag];
-    }
-  }
-
-  if (
-    (!metadata || typeof metadata !== 'object') &&
-    Object.keys(servers).length === 0
-  ) {
+  if (!metadata || typeof metadata !== 'object') {
     return undefined;
   }
 
   return {
     names,
     countries,
-    servers,
     descriptions,
   };
 }
@@ -1526,10 +1476,7 @@ export async function getDashboardSections(
           const subscriptionSourceCount = getSubscriptionSourceCount(section);
           const subscriptionEnabled = subscriptionSourceCount > 0;
           const dashboardCache = await readDashboardSectionCache(sectionName);
-          const outboundMetadata = getOutboundMetadata(
-            dashboardCache,
-            runtimeMetadata.aliases,
-          );
+          const outboundMetadata = getOutboundMetadata(dashboardCache);
           const subscriptionMetadata = subscriptionEnabled
             ? getSubscriptionMetadata(
                 section,

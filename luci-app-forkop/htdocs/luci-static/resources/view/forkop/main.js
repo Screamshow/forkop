@@ -3570,16 +3570,10 @@ async function readRuntimeMetadata(configSections) {
       await fs.read(configPath)
     );
     const groups = {};
-    const endpoints = /* @__PURE__ */ new Map();
-    const urlTestMembers = /* @__PURE__ */ new Set();
     for (const outbound of Array.isArray(parsed?.outbounds) ? parsed.outbounds : []) {
       const tag = `${outbound?.tag || ""}`;
       if (!tag) {
         continue;
-      }
-      const server = `${outbound?.server || ""}`;
-      if (server) {
-        endpoints.set(server, [...endpoints.get(server) || [], tag]);
       }
       if (outbound?.type !== "urltest") {
         continue;
@@ -3593,27 +3587,10 @@ async function readRuntimeMetadata(configSections) {
         idle_timeout: outbound.idle_timeout,
         interrupt_exist_connections: outbound.interrupt_exist_connections
       };
-      for (const member of Array.isArray(outbound.outbounds) ? outbound.outbounds : []) {
-        urlTestMembers.add(`${member}`);
-      }
     }
-    const aliases = {};
-    for (const tags of endpoints.values()) {
-      const profileTag = tags.find(
-        (tag) => !urlTestMembers.has(tag) && !["direct", "block", "dns-out"].includes(tag)
-      );
-      if (!profileTag) {
-        continue;
-      }
-      for (const tag of tags) {
-        if (urlTestMembers.has(tag)) {
-          aliases[tag] = profileTag;
-        }
-      }
-    }
-    return { urltestGroups: groups, aliases };
+    return { urltestGroups: groups };
   } catch (_error) {
-    return { urltestGroups: {}, aliases: {} };
+    return { urltestGroups: {} };
   }
 }
 function mergeUrlTestGroups(cachedGroups, runtimeGroups) {
@@ -3964,28 +3941,17 @@ function getSubscriptionMetadata(section, sourceCount, dashboardCache) {
   }
   return void 0;
 }
-function getOutboundMetadata(dashboardCache, runtimeAliases = {}) {
+function getOutboundMetadata(dashboardCache) {
   const metadata = dashboardCache?.outboundMetadata;
-  const servers = objectMap(dashboardCache?.servers);
   const names = objectMap(metadata?.names);
   const countries = objectMap(metadata?.countries);
   const descriptions = objectMap(metadata?.descriptions);
-  for (const [technicalTag, profileTag] of Object.entries(runtimeAliases)) {
-    names[technicalTag] = names[profileTag] || profileTag;
-    if (countries[profileTag]) {
-      countries[technicalTag] = countries[profileTag];
-    }
-    if (descriptions[profileTag]) {
-      descriptions[technicalTag] = descriptions[profileTag];
-    }
-  }
-  if ((!metadata || typeof metadata !== "object") && Object.keys(servers).length === 0) {
+  if (!metadata || typeof metadata !== "object") {
     return void 0;
   }
   return {
     names,
     countries,
-    servers,
     descriptions
   };
 }
@@ -4027,10 +3993,7 @@ async function getDashboardSections(options = {}) {
         const subscriptionSourceCount = getSubscriptionSourceCount(section);
         const subscriptionEnabled = subscriptionSourceCount > 0;
         const dashboardCache = await readDashboardSectionCache(sectionName);
-        const outboundMetadata = getOutboundMetadata(
-          dashboardCache,
-          runtimeMetadata.aliases
-        );
+        const outboundMetadata = getOutboundMetadata(dashboardCache);
         const subscriptionMetadata = subscriptionEnabled ? getSubscriptionMetadata(
           section,
           subscriptionSourceCount,
