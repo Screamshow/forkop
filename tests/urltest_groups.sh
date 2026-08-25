@@ -141,7 +141,7 @@ if (group.url != "https://www.gstatic.com/generate_204")
     die("xray urltest url was not preserved\n");
 if (group.interval != "120s")
     die("xray urltest interval was not preserved\n");
-if (group.tolerance != 50)
+if (group.tolerance != 175)
     die("xray urltest should use sing-box latency tolerance instead of Xray failure ratio\n");
 if (group.idle_timeout != "30m")
     die("xray urltest idle timeout default was not applied\n");
@@ -270,7 +270,7 @@ for (let outbound in group_name_filter_config.outbounds || [])
         group_name_builtin = outbound;
 if (!imported || imported.url != "https://www.gstatic.com/generate_204" || imported.interval != "120s")
     die("generated xray imported URLTest did not preserve subscription params\n");
-if (imported.tolerance != 50 || imported.idle_timeout != "30m" || imported.interrupt_exist_connections !== true)
+if (imported.tolerance != 175 || imported.idle_timeout != "30m" || imported.interrupt_exist_connections !== true)
     die("generated xray imported URLTest is missing sing-box runtime defaults\n");
 if (!builtin || length(builtin.outbounds || []) != 2)
     die("built-in URLTest should include two matched xray leaf outbounds\n");
@@ -285,7 +285,7 @@ for (let child in builtin.outbounds || [])
 let imported_cache = object_or_empty(cache.urltestGroups)["Latvia group"] || {};
 if (imported_cache.url != "https://www.gstatic.com/generate_204" || imported_cache.interval != "120s")
     die("section cache is missing imported xray URLTest params\n");
-if (imported_cache.tolerance != 50 || imported_cache.idle_timeout != "30m" || imported_cache.interrupt_exist_connections !== true)
+if (imported_cache.tolerance != 175 || imported_cache.idle_timeout != "30m" || imported_cache.interrupt_exist_connections !== true)
     die("section cache is missing imported xray URLTest runtime defaults\n");
 if (length(object_or_empty(cache.urltestGroups)["proxy-urltest-out"].outbounds || []) != 2)
     die("section cache is missing built-in URLTest membership\n");
