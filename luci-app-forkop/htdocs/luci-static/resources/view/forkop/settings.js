@@ -447,7 +447,7 @@ function createSettingsContent(section, capabilities) {
       "Disable the QUIC protocol to improve compatibility or fix issues with video streaming",
     ),
   );
-  o.default = "0";
+  o.default = "1";
   o.rmempty = false;
 
   o = section.option(
