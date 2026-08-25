@@ -8,6 +8,7 @@ import { isCopyableProxyLink, svgEl } from '../../../../helpers';
 import { prettyBytes } from '../../../../helpers/prettyBytes';
 import { Forkop } from '../../../types';
 import { renderFlagEmojis } from './renderFlagEmojis';
+import { getOutboundFooterLabel } from './getOutboundFooterLabel';
 
 interface IRenderSectionsProps {
   loading: boolean;
@@ -294,6 +295,7 @@ function renderDefaultState({
 
     const canCopyLink =
       Boolean(outbound.canCopyLink) || isCopyableProxyLink(outbound.link);
+    const footerLabel = getOutboundFooterLabel(outbound);
     const selectorSwitching = Boolean(selectorSwitchingTag);
     const outboundSwitching = selectorSwitchingTag === outbound.code;
     const canChooseOutbound =
@@ -412,7 +414,7 @@ function renderDefaultState({
           E(
             'div',
             { class: 'fkp_dashboard-page__outbound-grid__item__type' },
-            [outbound.type].filter(Boolean),
+            renderFlagEmojis(footerLabel),
           ),
           E(
             'div',

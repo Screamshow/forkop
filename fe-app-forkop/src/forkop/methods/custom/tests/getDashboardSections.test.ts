@@ -196,6 +196,12 @@ describe('getDashboardSections', () => {
             'main-3-out': 'Third cached',
           },
           countries: {},
+          descriptions: {
+            'main-1-out': 'Upstream Tube',
+          },
+        },
+        servers: {
+          'main-3-out': 'edge-3.example.com',
         },
         urltestGroups: {
           'main-urltest-out': {
@@ -244,11 +250,19 @@ describe('getDashboardSections', () => {
       latency: 100,
       selected: false,
     });
+    expect(
+      section.outbounds.find((item) => item.code === 'main-1-out'),
+    ).toMatchObject({ description: 'Upstream Tube' });
   });
 
   it('hydrates imported URLTest details from the active sing-box config when the cache is incomplete', async () => {
     mocks.getConfigSections.mockResolvedValue([
-      proxySection({ urltests: [], urltest_settings: undefined }),
+      proxySection({
+        selector_proxy_links: [],
+        subscription_urls: ['https://provider.example/sub'],
+        urltests: [],
+        urltest_settings: undefined,
+      }),
       {
         '.name': 'config',
         '.type': 'settings',
@@ -290,7 +304,10 @@ describe('getDashboardSections', () => {
           ],
         });
       }
-      return JSON.stringify({ urltestGroups: { Imported: {} } });
+      return JSON.stringify({
+        servers: { 'main-1-out': 'edge-7.nl.cdn-store.cloud' },
+        urltestGroups: { Imported: {} },
+      });
     });
 
     const result = await getDashboardSections();
@@ -302,6 +319,7 @@ describe('getDashboardSections', () => {
       tolerance: 175,
       idleTimeout: '30m',
       interruptExistConnections: true,
+      selectedName: 'edge-7.nl.cdn-store.cloud',
     });
   });
 

@@ -1765,6 +1765,11 @@ function prettyBytes(n) {
   return n + " " + unit;
 }
 
+// src/forkop/tabs/dashboard/partials/getOutboundFooterLabel.ts
+function getOutboundFooterLabel(outbound) {
+  return outbound.urlTestInfo?.selectedName || outbound.description || outbound.type;
+}
+
 // src/forkop/tabs/dashboard/partials/renderSections.ts
 function renderFailedState() {
   return E(
@@ -1969,6 +1974,7 @@ function renderDefaultState({
       return "fkp_dashboard-page__outbound-grid__item__latency--red";
     }
     const canCopyLink = Boolean(outbound.canCopyLink) || isCopyableProxyLink(outbound.link);
+    const footerLabel = getOutboundFooterLabel(outbound);
     const selectorSwitching = Boolean(selectorSwitchingTag);
     const outboundSwitching = selectorSwitchingTag === outbound.code;
     const canChooseOutbound = section.withTagSelect && outbound.runtimeAvailable !== false && !selectorSwitching && !outbound.selected;
@@ -2059,7 +2065,7 @@ function renderDefaultState({
           E(
             "div",
             { class: "fkp_dashboard-page__outbound-grid__item__type" },
-            [outbound.type].filter(Boolean)
+            renderFlagEmojis(footerLabel)
           ),
           E(
             "div",
@@ -3604,7 +3610,11 @@ function getPriorityGroups(dashboardCache) {
 }
 function getOutboundDisplayName(code, entry, link, outboundMetadata, preferMetadata = false) {
   const metadataName = outboundMetadata?.names?.[code];
-  return (preferMetadata ? metadataName : getProxyUrlName(link)) || (preferMetadata ? getProxyUrlName(link) : metadataName) || entry?.value?.name || code;
+  const serverName = outboundMetadata?.servers?.[code];
+  const linkName = getProxyUrlName(link);
+  const descriptiveMetadataName = metadataName === code ? "" : metadataName;
+  const descriptiveLinkName = linkName === code ? "" : linkName;
+  return (preferMetadata ? descriptiveMetadataName : descriptiveLinkName) || (preferMetadata ? descriptiveLinkName : descriptiveMetadataName) || serverName || metadataName || linkName || entry?.value?.name || code;
 }
 function buildUrlTestInfo({
   code,
@@ -3813,6 +3823,7 @@ function buildProxyGroupOutbounds(section, proxies, outboundMetadata, urltestGro
         selected: selector?.value?.now === code,
         link,
         canCopyLink,
+        description: outboundMetadata?.descriptions?.[code],
         country: showDetectedCountries ? outboundMetadata?.countries?.[code] : void 0,
         runtimeAvailable: item ? void 0 : false,
         urlTestInfo: urlTestConfig || isRuntimeUrlTest ? buildUrlTestInfo({
@@ -3930,12 +3941,15 @@ function getSubscriptionMetadata(section, sourceCount, dashboardCache) {
 }
 function getOutboundMetadata(dashboardCache) {
   const metadata = dashboardCache?.outboundMetadata;
-  if (!metadata || typeof metadata !== "object") {
+  const servers = objectMap(dashboardCache?.servers);
+  if ((!metadata || typeof metadata !== "object") && Object.keys(servers).length === 0) {
     return void 0;
   }
   return {
-    names: objectMap(metadata.names),
-    countries: objectMap(metadata.countries)
+    names: objectMap(metadata?.names),
+    countries: objectMap(metadata?.countries),
+    servers,
+    descriptions: objectMap(metadata?.descriptions)
   };
 }
 function getCachedProxyLinks(dashboardCache) {
