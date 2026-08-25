@@ -51,8 +51,14 @@ type SingBoxRuntimeConfig = {
     UrlTestCacheGroup & {
       type?: string;
       tag?: string;
+      server?: string;
     }
   >;
+};
+
+type SingBoxRuntimeMetadata = {
+  urltestGroups: Record<string, UrlTestCacheGroup>;
+  servers: Record<string, string>;
 };
 
 type PriorityCacheLevel = {
@@ -827,9 +833,9 @@ function getUrlTestGroups(dashboardCache?: DashboardSectionCache) {
   return groups;
 }
 
-async function readRuntimeUrlTestGroups(
+async function readRuntimeMetadata(
   configSections: Forkop.ConfigSection[],
-): Promise<Record<string, UrlTestCacheGroup>> {
+): Promise<SingBoxRuntimeMetadata> {
   const configPath =
     getSettingsSection(configSections)?.config_path ||
     '/etc/sing-box/config.json';
@@ -839,12 +845,22 @@ async function readRuntimeUrlTestGroups(
       await fs.read(configPath),
     ) as SingBoxRuntimeConfig;
     const groups: Record<string, UrlTestCacheGroup> = {};
+    const servers: Record<string, string> = {};
 
     for (const outbound of Array.isArray(parsed?.outbounds)
       ? parsed.outbounds
       : []) {
       const tag = `${outbound?.tag || ''}`;
-      if (outbound?.type !== 'urltest' || !tag) {
+      if (!tag) {
+        continue;
+      }
+
+      const server = `${outbound?.server || ''}`;
+      if (server) {
+        servers[tag] = server;
+      }
+
+      if (outbound?.type !== 'urltest') {
         continue;
       }
 
@@ -859,9 +875,9 @@ async function readRuntimeUrlTestGroups(
       };
     }
 
-    return groups;
+    return { urltestGroups: groups, servers };
   } catch (_error) {
-    return {};
+    return { urltestGroups: {}, servers: {} };
   }
 }
 
@@ -1406,9 +1422,15 @@ function getSubscriptionMetadata(
   return undefined;
 }
 
-function getOutboundMetadata(dashboardCache?: DashboardSectionCache) {
+function getOutboundMetadata(
+  dashboardCache?: DashboardSectionCache,
+  runtimeServers: Record<string, string> = {},
+) {
   const metadata = dashboardCache?.outboundMetadata;
-  const servers = objectMap(dashboardCache?.servers);
+  const servers = {
+    ...objectMap(dashboardCache?.servers),
+    ...runtimeServers,
+  };
 
   if (
     (!metadata || typeof metadata !== 'object') &&
@@ -1439,9 +1461,9 @@ export async function getDashboardSections(
   const includeSubscriptionCopyState =
     options.includeSubscriptionCopyState ?? true;
   const configSections = hydrateConfigSections(await getConfigSections());
-  const [clashProxies, runtimeUrlTestGroups] = await Promise.all([
+  const [clashProxies, runtimeMetadata] = await Promise.all([
     getClashApiProxies(configSections),
-    readRuntimeUrlTestGroups(configSections),
+    readRuntimeMetadata(configSections),
   ]);
 
   if (!clashProxies.success || !clashProxies.data?.proxies) {
@@ -1473,7 +1495,10 @@ export async function getDashboardSections(
           const subscriptionSourceCount = getSubscriptionSourceCount(section);
           const subscriptionEnabled = subscriptionSourceCount > 0;
           const dashboardCache = await readDashboardSectionCache(sectionName);
-          const outboundMetadata = getOutboundMetadata(dashboardCache);
+          const outboundMetadata = getOutboundMetadata(
+            dashboardCache,
+            runtimeMetadata.servers,
+          );
           const subscriptionMetadata = subscriptionEnabled
             ? getSubscriptionMetadata(
                 section,
@@ -1486,7 +1511,7 @@ export async function getDashboardSections(
             : new Map<string, string>();
           const urltestGroups = mergeUrlTestGroups(
             getUrlTestGroups(dashboardCache),
-            runtimeUrlTestGroups,
+            runtimeMetadata.urltestGroups,
           );
           const priorityGroups = getPriorityGroups(dashboardCache);
           const { selector, latencyTestCode, latencyTestCodes, outbounds } =

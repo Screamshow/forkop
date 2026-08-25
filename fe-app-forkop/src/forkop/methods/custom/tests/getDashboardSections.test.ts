@@ -292,6 +292,11 @@ describe('getDashboardSections', () => {
         return JSON.stringify({
           outbounds: [
             {
+              type: 'vless',
+              tag: 'main-1-out',
+              server: 'edge-7.nl.cdn-store.cloud',
+            },
+            {
               type: 'urltest',
               tag: 'Imported',
               outbounds: ['main-1-out'],
@@ -305,7 +310,6 @@ describe('getDashboardSections', () => {
         });
       }
       return JSON.stringify({
-        servers: { 'main-1-out': 'edge-7.nl.cdn-store.cloud' },
         urltestGroups: { Imported: {} },
       });
     });
