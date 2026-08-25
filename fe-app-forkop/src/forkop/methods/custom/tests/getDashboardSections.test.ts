@@ -246,6 +246,65 @@ describe('getDashboardSections', () => {
     });
   });
 
+  it('hydrates imported URLTest details from the active sing-box config when the cache is incomplete', async () => {
+    mocks.getConfigSections.mockResolvedValue([
+      proxySection({ urltests: [], urltest_settings: undefined }),
+      {
+        '.name': 'config',
+        '.type': 'settings',
+        config_path: '/etc/sing-box/active.json',
+      },
+    ]);
+    mocks.getClashApiProxies.mockResolvedValue({
+      success: true,
+      data: {
+        proxies: {
+          'main-out': proxy('Selector', {
+            name: 'main-out',
+            now: 'Imported',
+            all: ['Imported'],
+          }),
+          Imported: proxy('URLTest', {
+            name: 'Imported',
+            now: 'main-1-out',
+            all: ['main-1-out'],
+          }),
+          'main-1-out': clashProxies['main-1-out'],
+        },
+      },
+    });
+    mocks.fsRead.mockImplementation(async (path: string) => {
+      if (path === '/etc/sing-box/active.json') {
+        return JSON.stringify({
+          outbounds: [
+            {
+              type: 'urltest',
+              tag: 'Imported',
+              outbounds: ['main-1-out'],
+              url: 'https://www.gstatic.com/generate_204',
+              interval: '70s',
+              tolerance: 175,
+              idle_timeout: '30m',
+              interrupt_exist_connections: true,
+            },
+          ],
+        });
+      }
+      return JSON.stringify({ urltestGroups: { Imported: {} } });
+    });
+
+    const result = await getDashboardSections();
+    const details = result.data[0].outbounds[0].urlTestInfo;
+
+    expect(details).toMatchObject({
+      url: 'https://www.gstatic.com/generate_204',
+      interval: '70s',
+      tolerance: 175,
+      idleTimeout: '30m',
+      interruptExistConnections: true,
+    });
+  });
+
   it('keeps an empty configured URLTest visible when sing-box skipped the group', async () => {
     mocks.getConfigSections.mockResolvedValue([
       proxySection({
