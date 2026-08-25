@@ -3557,6 +3557,44 @@ function getUrlTestGroups(dashboardCache) {
   }
   return groups;
 }
+async function readRuntimeUrlTestGroups(configSections) {
+  const configPath = getSettingsSection(configSections)?.config_path || "/etc/sing-box/config.json";
+  try {
+    const parsed = JSON.parse(
+      await fs.read(configPath)
+    );
+    const groups = {};
+    for (const outbound of Array.isArray(parsed?.outbounds) ? parsed.outbounds : []) {
+      const tag = `${outbound?.tag || ""}`;
+      if (outbound?.type !== "urltest" || !tag) {
+        continue;
+      }
+      groups[tag] = {
+        displayName: tag,
+        outbounds: Array.isArray(outbound.outbounds) ? outbound.outbounds : [],
+        url: outbound.url,
+        interval: outbound.interval,
+        tolerance: outbound.tolerance,
+        idle_timeout: outbound.idle_timeout,
+        interrupt_exist_connections: outbound.interrupt_exist_connections
+      };
+    }
+    return groups;
+  } catch (_error) {
+    return {};
+  }
+}
+function mergeUrlTestGroups(cachedGroups, runtimeGroups) {
+  const merged = { ...cachedGroups };
+  for (const [tag, runtimeGroup] of Object.entries(runtimeGroups)) {
+    merged[tag] = {
+      ...cachedGroups[tag],
+      ...runtimeGroup,
+      displayName: cachedGroups[tag]?.displayName || runtimeGroup.displayName
+    };
+  }
+  return merged;
+}
 function getPriorityGroups(dashboardCache) {
   const groups = dashboardCache?.priorityGroups;
   if (!groups || typeof groups !== "object" || Array.isArray(groups)) {
@@ -3910,7 +3948,10 @@ function getCachedProxyLinks(dashboardCache) {
 async function getDashboardSections(options = {}) {
   const includeSubscriptionCopyState = options.includeSubscriptionCopyState ?? true;
   const configSections = hydrateConfigSections(await getConfigSections());
-  const clashProxies = await getClashApiProxies(configSections);
+  const [clashProxies, runtimeUrlTestGroups] = await Promise.all([
+    getClashApiProxies(configSections),
+    readRuntimeUrlTestGroups(configSections)
+  ]);
   if (!clashProxies.success || !clashProxies.data?.proxies) {
     return {
       success: false,
@@ -3942,7 +3983,10 @@ async function getDashboardSections(options = {}) {
           dashboardCache
         ) : void 0;
         const cachedProxyLinks = includeSubscriptionCopyState ? getCachedProxyLinks(dashboardCache) : /* @__PURE__ */ new Map();
-        const urltestGroups = getUrlTestGroups(dashboardCache);
+        const urltestGroups = mergeUrlTestGroups(
+          getUrlTestGroups(dashboardCache),
+          runtimeUrlTestGroups
+        );
         const priorityGroups = getPriorityGroups(dashboardCache);
         const { selector, latencyTestCode, latencyTestCodes, outbounds } = buildProxyGroupOutbounds(
           section,
