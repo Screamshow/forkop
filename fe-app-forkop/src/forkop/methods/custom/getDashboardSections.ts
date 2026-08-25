@@ -834,7 +834,9 @@ async function readRuntimeUrlTestGroups(
     '/etc/sing-box/config.json';
 
   try {
-    const parsed = JSON.parse(await fs.read(configPath)) as SingBoxRuntimeConfig;
+    const parsed = JSON.parse(
+      await fs.read(configPath),
+    ) as SingBoxRuntimeConfig;
     const groups: Record<string, UrlTestCacheGroup> = {};
 
     for (const outbound of Array.isArray(parsed?.outbounds)
