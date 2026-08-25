@@ -291,6 +291,8 @@ function resolve_urltest_profile_aliases(state) {
             members[as_string(member)] = true;
 
         for (let member in keys(members)) {
+            if (match(member, /^proxy(-[0-9]+)*$/) == null)
+                continue;
             let server = as_string(servers[member] || "");
             if (server == "")
                 continue;
@@ -300,9 +302,9 @@ function resolve_urltest_profile_aliases(state) {
                 candidate = as_string(candidate);
                 if (candidate == member || members[candidate] || as_string(candidate_server) != server)
                     continue;
-                let candidate_name = as_string(names[candidate] || candidate);
-                if (candidate_name == candidate && match(candidate, /^proxy(-[0-9]+)*$/i) != null)
+                if (match(candidate, /^proxy(-[0-9]+)*$/) != null)
                     continue;
+                let candidate_name = as_string(names[candidate] || candidate);
                 profile_tag = candidate;
                 break;
             }
