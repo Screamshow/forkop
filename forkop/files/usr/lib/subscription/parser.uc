@@ -1823,6 +1823,11 @@ function metadata_ui_object(raw) {
     let announce_url = metadata_clean_url(raw["announce-url"]);
     let refill_date = metadata_clean_number(raw["subscription-refill-date"]);
     let file_name = metadata_content_disposition_filename(raw["content-disposition"]);
+    let server_description = metadata_clean_text(
+        object_or_empty(raw.meta).serverDescription || raw["server-description"],
+        160,
+        false
+    );
     let userinfo = metadata_parse_userinfo(raw["subscription-userinfo"]);
 
     let upload = userinfo.upload;
@@ -1866,6 +1871,8 @@ function metadata_ui_object(raw) {
         result.announceUrl = announce_url;
     if (file_name != null)
         result.fileName = file_name;
+    if (server_description != null)
+        result.serverDescription = server_description;
 
     return result;
 }
@@ -1882,6 +1889,9 @@ function metadata_extract_ui_json(headers_file, body_file) {
     let headers = metadata_headers_store(headers_file).values;
     for (let key, value in headers)
         raw[key] = value;
+    let body = read_json_file(body_file);
+    if (type(body) == "object" && type(body.meta) == "object")
+        raw.meta = body.meta;
 
     let result = metadata_ui_object(raw);
     if (length(keys(result)) > 1)
@@ -2815,6 +2825,9 @@ function extract_ui_metadata_file(headers_file, body_file, output_file) {
     let headers = metadata_headers_store(headers_file).values;
     for (let key, value in headers)
         raw[key] = value;
+    let body = read_json_file(body_file);
+    if (type(body) == "object" && type(body.meta) == "object")
+        raw.meta = body.meta;
 
     let result = metadata_ui_object(raw);
     if (length(keys(result)) <= 1) {

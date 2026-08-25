@@ -27,6 +27,7 @@ type DashboardSectionCache = {
   version?: number;
   section?: string;
   links?: Record<string, string>;
+  servers?: Record<string, string>;
   outboundMetadata?: Forkop.GetOutboundMetadata;
   urltestGroups?: Record<string, UrlTestCacheGroup>;
   priorityGroups?: Record<string, PriorityCacheGroup>;
@@ -897,10 +898,17 @@ function getOutboundDisplayName(
   preferMetadata = false,
 ) {
   const metadataName = outboundMetadata?.names?.[code];
+  const serverName = outboundMetadata?.servers?.[code];
+  const linkName = getProxyUrlName(link);
+  const descriptiveMetadataName = metadataName === code ? '' : metadataName;
+  const descriptiveLinkName = linkName === code ? '' : linkName;
 
   return (
-    (preferMetadata ? metadataName : getProxyUrlName(link)) ||
-    (preferMetadata ? getProxyUrlName(link) : metadataName) ||
+    (preferMetadata ? descriptiveMetadataName : descriptiveLinkName) ||
+    (preferMetadata ? descriptiveLinkName : descriptiveMetadataName) ||
+    serverName ||
+    metadataName ||
+    linkName ||
     entry?.value?.name ||
     code
   );
@@ -1202,6 +1210,7 @@ function buildProxyGroupOutbounds(
         selected: selector?.value?.now === code,
         link,
         canCopyLink,
+        description: outboundMetadata?.descriptions?.[code],
         country: showDetectedCountries
           ? outboundMetadata?.countries?.[code]
           : undefined,
@@ -1399,14 +1408,20 @@ function getSubscriptionMetadata(
 
 function getOutboundMetadata(dashboardCache?: DashboardSectionCache) {
   const metadata = dashboardCache?.outboundMetadata;
+  const servers = objectMap(dashboardCache?.servers);
 
-  if (!metadata || typeof metadata !== 'object') {
+  if (
+    (!metadata || typeof metadata !== 'object') &&
+    Object.keys(servers).length === 0
+  ) {
     return undefined;
   }
 
   return {
-    names: objectMap(metadata.names),
-    countries: objectMap(metadata.countries),
+    names: objectMap(metadata?.names),
+    countries: objectMap(metadata?.countries),
+    servers,
+    descriptions: objectMap(metadata?.descriptions),
   };
 }
 
