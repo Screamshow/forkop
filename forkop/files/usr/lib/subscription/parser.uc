@@ -2396,7 +2396,14 @@ function xray_config_urltest_options(config) {
     let observatory = object_or_empty(config.observatory);
     let burst_observatory = object_or_empty(config.burstObservatory || config.burst_observatory);
     let ping_config = object_or_empty(burst_observatory.pingConfig || burst_observatory.ping_config);
-    let result = {};
+    // Xray's leastLoad tolerance is a probe failure ratio, while sing-box URLTest
+    // tolerance is a latency delta in milliseconds. Keep the sing-box defaults
+    // explicit instead of copying a value with incompatible semantics.
+    let result = {
+        tolerance: 50,
+        idle_timeout: "30m",
+        interrupt_exist_connections: true
+    };
 
     let url = xray_first_string([
         ping_config.destination,
@@ -2421,11 +2428,16 @@ function xray_config_urltest_options(config) {
 
 function xray_apply_urltest_options(group, options) {
     options = object_or_empty(options);
-    for (let key in [ "url", "interval" ]) {
+    for (let key in [ "url", "interval", "idle_timeout" ]) {
         let value = xray_urltest_option_string(options[key]);
         if (value != "")
             group[key] = value;
     }
+
+    if (type(options.tolerance) == "int" || type(options.tolerance) == "double")
+        group.tolerance = options.tolerance;
+    if (type(options.interrupt_exist_connections) == "boolean")
+        group.interrupt_exist_connections = options.interrupt_exist_connections;
 }
 
 function xray_balancer_plans(config, source_outbounds) {
