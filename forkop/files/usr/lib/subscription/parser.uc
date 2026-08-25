@@ -2400,7 +2400,7 @@ function xray_config_urltest_options(config) {
     // tolerance is a latency delta in milliseconds. Keep the sing-box defaults
     // explicit instead of copying a value with incompatible semantics.
     let result = {
-        tolerance: 50,
+        tolerance: 175,
         idle_timeout: "30m",
         interrupt_exist_connections: true
     };
