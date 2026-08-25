@@ -58,7 +58,7 @@ type SingBoxRuntimeConfig = {
 
 type SingBoxRuntimeMetadata = {
   urltestGroups: Record<string, UrlTestCacheGroup>;
-  servers: Record<string, string>;
+  aliases: Record<string, string>;
 };
 
 type PriorityCacheLevel = {
@@ -845,7 +845,8 @@ async function readRuntimeMetadata(
       await fs.read(configPath),
     ) as SingBoxRuntimeConfig;
     const groups: Record<string, UrlTestCacheGroup> = {};
-    const servers: Record<string, string> = {};
+    const endpoints = new Map<string, string[]>();
+    const urlTestMembers = new Set<string>();
 
     for (const outbound of Array.isArray(parsed?.outbounds)
       ? parsed.outbounds
@@ -857,7 +858,7 @@ async function readRuntimeMetadata(
 
       const server = `${outbound?.server || ''}`;
       if (server) {
-        servers[tag] = server;
+        endpoints.set(server, [...(endpoints.get(server) || []), tag]);
       }
 
       if (outbound?.type !== 'urltest') {
@@ -873,11 +874,33 @@ async function readRuntimeMetadata(
         idle_timeout: outbound.idle_timeout,
         interrupt_exist_connections: outbound.interrupt_exist_connections,
       };
+      for (const member of Array.isArray(outbound.outbounds)
+        ? outbound.outbounds
+        : []) {
+        urlTestMembers.add(`${member}`);
+      }
     }
 
-    return { urltestGroups: groups, servers };
+    const aliases: Record<string, string> = {};
+    for (const tags of endpoints.values()) {
+      const profileTag = tags.find(
+        (tag) =>
+          !urlTestMembers.has(tag) &&
+          !['direct', 'block', 'dns-out'].includes(tag),
+      );
+      if (!profileTag) {
+        continue;
+      }
+      for (const tag of tags) {
+        if (urlTestMembers.has(tag)) {
+          aliases[tag] = profileTag;
+        }
+      }
+    }
+
+    return { urltestGroups: groups, aliases };
   } catch (_error) {
-    return { urltestGroups: {}, servers: {} };
+    return { urltestGroups: {}, aliases: {} };
   }
 }
 
@@ -914,7 +937,6 @@ function getOutboundDisplayName(
   preferMetadata = false,
 ) {
   const metadataName = outboundMetadata?.names?.[code];
-  const serverName = outboundMetadata?.servers?.[code];
   const linkName = getProxyUrlName(link);
   const descriptiveMetadataName = metadataName === code ? '' : metadataName;
   const descriptiveLinkName = linkName === code ? '' : linkName;
@@ -922,7 +944,6 @@ function getOutboundDisplayName(
   return (
     (preferMetadata ? descriptiveMetadataName : descriptiveLinkName) ||
     (preferMetadata ? descriptiveLinkName : descriptiveMetadataName) ||
-    serverName ||
     metadataName ||
     linkName ||
     entry?.value?.name ||
@@ -1424,13 +1445,23 @@ function getSubscriptionMetadata(
 
 function getOutboundMetadata(
   dashboardCache?: DashboardSectionCache,
-  runtimeServers: Record<string, string> = {},
+  runtimeAliases: Record<string, string> = {},
 ) {
   const metadata = dashboardCache?.outboundMetadata;
-  const servers = {
-    ...objectMap(dashboardCache?.servers),
-    ...runtimeServers,
-  };
+  const servers = objectMap(dashboardCache?.servers);
+  const names = objectMap(metadata?.names);
+  const countries = objectMap(metadata?.countries);
+  const descriptions = objectMap(metadata?.descriptions);
+
+  for (const [technicalTag, profileTag] of Object.entries(runtimeAliases)) {
+    names[technicalTag] = names[profileTag] || profileTag;
+    if (countries[profileTag]) {
+      countries[technicalTag] = countries[profileTag];
+    }
+    if (descriptions[profileTag]) {
+      descriptions[technicalTag] = descriptions[profileTag];
+    }
+  }
 
   if (
     (!metadata || typeof metadata !== 'object') &&
@@ -1440,10 +1471,10 @@ function getOutboundMetadata(
   }
 
   return {
-    names: objectMap(metadata?.names),
-    countries: objectMap(metadata?.countries),
+    names,
+    countries,
     servers,
-    descriptions: objectMap(metadata?.descriptions),
+    descriptions,
   };
 }
 
@@ -1497,7 +1528,7 @@ export async function getDashboardSections(
           const dashboardCache = await readDashboardSectionCache(sectionName);
           const outboundMetadata = getOutboundMetadata(
             dashboardCache,
-            runtimeMetadata.servers,
+            runtimeMetadata.aliases,
           );
           const subscriptionMetadata = subscriptionEnabled
             ? getSubscriptionMetadata(

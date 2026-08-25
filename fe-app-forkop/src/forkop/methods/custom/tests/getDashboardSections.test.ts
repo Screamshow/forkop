@@ -276,7 +276,7 @@ describe('getDashboardSections', () => {
           'main-out': proxy('Selector', {
             name: 'main-out',
             now: 'Imported',
-            all: ['Imported'],
+            all: ['Imported', '🇳🇱 Amsterdam (До 05.09 ❗)'],
           }),
           Imported: proxy('URLTest', {
             name: 'Imported',
@@ -284,6 +284,9 @@ describe('getDashboardSections', () => {
             all: ['main-1-out'],
           }),
           'main-1-out': clashProxies['main-1-out'],
+          '🇳🇱 Amsterdam (До 05.09 ❗)': proxy('VLESS', {
+            name: '🇳🇱 Amsterdam (До 05.09 ❗)',
+          }),
         },
       },
     });
@@ -294,6 +297,11 @@ describe('getDashboardSections', () => {
             {
               type: 'vless',
               tag: 'main-1-out',
+              server: 'edge-7.nl.cdn-store.cloud',
+            },
+            {
+              type: 'vless',
+              tag: '🇳🇱 Amsterdam (До 05.09 ❗)',
               server: 'edge-7.nl.cdn-store.cloud',
             },
             {
@@ -310,6 +318,17 @@ describe('getDashboardSections', () => {
         });
       }
       return JSON.stringify({
+        outboundMetadata: {
+          names: {
+            '🇳🇱 Amsterdam (До 05.09 ❗)': '🇳🇱 Amsterdam (До 05.09 ❗)',
+          },
+          countries: {
+            '🇳🇱 Amsterdam (До 05.09 ❗)': 'NL',
+          },
+          descriptions: {
+            '🇳🇱 Amsterdam (До 05.09 ❗)': 'Upstream Tube',
+          },
+        },
         urltestGroups: { Imported: {} },
       });
     });
@@ -323,7 +342,18 @@ describe('getDashboardSections', () => {
       tolerance: 175,
       idleTimeout: '30m',
       interruptExistConnections: true,
-      selectedName: 'edge-7.nl.cdn-store.cloud',
+      selectedName: '🇳🇱 Amsterdam (До 05.09 ❗)',
+    });
+    expect(details?.outbounds[0]).toMatchObject({
+      displayName: '🇳🇱 Amsterdam (До 05.09 ❗)',
+    });
+    expect(
+      result.data[0].outbounds.find(
+        (outbound) => outbound.code === '🇳🇱 Amsterdam (До 05.09 ❗)',
+      ),
+    ).toMatchObject({
+      displayName: '🇳🇱 Amsterdam (До 05.09 ❗)',
+      description: 'Upstream Tube',
     });
   });
 
