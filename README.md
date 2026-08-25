@@ -17,7 +17,7 @@ sh <(wget -O - https://raw.githubusercontent.com/Screamshow/forkop/main/install.
 <summary><sub>Альтернативный способ установки</sub></summary>
 
 ```sh
-sh <(wget -O - https://forkop.sourceforge.io/install.sh)
+sh <(wget -O - https://cdn.jsdelivr.net/gh/Screamshow/forkop@main/install.sh)
 ```
 
 </details>
