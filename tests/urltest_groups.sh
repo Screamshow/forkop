@@ -42,12 +42,16 @@ generate_config() {
   local output="$2"
   mkdir -p "${output}.section-cache"
   TMP_SUBSCRIPTION_FOLDER="$WORK_DIR/subscriptions" \
+    FORKOP_SUBSCRIPTION_METADATA_DIR="$WORK_DIR/metadata" \
     ucode -L "$FORKOP_LIB" "$GENERATOR_UC" generate-config-fixture \
       "$fixture" "$output" "127.0.0.1"
 }
 
 cat >"$WORK_DIR/xray.json" <<'JSON'
 {
+  "meta": {
+    "serverDescription": "Upstream Tube"
+  },
   "remarks": "Latvia group",
   "burstObservatory": {
     "pingConfig": {
@@ -124,6 +128,18 @@ cat >"$WORK_DIR/xray.json" <<'JSON'
   ]
 }
 JSON
+
+mkdir -p "$WORK_DIR/metadata"
+: >"$WORK_DIR/xray.headers"
+ucode -L "$FORKOP_LIB" "$PARSER_UC" metadata-extract-ui-file \
+  "$WORK_DIR/xray.headers" "$WORK_DIR/xray.json" "$WORK_DIR/metadata/proxy.json"
+ucode -e '
+let fs = require("fs");
+let metadata = json(fs.readfile(ARGV[0]));
+if (metadata.serverDescription != "Upstream Tube")
+    die("missing Xray server description\n");
+' "$WORK_DIR/metadata/proxy.json" ||
+  fail "Xray meta.serverDescription must be extracted into subscription metadata"
 
 xray_normalized="$WORK_DIR/xray-normalized.json"
 normalize_subscription "$WORK_DIR/xray.json" "$xray_normalized"
@@ -283,6 +299,8 @@ for (let child in builtin.outbounds || [])
     if (substr(child, 0, 5) == "xray-")
         die("built-in URLTest must not use artificial xray child tag prefixes\n");
 let imported_cache = object_or_empty(cache.urltestGroups)["Latvia group"] || {};
+if (object_or_empty(cache.outboundMetadata).descriptions["lv-🇱🇻 Riga A"] != "Upstream Tube")
+    die("section cache is missing the Xray server description\n");
 if (imported_cache.url != "https://www.gstatic.com/generate_204" || imported_cache.interval != "120s")
     die("section cache is missing imported xray URLTest params\n");
 if (imported_cache.tolerance != 175 || imported_cache.idle_timeout != "30m" || imported_cache.interrupt_exist_connections !== true)

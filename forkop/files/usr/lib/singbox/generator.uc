@@ -750,8 +750,15 @@ function add_subscription_source_with_state(config, section, source_index, sourc
     }
     let outbounds = compatible_subscription_outbounds(source_outbounds, section_name);
 
+    let source_metadata = [];
     if (show_metadata !== false)
-        runtime_subscription.merge_source_metadata(state, section_name, source_section, source_index, source_entry);
+        source_metadata = runtime_subscription.merge_source_metadata(state, section_name, source_section, source_index, source_entry);
+    let server_description = "";
+    for (let item in source_metadata) {
+        server_description = as_string(object_or_empty(item).serverDescription || "");
+        if (server_description != "")
+            break;
+    }
     let visibility_refs = subscription_visibility_refs(outbounds);
     if (include_urltest_groups === false)
         hide_urltest_group_outbounds = false;
@@ -811,7 +818,8 @@ function add_subscription_source_with_state(config, section, source_index, sourc
             outbound.tag,
             display_names[i],
             outbound,
-            source_links[i]
+            source_links[i],
+            server_description
         );
         if (hidden_flags[i] !== true) {
             push(selector_tags, outbound.tag);

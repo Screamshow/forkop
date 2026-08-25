@@ -107,6 +107,7 @@ export namespace Forkop {
     displayName: string;
     latency: number;
     type: string;
+    description?: string;
     selected: boolean;
     link?: string;
     canCopyLink?: boolean;
@@ -203,6 +204,7 @@ export namespace Forkop {
     announce?: string;
     announceUrl?: string;
     fileName?: string;
+    serverDescription?: string;
     sourceIndex?: number;
     sourceSection?: string;
   }
@@ -456,6 +458,8 @@ export namespace Forkop {
   export interface GetOutboundMetadata {
     names?: Record<string, string>;
     countries?: Record<string, string>;
+    servers?: Record<string, string>;
+    descriptions?: Record<string, string>;
   }
 
   export interface GetSingBoxStatus {
