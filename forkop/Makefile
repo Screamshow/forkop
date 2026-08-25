@@ -73,6 +73,9 @@ define Package/forkop/install
 	$(INSTALL_DIR) $(1)/usr/lib/forkop
 	$(CP) ./files/usr/lib/. $(1)/usr/lib/forkop/
 
+	$(INSTALL_DIR) $(1)/usr/share/forkop/defaults
+	$(INSTALL_CONF) ./files/etc/config/forkop $(1)/usr/share/forkop/defaults/forkop
+
 	sed -i -e 's/__COMPILED_VERSION_VARIABLE__/$(FORKOP_COMPILED_VERSION)/g' $(1)/usr/lib/forkop/core/constants.uc
 endef
 

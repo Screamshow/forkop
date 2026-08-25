@@ -1008,6 +1008,15 @@ function renderUrlTestInfoModal(outbound: Forkop.Outbound) {
         'button',
         {
           type: 'button',
+          class: 'btn cbi-button cbi-button-action',
+          click: () => renderUrlTestEditorModal(outbound),
+        },
+        _('Edit'),
+      ),
+      E(
+        'button',
+        {
+          type: 'button',
           class: 'btn cbi-button cbi-button-neutral',
           click: () => {
             ui.hideModal();
@@ -1017,6 +1026,143 @@ function renderUrlTestInfoModal(outbound: Forkop.Outbound) {
       ),
     ]),
   ]);
+}
+
+function renderUrlTestEditorModal(outbound: Forkop.Outbound) {
+  const info = outbound.urlTestInfo;
+  if (!info) return;
+
+  const input = (value: unknown, type = 'text') =>
+    E('input', { type, value: `${value ?? ''}`, class: 'cbi-input-text' });
+  const url = input(info.url);
+  const interval = input(info.interval);
+  const tolerance = input(info.tolerance, 'number');
+  const idleTimeout = input(info.idleTimeout);
+  const interrupt = E('input', { type: 'checkbox' });
+  interrupt.checked = Boolean(info.interruptExistConnections);
+  const controls = [url, interval, tolerance, idleTimeout, interrupt];
+  const progress = E('div', {
+    class: 'alert-message notice',
+    style: 'display:none; margin-top:1em',
+  });
+  const actionButtons: HTMLButtonElement[] = [];
+  let activeButton: HTMLButtonElement | null = null;
+  let activeButtonLabel = '';
+  const setBusy = (busy: boolean, message = '') => {
+    controls.forEach((control) => {
+      control.disabled = busy;
+    });
+    actionButtons.forEach((button) => {
+      button.disabled = busy;
+    });
+    progress.style.display = message ? '' : 'none';
+    progress.textContent = message;
+    if (activeButton) {
+      activeButton.textContent = busy ? _('Applying…') : activeButtonLabel;
+    }
+  };
+  const row = (label: string, control: HTMLElement) =>
+    E('div', { class: 'fkp_dashboard-page__urltest-details__param' }, [
+      E('label', {}, label),
+      control,
+    ]);
+
+  const reload = async () => {
+    setBusy(true, _('Applying Forkop configuration…'));
+    const response = await ForkopShellMethods.serviceActionStart('reload');
+    if (!response.success) throw new Error('reload failed');
+    const jobId = response.data.job_id;
+    if (!jobId) throw new Error('reload failed');
+    const result = await ForkopShellMethods.waitServiceActionJob(jobId);
+    void ForkopShellMethods.uiActionAck('service', jobId);
+    if (!result.success) throw new Error('reload failed');
+    setBusy(true, _('Refreshing Dashboard…'));
+    await fetchDashboardSections({ force: true });
+  };
+  const save = async () => {
+    setBusy(true, _('Saving URLTest settings…'));
+    const response = await ForkopShellMethods.saveUrlTestOverride(
+      info.sectionName || '',
+      info.code,
+      url.value.trim(),
+      interval.value.trim(),
+      tolerance.value.trim(),
+      idleTimeout.value.trim(),
+      interrupt.checked,
+    );
+    if ((response.code ?? 0) !== 0)
+      throw new Error(response.stderr || 'save failed');
+    await reload();
+    ui.hideModal();
+    showToast(_('URLTest settings saved'), 'success');
+  };
+  const reset = async () => {
+    setBusy(true, _('Removing user settings…'));
+    const response = await ForkopShellMethods.resetUrlTestOverride(
+      info.sectionName || '',
+      info.code,
+    );
+    if ((response.code ?? 0) !== 0)
+      throw new Error(response.stderr || 'reset failed');
+    await reload();
+    ui.hideModal();
+    showToast(_('URLTest settings reset'), 'success');
+  };
+  const action = (fn: () => Promise<void>) => async (event: MouseEvent) => {
+    activeButton = event.currentTarget as HTMLButtonElement;
+    activeButtonLabel = activeButton.textContent || '';
+    try {
+      await fn();
+    } catch (error) {
+      logger.error('[DASHBOARD]', 'URLTest override failed', error);
+      setBusy(false);
+      showToast(_('Failed to save URLTest settings'), 'error');
+    }
+  };
+
+  const resetButton = E(
+    'button',
+    {
+      type: 'button',
+      class: 'btn cbi-button cbi-button-negative',
+      click: action(reset),
+    },
+    _('Use source values'),
+  );
+  const saveButton = E(
+    'button',
+    {
+      type: 'button',
+      class: 'btn cbi-button cbi-button-positive',
+      click: action(save),
+    },
+    _('Save'),
+  );
+  const cancelButton = E(
+    'button',
+    { type: 'button', class: 'btn', click: () => ui.hideModal() },
+    _('Cancel'),
+  );
+  actionButtons.push(resetButton, saveButton, cancelButton);
+
+  ui.showModal(
+    `${_('Edit URLTest')}: ${info.displayName}`,
+    E('div', {}, [
+      E('div', { class: 'fkp_dashboard-page__urltest-details__params' }, [
+        row(_('Testing URL'), url),
+        row(_('Interval'), interval),
+        row(_('Tolerance'), tolerance),
+        row(_('Idle timeout'), idleTimeout),
+        row(_('Interrupt connections'), interrupt),
+      ]),
+      progress,
+      E('div', { class: 'fkp_dashboard-page__urltest-details__footer' }, [
+        resetButton,
+        saveButton,
+        cancelButton,
+      ]),
+    ]),
+  );
 }
 
 function handleShowUrlTestInfo(outbound: Forkop.Outbound) {

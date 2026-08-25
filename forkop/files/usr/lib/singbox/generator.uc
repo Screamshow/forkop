@@ -14,6 +14,7 @@ let runtime_urltest = require("singbox.urltest");
 let source_rulesets = require("routing.rulesets");
 let rule_config = require("config.rule");
 let connections = require("config.connections");
+let urltest_override = require("config.urltest_override");
 let subscription_share_link = require("subscription.share_link");
 let uci = null;
 let fixture_uci_data = null;
@@ -796,6 +797,9 @@ function add_subscription_source_with_state(config, section, source_index, sourc
         warn("skipped unsupported subscription outbounds for rule '", section_name, "': ", subscription_skip_summary(skipped), "\n");
 
     rewrite_subscription_outbound_references(prepared, tag_map, subscription_reference_set(source_outbounds));
+    for (let outbound in prepared)
+        if (as_string(outbound.type || "") == "urltest")
+            urltest_override.apply(outbound, section_name, as_string(outbound.tag || ""));
     let added = 0;
     for (let i = 0; i < length(prepared); i++) {
         let outbound = prepared[i];
@@ -1313,6 +1317,7 @@ function add_urltest_outbound(config, section, urltest_id, urltest_candidate_tag
     let idle_timeout = urltest_idle_timeout(section, urltest_id);
     if (idle_timeout != "")
         urltest_outbound.idle_timeout = idle_timeout;
+    urltest_override.apply(urltest_outbound, section_name, urltest_tag);
 
     runtime_subscription.remember_outbound_metadata(state, urltest_tag, display_name, urltest_outbound);
     runtime_subscription.remember_urltest_group_config(state, urltest_tag, {

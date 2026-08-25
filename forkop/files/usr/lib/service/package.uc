@@ -13,6 +13,8 @@ function env(name, fallback) {
 }
 
 const CONFIG_NAME = env("FORKOP_CONFIG_NAME", "forkop");
+const CONFIG_PATH = env("FORKOP_CONFIG_PATH", "/etc/config/forkop");
+const DEFAULT_CONFIG_PATH = env("FORKOP_DEFAULT_CONFIG_PATH", "/usr/share/forkop/defaults/forkop");
 const RT_TABLES_PATH = env("FORKOP_RT_TABLES", "/etc/iproute2/rt_tables");
 const BIN_PATH = env("FORKOP_BIN", "/usr/bin/forkop");
 const INIT_PATH = env("FORKOP_INIT", "/etc/init.d/forkop");
@@ -133,7 +135,29 @@ function prerm_cleanup(action) {
 }
 
 function postinst_restore() {
-    if (env("IPKG_INSTROOT", "") != "" || !path_exists(PACKAGE_UPGRADE_STATE))
+    if (env("IPKG_INSTROOT", "") != "")
+        return true;
+
+    let config = fs.readfile(CONFIG_PATH);
+    if (config == null || trim(as_string(config)) == "") {
+        let defaults = fs.readfile(DEFAULT_CONFIG_PATH);
+        if (defaults == null || trim(as_string(defaults)) == "") {
+            warn("Unable to restore missing Forkop configuration: packaged defaults are unavailable.\n");
+            return false;
+        }
+        if (fs.writefile(CONFIG_PATH, defaults) == null ||
+            !command_success_from_args([ "chmod", "0644", CONFIG_PATH ])) {
+            warn("Unable to restore missing Forkop configuration.\n");
+            return false;
+        }
+    }
+
+    if (!uci_core.load(CONFIG_NAME) || !uci_core.exists(CONFIG_NAME + ".settings")) {
+        warn("Forkop configuration is invalid or unavailable to UCI.\n");
+        return false;
+    }
+
+    if (!path_exists(PACKAGE_UPGRADE_STATE))
         return true;
 
     if (!command_success_from_args([ INIT_PATH, "start" ]))

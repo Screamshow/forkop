@@ -379,6 +379,35 @@ export const ForkopShellMethods = {
       data: parsedResponse,
     } as Forkop.MethodSuccessResponse<Forkop.UiActionStartResult>;
   },
+  saveUrlTestOverride: async (
+    section: string,
+    tag: string,
+    url: string,
+    interval: string,
+    tolerance: string,
+    idleTimeout: string,
+    interrupt: boolean,
+  ) =>
+    executeShellCommand({
+      command: '/usr/bin/forkop',
+      args: [
+        'urltest_override_save',
+        section,
+        tag,
+        url,
+        interval,
+        tolerance,
+        idleTimeout,
+        interrupt ? '1' : '0',
+      ],
+      timeout: UI_ACTION_RPC_TIMEOUT_MS,
+    }),
+  resetUrlTestOverride: async (section: string, tag: string) =>
+    executeShellCommand({
+      command: '/usr/bin/forkop',
+      args: ['urltest_override_reset', section, tag],
+      timeout: UI_ACTION_RPC_TIMEOUT_MS,
+    }),
   serviceActionStatus: async (jobId: string) => {
     const response = await executeShellCommand({
       command: '/usr/bin/forkop',

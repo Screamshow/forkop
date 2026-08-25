@@ -921,6 +921,7 @@ function getOutboundDisplayName(
 
 function buildUrlTestInfo({
   code,
+  sectionName,
   displayName,
   entry,
   groupCache,
@@ -931,6 +932,7 @@ function buildUrlTestInfo({
   showDetectedCountries,
 }: {
   code: string;
+  sectionName: string;
   displayName: string;
   entry?: ClashProxyEntry;
   groupCache?: UrlTestCacheGroup;
@@ -983,6 +985,7 @@ function buildUrlTestInfo({
 
   return {
     code,
+    sectionName,
     displayName: groupCache?.displayName || displayName,
     selectedCode: selectedCode || undefined,
     selectedName: selectedName || undefined,
@@ -1224,6 +1227,7 @@ function buildProxyGroupOutbounds(
           urlTestConfig || isRuntimeUrlTest
             ? buildUrlTestInfo({
                 code,
+                sectionName,
                 displayName,
                 entry: item,
                 groupCache: urltestGroups[code],

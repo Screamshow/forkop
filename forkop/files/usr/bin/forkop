@@ -181,7 +181,9 @@ function command_spec(command) {
         validate_byedpi_strategy_json: [ "providers/byedpi/validator.uc", "validate-json", 1 ],
         package_prerm: [ "service/package.uc", "prerm", 1 ],
         package_postinst: [ "service/package.uc", "postinst", 0 ],
-        luci_postinst: [ "service/package.uc", "luci-postinst", 0 ]
+        luci_postinst: [ "service/package.uc", "luci-postinst", 0 ],
+        urltest_override_save: [ "config/urltest_override.uc", "save", 7 ],
+        urltest_override_reset: [ "config/urltest_override.uc", "reset", 2 ]
     };
 
     return commands[as_string(command)];

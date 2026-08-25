@@ -1913,6 +1913,10 @@ download_forkop_packages() {
 
 install_backend_package() {
     pkg_install_files "$FORKOP_BACKEND_FILE" || fail "forkop installation failed"
+
+    [ -x /usr/bin/forkop ] || fail "forkop executable is missing after package installation"
+    /usr/bin/forkop package_postinst ||
+        fail "Forkop configuration recovery or validation failed"
 }
 
 migrate_legacy_configuration() {

@@ -130,6 +130,7 @@ export namespace Forkop {
 
   export interface UrlTestInfo {
     code: string;
+    sectionName?: string;
     displayName: string;
     selectedCode?: string;
     selectedName?: string;
