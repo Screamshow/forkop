@@ -26,16 +26,18 @@ assert_file() {
 }
 
 default_ua="sing-box/1.12.0"
-default_candidates="$(printf '%s\n%s\n%s\n%s\n%s\n%s' \
+default_candidates="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+  Happ/2.8.0 \
   "$default_ua" \
   Happ \
   v2rayN \
   v2rayNG \
   Mihomo \
   Clash.Meta)"
-preferred_candidates="$(printf '%s\n%s\n%s\n%s\n%s\n%s' \
-  "$default_ua" \
+preferred_candidates="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+  Happ/2.8.0 \
   Mihomo \
+  "$default_ua" \
   Happ \
   v2rayN \
   v2rayNG \

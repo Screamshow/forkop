@@ -1,7 +1,7 @@
 #!/usr/bin/env ucode
 
 let fs = require("fs");
-let uci_core_module = null;
+let uci_core = require("core.uci");
 let fixture_uci_data = null;
 let subscription_parser_module = null;
 let zapret_validator_module = null;
@@ -662,8 +662,7 @@ function mwan3_has_enabled_interface() {
 }
 
 function mwan3_has_enabled_interface_from_sections() {
-    let core = get_uci_core();
-    for (let section in core.section_objects("mwan3", "interface"))
+    for (let section in uci_core.section_objects("mwan3", "interface"))
         if (option(section, "enabled", "0") == "1")
             return true;
     return false;
@@ -738,12 +737,6 @@ function runtime_constants() {
     return constants_module;
 }
 
-function get_uci_core() {
-    if (uci_core_module == null)
-        uci_core_module = require("core.uci");
-    return uci_core_module;
-}
-
 function fixture_section_list(type_name) {
     let value = object_or_empty(fixture_uci_data)[type_name];
     if (type(value) == "array")
@@ -778,7 +771,7 @@ function use_fixture_cursor(path) {
 function settings_section() {
     if (fixture_uci_data != null)
         return object_or_empty(fixture_get_section("settings"));
-    return object_or_empty(get_uci_core().get_all(CONFIG_NAME, "settings"));
+    return object_or_empty(uci_core.get_all(CONFIG_NAME, "settings"));
 }
 
 function sections_by_type(type_name) {
@@ -786,8 +779,7 @@ function sections_by_type(type_name) {
         return fixture_section_list(type_name);
 
     let result = [];
-    let core = get_uci_core();
-    for (let section in core.section_objects(CONFIG_NAME, type_name))
+    for (let section in uci_core.section_objects(CONFIG_NAME, type_name))
         push(result, object_or_empty(section));
     return result;
 }

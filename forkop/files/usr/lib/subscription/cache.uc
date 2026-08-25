@@ -17,10 +17,10 @@ const FORKOP_SUBSCRIPTION_METADATA_DIR = getenv("FORKOP_SUBSCRIPTION_METADATA_DI
 const FORKOP_OUTBOUND_METADATA_DIR = getenv("FORKOP_OUTBOUND_METADATA_DIR") || FORKOP_RUNTIME_STATE_DIR + "/outbound-metadata";
 const FORKOP_SECTION_CACHE_DIR = getenv("FORKOP_SECTION_CACHE_DIR") || FORKOP_RUNTIME_STATE_DIR + "/section-cache";
 const FORKOP_RUNTIME_CACHE_FORMAT_FILE = getenv("FORKOP_RUNTIME_CACHE_FORMAT_FILE") || FORKOP_RUNTIME_STATE_DIR + "/cache-format";
-const FORKOP_RUNTIME_CACHE_FORMAT = getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "9";
+const FORKOP_RUNTIME_CACHE_FORMAT = getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "10";
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR") || "/etc/forkop/subscription-cache";
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE") || FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR + "/cache-format";
-const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT") || "8";
+const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT") || "9";
 const FORKOP_SUBSCRIPTION_BOOTSTRAP_RETRY_PID_FILE = getenv("FORKOP_SUBSCRIPTION_BOOTSTRAP_RETRY_PID_FILE") || FORKOP_RUNTIME_STATE_DIR + "/subscription-bootstrap-retry.pid";
 const FORKOP_SUBSCRIPTION_UPDATE_LOCK_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_LOCK_DIR") || FORKOP_RUNTIME_STATE_DIR + "/subscription-update.lock";
 const FORKOP_PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || FORKOP_RUNTIME_STATE_DIR + "/reload.pending";
@@ -426,6 +426,7 @@ function maintenance_plan(sections, section_cache_dir) {
 }
 
 let auto_user_agent_profiles = [
+    "Happ/2.8.0",
     "Happ",
     "v2rayN",
     "v2rayNG",
@@ -985,7 +986,7 @@ function write_user_agent_candidates(path, configured_user_agent, preferred_user
 
     let result = [];
     let seen = {};
-    let candidates = [ default_user_agent, preferred_user_agent ];
+    let candidates = [ auto_user_agent_profiles[0], preferred_user_agent, default_user_agent ];
     for (let profile in auto_user_agent_profiles)
         push(candidates, profile);
 
@@ -1443,7 +1444,7 @@ function user_agent_candidates(configured_user_agent, preferred_user_agent, defa
 
     let result = [];
     let seen = {};
-    let candidates = [ default_user_agent, preferred_user_agent ];
+    let candidates = [ auto_user_agent_profiles[0], preferred_user_agent, default_user_agent ];
     for (let profile in auto_user_agent_profiles)
         push(candidates, profile);
 
