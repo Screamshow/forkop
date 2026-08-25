@@ -7323,7 +7323,7 @@ function createSectionContent(section) {
     _("JSON outbound"),
     _("Custom outbound configurations in JSON format"),
   );
-  o.depends("action", "connection");
+  o.depends("action", "__internal_hidden__");
   o.rmempty = true;
   o.modalonly = true;
   o.addButtonLabel = _("+ Add JSON outbound");
@@ -7452,7 +7452,7 @@ function createSectionContent(section) {
   );
   o.default = "0";
   o.rmempty = false;
-  o.depends("action", "connection");
+  o.depends("action", "__internal_hidden__");
   o.modalonly = true;
   o.write = function (section_id, value) {
     if (value === "1") {
@@ -7487,7 +7487,7 @@ function createSectionContent(section) {
     _("Select a transit section"),
   );
   o.rmempty = false;
-  o.depends({ action: "connection", outbound_detour_enabled: "1" });
+  o.depends({ action: "__internal_hidden__", outbound_detour_enabled: "1" });
   o.modalonly = true;
   o.load = function (section_id) {
     refreshOutboundDetourSectionOptionValues(this, section_id);
@@ -7514,7 +7514,7 @@ function createSectionContent(section) {
   );
   o.default = "0";
   o.rmempty = false;
-  o.depends("action", "connection");
+  o.depends("action", "__internal_hidden__");
   o.modalonly = true;
 
   o = section.taboption(
@@ -7526,7 +7526,6 @@ function createSectionContent(section) {
   );
   o.default = "0";
   o.rmempty = false;
-  o.depends("action", "connection");
   o.depends("action", "byedpi");
   o.depends("action", "zapret");
   o.depends("action", "zapret2");
@@ -7540,7 +7539,6 @@ function createSectionContent(section) {
     _("Port for the local mixed proxy of this section"),
   );
   o.rmempty = false;
-  o.depends({ action: "connection", mixed_proxy_enabled: "1" });
   o.depends({ action: "byedpi", mixed_proxy_enabled: "1" });
   o.depends({ action: "zapret", mixed_proxy_enabled: "1" });
   o.depends({ action: "zapret2", mixed_proxy_enabled: "1" });
@@ -7567,7 +7565,6 @@ function createSectionContent(section) {
   );
   o.default = "0";
   o.rmempty = false;
-  o.depends({ action: "connection", mixed_proxy_enabled: "1" });
   o.depends({ action: "byedpi", mixed_proxy_enabled: "1" });
   o.depends({ action: "zapret", mixed_proxy_enabled: "1" });
   o.depends({ action: "zapret2", mixed_proxy_enabled: "1" });
@@ -7580,11 +7577,6 @@ function createSectionContent(section) {
     _("Mixed Proxy Username"),
   );
   o.rmempty = false;
-  o.depends({
-    action: "connection",
-    mixed_proxy_enabled: "1",
-    mixed_proxy_auth_enabled: "1",
-  });
   o.depends({
     action: "byedpi",
     mixed_proxy_enabled: "1",
@@ -7616,11 +7608,6 @@ function createSectionContent(section) {
     _("Mixed Proxy Password"),
   );
   o.rmempty = false;
-  o.depends({
-    action: "connection",
-    mixed_proxy_enabled: "1",
-    mixed_proxy_auth_enabled: "1",
-  });
   o.depends({
     action: "byedpi",
     mixed_proxy_enabled: "1",
@@ -7656,7 +7643,7 @@ function createSectionContent(section) {
   );
   o.default = "0";
   o.rmempty = false;
-  o.depends("action", "connection");
+  o.depends("action", "__internal_hidden__");
   o.modalonly = true;
   o.cfgvalue = function (section_id) {
     const value = uci.get(
