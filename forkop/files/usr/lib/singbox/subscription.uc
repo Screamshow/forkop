@@ -14,7 +14,7 @@ const TMP_SUBSCRIPTION_FOLDER = getenv("TMP_SUBSCRIPTION_FOLDER") || "/tmp/sing-
 const FORKOP_RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const FORKOP_SECTION_CACHE_DIR = getenv("FORKOP_SECTION_CACHE_DIR") || FORKOP_RUNTIME_STATE_DIR + "/section-cache";
 const FORKOP_SUBSCRIPTION_METADATA_DIR = getenv("FORKOP_SUBSCRIPTION_METADATA_DIR") || FORKOP_RUNTIME_STATE_DIR + "/subscription-metadata";
-const FORKOP_RUNTIME_CACHE_FORMAT = int(getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "8");
+const FORKOP_RUNTIME_CACHE_FORMAT = int(getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "9");
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR") || "/etc/forkop/subscription-cache";
 
 let section_cache_dir = FORKOP_SECTION_CACHE_DIR;
@@ -275,6 +275,56 @@ function remember_urltest_group_config(state, tag_name, input_group) {
     state.urltestGroups[tag_name] = output_group;
 }
 
+function resolve_urltest_profile_aliases(state) {
+    if (type(state) != "object")
+        return;
+
+    let servers = object_or_empty(state.servers);
+    let metadata = object_or_empty(state.outboundMetadata);
+    let names = object_or_empty(metadata.names);
+    let countries = object_or_empty(metadata.countries);
+    let descriptions = object_or_empty(metadata.descriptions);
+
+    for (let _, group in object_or_empty(state.urltestGroups)) {
+        let members = {};
+        for (let member in array_or_empty(object_or_empty(group).outbounds))
+            members[as_string(member)] = true;
+
+        for (let member in keys(members)) {
+            if (match(member, /^proxy(-[0-9]+)*$/) == null)
+                continue;
+            let server = as_string(servers[member] || "");
+            if (server == "")
+                continue;
+
+            let profile_tag = "";
+            for (let candidate, candidate_server in servers) {
+                candidate = as_string(candidate);
+                if (candidate == member || members[candidate] || as_string(candidate_server) != server)
+                    continue;
+                if (match(candidate, /^proxy(-[0-9]+)*$/) != null)
+                    continue;
+                let candidate_name = as_string(names[candidate] || candidate);
+                profile_tag = candidate;
+                break;
+            }
+            if (profile_tag == "")
+                continue;
+
+            names[member] = as_string(names[profile_tag] || profile_tag);
+            if (countries[profile_tag] != null)
+                countries[member] = countries[profile_tag];
+            if (descriptions[profile_tag] != null)
+                descriptions[member] = descriptions[profile_tag];
+        }
+    }
+
+    metadata.names = names;
+    metadata.countries = countries;
+    metadata.descriptions = descriptions;
+    state.outboundMetadata = metadata;
+}
+
 function remember_priority_group(state, tag_name, group) {
     if (type(state) != "object")
         return;
@@ -355,6 +405,7 @@ return {
     remember_source_outbound,
     remember_urltest_group,
     remember_urltest_group_config,
+    resolve_urltest_profile_aliases,
     remember_priority_group,
     source_cache_is_current,
     read_source_outbounds,

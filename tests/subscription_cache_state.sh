@@ -188,7 +188,7 @@ cat >"$WORK_DIR/runtime/persistent/proxy-subscription-1.json" <<'JSON'
 }
 JSON
 runtime_env cache_ucode ensure-runtime-cache-format
-assert_eq "8" \
+assert_eq "9" \
   "$(sed -n '1p' "$WORK_DIR/runtime/run/cache-format")" \
   "runtime cache format"
 [ ! -e "$WORK_DIR/runtime/run/section-cache/stale.json" ] ||
