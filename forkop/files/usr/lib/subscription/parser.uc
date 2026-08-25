@@ -2536,13 +2536,20 @@ function xray_retag_planned_outbound(planned, tag_map, source_tag, new_base, con
     }
 }
 
-function xray_add_converted_outbound(result, item, tag_map, visible, display_name) {
+function xray_server_description(config) {
+    let meta = object_or_empty(object_or_empty(config).meta);
+    return as_string(meta.serverDescription || meta.server_description || object_or_empty(config)["server-description"] || "");
+}
+
+function xray_add_converted_outbound(result, item, tag_map, visible, display_name, server_description) {
     let converted = convert_xray_outbound(item.outbound, item.tag);
     if (!converted)
         return;
 
     if (visible && display_name != "")
         converted.remark = display_name;
+    if (visible && as_string(server_description) != "")
+        converted.__forkop_description = as_string(server_description);
     if (!visible)
         converted.__forkop_hidden = true;
 
@@ -2559,6 +2566,7 @@ function xray_config_outbounds(config, config_index, config_count, taken) {
     let planned = array_or_empty(plan.planned);
     let tag_map = object_or_empty(plan.tag_map);
     let display_name = xray_config_display_name(config, "");
+    let server_description = xray_server_description(config);
     let balancer_plans = xray_balancer_plans(config, source_outbounds);
     let visible_source_tags = {};
     let dependency_tags = {};
@@ -2586,6 +2594,8 @@ function xray_config_outbounds(config, config_index, config_count, taken) {
                     remark: group_base != "" ? group_base : group_tag,
                     __forkop_allow_group: true
                 };
+                if (server_description != "")
+                    group.__forkop_description = server_description;
                 xray_apply_urltest_options(group, plan.urltest_options);
                 push(result, group);
             }
@@ -2611,7 +2621,7 @@ function xray_config_outbounds(config, config_index, config_count, taken) {
             let item_display_name = visible && display_name != ""
                 ? display_name
                 : xray_display_name(item.original_tag);
-            xray_add_converted_outbound(result, item, tag_map, !hidden, item_display_name);
+            xray_add_converted_outbound(result, item, tag_map, !hidden, item_display_name, server_description);
         }
     }
 

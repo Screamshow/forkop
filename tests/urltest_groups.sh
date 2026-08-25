@@ -168,6 +168,63 @@ for (let child in group.outbounds || [])
         die("xray urltest child tags should preserve source names when unique\n");
 ' "$xray_normalized" || fail "xray normalized URLTest fields"
 
+cat >"$WORK_DIR/xray-nodes.json" <<'JSON'
+[
+  {
+    "remarks": "Amsterdam #1",
+    "meta": { "serverDescription": "Upstream Tube" },
+    "outbounds": [
+      {
+        "protocol": "vless",
+        "tag": "proxy",
+        "settings": {
+          "vnext": [
+            {
+              "address": "ams-1.example",
+              "port": 443,
+              "users": [ { "id": "00000000-0000-4000-8000-000000000011", "encryption": "none" } ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "remarks": "Amsterdam #2",
+    "meta": { "serverDescription": "Upstream Backbone" },
+    "outbounds": [
+      {
+        "protocol": "vless",
+        "tag": "proxy",
+        "settings": {
+          "vnext": [
+            {
+              "address": "ams-2.example",
+              "port": 443,
+              "users": [ { "id": "00000000-0000-4000-8000-000000000012", "encryption": "none" } ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+]
+JSON
+
+xray_nodes_normalized="$WORK_DIR/xray-nodes-normalized.json"
+normalize_subscription "$WORK_DIR/xray-nodes.json" "$xray_nodes_normalized"
+ucode -e '
+let fs = require("fs");
+let value = json(fs.readfile(ARGV[0]));
+let descriptions = {};
+for (let outbound in value.outbounds || [])
+    descriptions[outbound.remark] = outbound.__forkop_description;
+if (descriptions["Amsterdam #1"] != "Upstream Tube")
+    die("first Xray node description was not retained\n");
+if (descriptions["Amsterdam #2"] != "Upstream Backbone")
+    die("second Xray node description was not retained\n");
+' "$xray_nodes_normalized" || fail "per-node Xray server descriptions"
+
 prepare_subscription_cache proxy 1 "https://xray.example/sub" "$xray_normalized"
 cat >"$WORK_DIR/xray-fixture.json" <<'JSON'
 {
@@ -299,8 +356,8 @@ for (let child in builtin.outbounds || [])
     if (substr(child, 0, 5) == "xray-")
         die("built-in URLTest must not use artificial xray child tag prefixes\n");
 let imported_cache = object_or_empty(cache.urltestGroups)["Latvia group"] || {};
-if (object_or_empty(cache.outboundMetadata).descriptions["lv-🇱🇻 Riga A"] != "Upstream Tube")
-    die("section cache is missing the Xray server description\n");
+if (object_or_empty(cache.outboundMetadata).descriptions["lv-🇱🇻 Riga A"] != null)
+    die("virtual Xray host description must not be assigned to injected leaf outbounds\n");
 if (imported_cache.url != "https://www.gstatic.com/generate_204" || imported_cache.interval != "120s")
     die("section cache is missing imported xray URLTest params\n");
 if (imported_cache.tolerance != 175 || imported_cache.idle_timeout != "30m" || imported_cache.interrupt_exist_connections !== true)

@@ -3563,16 +3563,24 @@ function getUrlTestGroups(dashboardCache) {
   }
   return groups;
 }
-async function readRuntimeUrlTestGroups(configSections) {
+async function readRuntimeMetadata(configSections) {
   const configPath = getSettingsSection(configSections)?.config_path || "/etc/sing-box/config.json";
   try {
     const parsed = JSON.parse(
       await fs.read(configPath)
     );
     const groups = {};
+    const servers = {};
     for (const outbound of Array.isArray(parsed?.outbounds) ? parsed.outbounds : []) {
       const tag = `${outbound?.tag || ""}`;
-      if (outbound?.type !== "urltest" || !tag) {
+      if (!tag) {
+        continue;
+      }
+      const server = `${outbound?.server || ""}`;
+      if (server) {
+        servers[tag] = server;
+      }
+      if (outbound?.type !== "urltest") {
         continue;
       }
       groups[tag] = {
@@ -3585,9 +3593,9 @@ async function readRuntimeUrlTestGroups(configSections) {
         interrupt_exist_connections: outbound.interrupt_exist_connections
       };
     }
-    return groups;
+    return { urltestGroups: groups, servers };
   } catch (_error) {
-    return {};
+    return { urltestGroups: {}, servers: {} };
   }
 }
 function mergeUrlTestGroups(cachedGroups, runtimeGroups) {
@@ -3939,9 +3947,12 @@ function getSubscriptionMetadata(section, sourceCount, dashboardCache) {
   }
   return void 0;
 }
-function getOutboundMetadata(dashboardCache) {
+function getOutboundMetadata(dashboardCache, runtimeServers = {}) {
   const metadata = dashboardCache?.outboundMetadata;
-  const servers = objectMap(dashboardCache?.servers);
+  const servers = {
+    ...objectMap(dashboardCache?.servers),
+    ...runtimeServers
+  };
   if ((!metadata || typeof metadata !== "object") && Object.keys(servers).length === 0) {
     return void 0;
   }
@@ -3962,9 +3973,9 @@ function getCachedProxyLinks(dashboardCache) {
 async function getDashboardSections(options = {}) {
   const includeSubscriptionCopyState = options.includeSubscriptionCopyState ?? true;
   const configSections = hydrateConfigSections(await getConfigSections());
-  const [clashProxies, runtimeUrlTestGroups] = await Promise.all([
+  const [clashProxies, runtimeMetadata] = await Promise.all([
     getClashApiProxies(configSections),
-    readRuntimeUrlTestGroups(configSections)
+    readRuntimeMetadata(configSections)
   ]);
   if (!clashProxies.success || !clashProxies.data?.proxies) {
     return {
@@ -3990,7 +4001,10 @@ async function getDashboardSections(options = {}) {
         const subscriptionSourceCount = getSubscriptionSourceCount(section);
         const subscriptionEnabled = subscriptionSourceCount > 0;
         const dashboardCache = await readDashboardSectionCache(sectionName);
-        const outboundMetadata = getOutboundMetadata(dashboardCache);
+        const outboundMetadata = getOutboundMetadata(
+          dashboardCache,
+          runtimeMetadata.servers
+        );
         const subscriptionMetadata = subscriptionEnabled ? getSubscriptionMetadata(
           section,
           subscriptionSourceCount,
@@ -3999,7 +4013,7 @@ async function getDashboardSections(options = {}) {
         const cachedProxyLinks = includeSubscriptionCopyState ? getCachedProxyLinks(dashboardCache) : /* @__PURE__ */ new Map();
         const urltestGroups = mergeUrlTestGroups(
           getUrlTestGroups(dashboardCache),
-          runtimeUrlTestGroups
+          runtimeMetadata.urltestGroups
         );
         const priorityGroups = getPriorityGroups(dashboardCache);
         const { selector, latencyTestCode, latencyTestCodes, outbounds } = buildProxyGroupOutbounds(

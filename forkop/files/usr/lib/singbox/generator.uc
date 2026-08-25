@@ -599,7 +599,8 @@ function copy_subscription_outbound(outbound, new_tag) {
     let copy = {};
     for (let key, value in outbound) {
         if (key != "tag" && key != "remark" && key != "share_link" &&
-            key != "__forkop_hidden" && key != "__forkop_allow_group")
+            key != "__forkop_hidden" && key != "__forkop_allow_group" &&
+            key != "__forkop_description")
             copy[key] = value;
     }
     if (as_string(copy.type || "") == "hysteria2" &&
@@ -750,15 +751,8 @@ function add_subscription_source_with_state(config, section, source_index, sourc
     }
     let outbounds = compatible_subscription_outbounds(source_outbounds, section_name);
 
-    let source_metadata = [];
     if (show_metadata !== false)
-        source_metadata = runtime_subscription.merge_source_metadata(state, section_name, source_section, source_index, source_entry);
-    let server_description = "";
-    for (let item in source_metadata) {
-        server_description = as_string(object_or_empty(item).serverDescription || "");
-        if (server_description != "")
-            break;
-    }
+        runtime_subscription.merge_source_metadata(state, section_name, source_section, source_index, source_entry);
     let visibility_refs = subscription_visibility_refs(outbounds);
     if (include_urltest_groups === false)
         hide_urltest_group_outbounds = false;
@@ -768,6 +762,7 @@ function add_subscription_source_with_state(config, section, source_index, sourc
     let source_links = [];
     let group_flags = [];
     let hidden_flags = [];
+    let outbound_descriptions = [];
     let tag_map = {};
     for (let i = 0; i < length(outbounds); i++) {
         let outbound = outbounds[i];
@@ -794,6 +789,7 @@ function add_subscription_source_with_state(config, section, source_index, sourc
         push(source_links, source_link);
         push(group_flags, subscription_group_outbound(outbound));
         push(hidden_flags, subscription_hidden_outbound(outbound, visibility_refs, hide_urltest_group_outbounds, hide_detour_outbounds));
+        push(outbound_descriptions, as_string(outbound.__forkop_description || ""));
     }
 
     if (length(keys(skipped)) > 0)
@@ -819,7 +815,7 @@ function add_subscription_source_with_state(config, section, source_index, sourc
             display_names[i],
             outbound,
             source_links[i],
-            server_description
+            outbound_descriptions[i]
         );
         if (hidden_flags[i] !== true) {
             push(selector_tags, outbound.tag);
