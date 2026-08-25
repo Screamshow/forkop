@@ -2436,7 +2436,7 @@ function xray_apply_urltest_options(group, options) {
 
     if (type(options.tolerance) == "int" || type(options.tolerance) == "double")
         group.tolerance = options.tolerance;
-    if (type(options.interrupt_exist_connections) == "boolean")
+    if (options.interrupt_exist_connections === true || options.interrupt_exist_connections === false)
         group.interrupt_exist_connections = options.interrupt_exist_connections;
 }
 
