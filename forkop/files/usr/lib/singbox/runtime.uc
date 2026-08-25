@@ -690,6 +690,37 @@ function save_config_file(temp_file_path, config_path) {
     return true;
 }
 
+function publish_section_cache(temp_config_path) {
+    let source_dir = as_string(temp_config_path) + ".section-cache";
+    let entries = fs.lsdir(source_dir);
+    if (type(entries) != "array")
+        return true;
+    if (!ensure_dir(SECTION_CACHE_DIR))
+        return false;
+
+    for (let entry in entries) {
+        entry = as_string(entry);
+        if (match(entry, /^[A-Za-z0-9_-]+\.json$/) == null)
+            continue;
+
+        let source = source_dir + "/" + entry;
+        let data = fs.readfile(source);
+        if (data == null)
+            return false;
+
+        let target = SECTION_CACHE_DIR + "/" + entry;
+        let temporary = target + ".tmp";
+        if (fs.writefile(temporary, data) == null || !fs.rename(temporary, target)) {
+            remove_file(temporary);
+            return false;
+        }
+        remove_file(source);
+    }
+
+    command_success_from_args([ "rmdir", source_dir ]);
+    return true;
+}
+
 function replace_dns_server(config, replacement) {
     let servers = array_or_empty(object_or_empty(config.dns).servers);
     for (let i = 0; i < length(servers); i++) {
@@ -846,6 +877,11 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
         remove_file(runtime_log);
         exit(1);
     }
+    if (!publish_section_cache(temp_config)) {
+        log_message("Failed to publish sing-box dashboard cache", "error");
+        remove_file(runtime_log);
+        exit(1);
+    }
     remove_file(runtime_log);
     print(deferred_sections, "\n");
 }
@@ -858,6 +894,8 @@ else if (mode == "init-config")
     init_config(arg_bool(ARGV[1] || "1"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "");
 else if (mode == "save-config-file-fixture")
     exit(save_config_file(ARGV[1] || "", ARGV[2] || "") ? 0 : 1);
+else if (mode == "publish-section-cache-fixture")
+    exit(publish_section_cache(ARGV[1] || "") ? 0 : 1);
 else if (mode == "check-config-fixture") {
     let result = sing_box_check(ARGV[1] || "", ARGV[2] || "");
     if (result.reason != "")
