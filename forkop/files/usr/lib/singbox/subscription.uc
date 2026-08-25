@@ -300,11 +300,10 @@ function resolve_urltest_profile_aliases(state) {
             let profile_tag = "";
             for (let candidate, candidate_server in servers) {
                 candidate = as_string(candidate);
-                if (candidate == member || members[candidate] || as_string(candidate_server) != server)
+                if (candidate == member || as_string(candidate_server) != server)
                     continue;
                 if (match(candidate, /^proxy(-[0-9]+)*$/) != null)
                     continue;
-                let candidate_name = as_string(names[candidate] || candidate);
                 profile_tag = candidate;
                 break;
             }

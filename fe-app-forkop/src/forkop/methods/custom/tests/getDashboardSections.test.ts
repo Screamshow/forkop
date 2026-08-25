@@ -172,6 +172,44 @@ describe('getDashboardSections', () => {
     ]);
   });
 
+  it('does not expose endpoint hostnames as fallback names for non-generic tags', async () => {
+    mocks.getConfigSections.mockResolvedValue([
+      proxySection({
+        selector_proxy_links: [],
+        subscription_urls: ['https://provider.example/sub'],
+        urltests: [],
+        urltest_settings: undefined,
+      }),
+    ]);
+    mocks.getClashApiProxies.mockResolvedValue({
+      success: true,
+      data: {
+        proxies: {
+          'main-out': proxy('Selector', {
+            name: 'main-out',
+            now: 'vless-1',
+            all: ['vless-1'],
+          }),
+          'vless-1': proxy('VLESS', { name: 'vless-1' }),
+        },
+      },
+    });
+    mocks.fsRead.mockResolvedValue(
+      JSON.stringify({
+        servers: { 'vless-1': 'reality-target.example' },
+        outboundMetadata: { names: {}, countries: {}, descriptions: {} },
+      }),
+    );
+
+    const result = await getDashboardSections();
+
+    expect(result.success).toBe(true);
+    expect(result.data[0].outbounds[0]).toMatchObject({
+      code: 'vless-1',
+      displayName: 'vless-1',
+    });
+  });
+
   it('hydrates URLTest details from the section cache and Clash API', async () => {
     mocks.getConfigSections.mockResolvedValue([proxySection()]);
     mocks.getClashApiProxies.mockResolvedValue({
