@@ -166,8 +166,13 @@ function dependsOnRuleConditions(option) {
       option.depends({ action, [condition]: /\S/ }),
     ),
   );
-  ["domain", "community_lists", "_dns_rule_set", "_dns_domain_ip_lists"].forEach(
-    (condition) => option.depends({ action: "dns", [condition]: /\S/ }),
+  [
+    "domain",
+    "community_lists",
+    "_dns_rule_set",
+    "_dns_domain_ip_lists",
+  ].forEach((condition) =>
+    option.depends({ action: "dns", [condition]: /\S/ }),
   );
   return option;
 }
@@ -2537,9 +2542,7 @@ function addUrlTestItemOptions(itemSection, options = {}) {
     form.Flag,
     "interrupt_exist_connections",
     _("Interrupt connections"),
-    _(
-      "Interrupt connections when URLTest switches the selected server",
-    ),
+    _("Interrupt connections when URLTest switches the selected server"),
   );
   o.default = "1";
   o.rmempty = false;
@@ -6836,6 +6839,40 @@ function isBuiltinRulesetValue(value) {
   return Object.prototype.hasOwnProperty.call(main.DOMAIN_LIST_OPTIONS, value);
 }
 
+const SECONDARY_RULESET_RAW_PREFIX =
+  "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/srs/";
+const SECONDARY_RULESET_CDN_PREFIX =
+  "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/srs/";
+
+function secondaryRulesetUrl(value) {
+  return `${SECONDARY_RULESET_RAW_PREFIX}${value}.srs`;
+}
+
+function secondaryRulesetId(reference) {
+  const value = `${reference || ""}`;
+  const prefix = value.startsWith(SECONDARY_RULESET_RAW_PREFIX)
+    ? SECONDARY_RULESET_RAW_PREFIX
+    : value.startsWith(SECONDARY_RULESET_CDN_PREFIX)
+      ? SECONDARY_RULESET_CDN_PREFIX
+      : "";
+  if (!prefix || !value.endsWith(".srs")) return "";
+  const id = value.slice(prefix.length, -4);
+  return Object.prototype.hasOwnProperty.call(
+    main.SECONDARY_RULESET_OPTIONS || {},
+    id,
+  )
+    ? id
+    : "";
+}
+
+function getSecondaryRulesetReferences(section_id) {
+  return uniqueDynamicListItems(
+    getConfigListValues(section_id, "rule_set_with_subnets")
+      .map(secondaryRulesetId)
+      .filter(Boolean),
+  );
+}
+
 function normalizeReferenceForExtensionCheck(value) {
   return `${value || ""}`.split(/[?#]/, 1)[0].toLowerCase();
 }
@@ -6913,7 +6950,9 @@ function getCustomRulesetReferences(section_id) {
     ...getRulesetReferences(section_id).filter(
       (value) => !isBuiltinRulesetValue(value),
     ),
-    ...getConfigListValues(section_id, "rule_set_with_subnets"),
+    ...getConfigListValues(section_id, "rule_set_with_subnets").filter(
+      (value) => !secondaryRulesetId(value),
+    ),
   ]);
 }
 
@@ -6924,16 +6963,39 @@ function writeBuiltInRulesetReferences(section_id, values) {
   writeListOption(section_id, "community_lists", refs);
 }
 
+function writeSecondaryRulesetReferences(section_id, values) {
+  const custom = getConfigListValues(
+    section_id,
+    "rule_set_with_subnets",
+  ).filter((value) => !secondaryRulesetId(value));
+  const builtins = normalizeDynamicListItems(values)
+    .filter((value) =>
+      Object.prototype.hasOwnProperty.call(
+        main.SECONDARY_RULESET_OPTIONS || {},
+        value,
+      ),
+    )
+    .map(secondaryRulesetUrl);
+  writeListOption(section_id, "rule_set_with_subnets", [
+    ...custom,
+    ...builtins,
+  ]);
+}
+
 function writeCustomRulesetReferences(section_id, values) {
   const refs = uniqueDynamicListItems(values);
   if (getRuleResolvedAction(section_id) === "dns") {
     writeDnsRulesetReferences(section_id, refs);
     return;
   }
+  const secondaryRefs = getConfigListValues(
+    section_id,
+    "rule_set_with_subnets",
+  ).filter((value) => secondaryRulesetId(value));
   const subnetRefs = getConfigListValues(
     section_id,
     "rule_set_with_subnets",
-  ).filter((value) => refs.includes(value));
+  ).filter((value) => !secondaryRulesetId(value) && refs.includes(value));
   const subnetRefSet = new Set(subnetRefs);
 
   writeListOption(
@@ -6941,7 +7003,10 @@ function writeCustomRulesetReferences(section_id, values) {
     "rule_set",
     refs.filter((value) => !subnetRefSet.has(value)),
   );
-  writeListOption(section_id, "rule_set_with_subnets", subnetRefs);
+  writeListOption(section_id, "rule_set_with_subnets", [
+    ...secondaryRefs,
+    ...subnetRefs,
+  ]);
   uci.unset(UCI_PACKAGE, section_id, RULE_SET_ITEM_SETTINGS_KEY);
 }
 
@@ -7717,6 +7782,31 @@ function createSectionContent(section) {
     uci.unset(UCI_PACKAGE, section_id, "community_lists");
   };
 
+  const secondaryRulesetOption = section.taboption(
+    "conditions",
+    form.DynamicList,
+    "secondary_rule_sets",
+    `${_("Built-in rule sets")} #2`,
+    _("Select a predefined IP rule set from b4geoip-forkop"),
+  );
+  secondaryRulesetOption.modalonly = true;
+  secondaryRulesetOption.placeholder = _("Service list");
+  secondaryRulesetOption.load = function (section_id) {
+    refreshOptionChoices(
+      this,
+      Object.entries(main.SECONDARY_RULESET_OPTIONS || {}).map(
+        ([value, label]) => ({ value, label }),
+      ),
+    );
+    return getSecondaryRulesetReferences(section_id);
+  };
+  secondaryRulesetOption.write = function (section_id, values) {
+    writeSecondaryRulesetReferences(section_id, values);
+  };
+  secondaryRulesetOption.remove = function (section_id) {
+    writeSecondaryRulesetReferences(section_id, []);
+  };
+
   const ruleSetOption = section.taboption(
     "conditions",
     SettingsDynamicList,
@@ -7739,7 +7829,13 @@ function createSectionContent(section) {
   };
   ruleSetOption.remove = function (section_id) {
     uci.unset(UCI_PACKAGE, section_id, "rule_set");
-    uci.unset(UCI_PACKAGE, section_id, "rule_set_with_subnets");
+    writeListOption(
+      section_id,
+      "rule_set_with_subnets",
+      getConfigListValues(section_id, "rule_set_with_subnets").filter((value) =>
+        secondaryRulesetId(value),
+      ),
+    );
     uci.unset(UCI_PACKAGE, section_id, RULE_SET_ITEM_SETTINGS_KEY);
   };
   ruleSetOption.validate = function (section_id, value) {
@@ -7776,9 +7872,7 @@ function createSectionContent(section) {
     form.DynamicList,
     "domain_ip_lists",
     _("Domain and IP lists"),
-    _(
-      "Add URLs or local paths to .lst lists containing domains and subnets.",
-    ),
+    _("Add URLs or local paths to .lst lists containing domains and subnets."),
   );
   domainIpListsOption.modalonly = true;
   // Both widgets map to domain_ip_lists, so neither inactive view may erase shared storage.

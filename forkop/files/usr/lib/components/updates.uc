@@ -1936,12 +1936,19 @@ function service_proxy_address(settings, purpose) {
 }
 
 function jsdelivr_fallback_url(url) {
-    let prefix = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/";
     url = as_string(url);
-    if (substr(url, 0, length(prefix)) != prefix)
-        return "";
+    let sources = [
+        [ "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/", "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" ],
+        [ "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/", "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/" ]
+    ];
 
-    return "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" + substr(url, length(prefix));
+    for (let source in sources) {
+        let prefix = source[0];
+        if (substr(url, 0, length(prefix)) == prefix)
+            return source[1] + substr(url, length(prefix));
+    }
+
+    return "";
 }
 
 function download_to_file_once(url, filepath, proxy_address) {
@@ -1968,7 +1975,7 @@ function download_to_file(url, filepath, proxy_address) {
     if (fallback_url == "")
         return false;
 
-    log_message("Primary allow-domains source is unavailable; trying jsDelivr fallback", "warn");
+    log_message("Primary rule-set source is unavailable; trying jsDelivr fallback", "warn");
     attempt = 1;
     while (attempt <= 3) {
         if (download_to_file_once(fallback_url, filepath, proxy_address))

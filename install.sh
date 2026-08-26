@@ -31,6 +31,8 @@ FORKOP_I18N_URL=""
 FORKOP_I18N_NAME=""
 FORKOP_I18N_FILE=""
 FORKOP_PACKAGE_VERSION=""
+FORKOP_CONFIG_READY=1
+FORKOP_CONFIG_VALIDATION_ERROR=""
 LEGACY_BRAND="$(printf '\160\157\144\153\157\160')"
 LEGACY_BACKEND_PACKAGE="${LEGACY_BRAND}-plus"
 LEGACY_CONFIG_PACKAGE_ALT="${LEGACY_BRAND}_plus"
@@ -1210,10 +1212,12 @@ function installer_post_install() {
     if (path_executable(INSTALLER_RPCD_INIT))
         run_args([ INSTALLER_RPCD_INIT, "reload" ]);
 
-    if (env("FORKOP_WAS_ENABLED", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
+    let config_ready = env("FORKOP_CONFIG_READY", "1") == "1";
+
+    if (config_ready && env("FORKOP_WAS_ENABLED", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
         run_args([ INSTALLER_FORKOP_INIT, "enable" ]);
 
-    if (env("FORKOP_WAS_RUNNING", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT)) {
+    if (config_ready && env("FORKOP_WAS_RUNNING", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT)) {
         if (!run_args([ INSTALLER_FORKOP_INIT, "start" ]) &&
             !run_args([ INSTALLER_FORKOP_INIT, "restart" ]))
             warn("Failed to start Forkop after upgrade.\n");
@@ -1943,6 +1947,24 @@ migrate_legacy_configuration() {
         fail "Failed to remove legacy configuration and cache files after migration"
 }
 
+validate_installed_configuration() {
+    validation_output="$TMP_DIR/config-validation.log"
+    FORKOP_CONFIG_READY=1
+    FORKOP_CONFIG_VALIDATION_ERROR=""
+
+    if ! ucode -L /usr/lib/forkop /usr/lib/forkop/config/validator.uc check-requirements >"$validation_output" 2>&1 ||
+        ! ucode -L /usr/lib/forkop /usr/lib/forkop/config/validator.uc validate-runtime >>"$validation_output" 2>&1; then
+        FORKOP_CONFIG_READY=0
+    fi
+
+    [ "$FORKOP_CONFIG_READY" -eq 0 ] || return 0
+    FORKOP_CONFIG_VALIDATION_ERROR="$(sed -n '1p' "$validation_output" 2>/dev/null || true)"
+    [ -n "$FORKOP_CONFIG_VALIDATION_ERROR" ] || FORKOP_CONFIG_VALIDATION_ERROR="Forkop configuration validation failed"
+
+    warn "Forkop configuration requires attention: $FORKOP_CONFIG_VALIDATION_ERROR"
+    warn "Forkop will remain disabled. The configuration was preserved; fix it in LuCI before starting the service."
+}
+
 install_ui_packages() {
     pkg_install_files "$FORKOP_APP_FILE" || fail "luci-app-forkop installation failed"
 
@@ -1953,6 +1975,7 @@ install_ui_packages() {
 
 post_install() {
     FORKOP_WAS_ENABLED="$FORKOP_WAS_ENABLED" FORKOP_WAS_RUNNING="$FORKOP_WAS_RUNNING" \
+    FORKOP_CONFIG_READY="$FORKOP_CONFIG_READY" \
         install_json_ucode installer-post-install ||
         fail "Failed to complete Forkop post-install actions"
 }
@@ -1985,11 +2008,17 @@ main() {
     migrate_legacy_configuration
     install_ui_packages
     install_selected_sing_box
+    validate_installed_configuration
     post_install
 
     msg "Forkop $FORKOP_PACKAGE_VERSION has been installed successfully"
     msg "Source release: ${REPO_OWNER}/${REPO_NAME}@${FORKOP_RELEASE_TAG}"
-    warn "Open LuCI and review your rules before enabling Forkop"
+    if [ "$FORKOP_CONFIG_READY" -eq 1 ]; then
+        warn "Open LuCI and review your rules before enabling Forkop"
+    else
+        warn "sing-box was installed, but Forkop was not enabled because its configuration is incomplete"
+        warn "Reason: $FORKOP_CONFIG_VALIDATION_ERROR"
+    fi
 }
 
 main "$@"

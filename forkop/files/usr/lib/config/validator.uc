@@ -545,7 +545,8 @@ function basic_rule_rows() {
         push(rows, {
             section: as_string(fields[0]),
             enabled: bool_flag(fields[1]),
-            action: as_string(fields[2])
+            action: as_string(fields[2]),
+            has_sources: bool_flag(fields[3])
         });
     }
 
@@ -575,12 +576,14 @@ function validate_download_section_rows(target_section, byedpi_installed, zapret
     let found = false;
     let enabled = false;
     let outbound = false;
+    let target = null;
 
     for (let row in array_or_empty(rows)) {
         if (row.section != target_section)
             continue;
 
         found = true;
+        target = row;
         if (!row.enabled)
             continue;
 
@@ -600,6 +603,10 @@ function validate_download_section_rows(target_section, byedpi_installed, zapret
     if (!outbound)
         fail_validation("Downloading external resources through a section references rule '" + target_section +
             "', but it cannot provide an outbound. Select an enabled Connection, Zapret, Zapret2, or ByeDPI rule with its provider installed, or disable the option. Aborted.");
+
+    if (connections.is_connections_action(target.action) && !target.has_sources)
+        fail_validation("Downloading external resources through section '" + target_section +
+            "' is enabled, but that Connection rule has no proxy source. Add a subscription, manual proxy link, interface, or JSON outbound, or disable download-through-section. Aborted.");
 }
 
 function validate_download_section(target_section, byedpi_installed, zapret_installed, zapret2_installed) {
@@ -1554,7 +1561,8 @@ function basic_rows_from_sections(sections) {
         push(rows, {
             section: section_name(section),
             enabled: section_enabled(section),
-            action: rule_action(section)
+            action: rule_action(section),
+            has_sources: connections.has_connection_sources(section)
         });
     }
     return rows;

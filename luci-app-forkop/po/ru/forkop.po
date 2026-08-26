@@ -206,6 +206,12 @@ msgstr "Браузер использует FakeIP"
 msgid "Built-in rule sets"
 msgstr "Встроенные наборы правил"
 
+msgid "Built-in rule sets #2"
+msgstr "Встроенные наборы правил #2"
+
+msgid "Select a predefined IP rule set from b4geoip-forkop"
+msgstr "Выберите готовый набор IP-правил из b4geoip-forkop"
+
 msgid "By flag emoji from name"
 msgstr "По эмодзи флага из названия"
 
