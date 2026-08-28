@@ -273,6 +273,7 @@ EOF
 #!/bin/sh
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate || exit $?
+/usr/lib/forkop/service/mirror-migration.sh || exit $?
 /usr/bin/forkop package_postinst
 EOF
 
@@ -409,7 +410,7 @@ EOF
   cat > "$scripts_dir/backend-post-install.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/bin/forkop package_postinst"));
+    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/lib/forkop/service/mirror-migration.sh && /usr/bin/forkop package_postinst"));
 exit(0);
 EOF
 
@@ -432,7 +433,7 @@ EOF
   cat > "$scripts_dir/backend-post-upgrade.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/bin/forkop package_postinst"));
+    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/lib/forkop/service/mirror-migration.sh && /usr/bin/forkop package_postinst"));
 exit(0);
 EOF
 
