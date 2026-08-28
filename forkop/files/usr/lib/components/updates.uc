@@ -54,7 +54,8 @@ const NFT_FAKEIP_MARK = getenv("NFT_FAKEIP_MARK") || "0x04000000";
 const SB_SERVICE_MIXED_INBOUND_ADDRESS = getenv("SB_SERVICE_MIXED_INBOUND_ADDRESS") || "127.0.0.1";
 const SB_SERVICE_MIXED_INBOUND_PORT = getenv("SB_SERVICE_MIXED_INBOUND_PORT") || "4534";
 const SB_VARIANT_STATE_FILE = getenv("SB_VARIANT_STATE_FILE") || "/etc/forkop/sing-box-variant";
-const GITHUB_RAW_URL = getenv("GITHUB_RAW_URL") || "https://raw.githubusercontent.com/itdoginfo/allow-domains/main";
+let core_constants = require("core.constants");
+const GITHUB_RAW_URL = getenv("GITHUB_RAW_URL") || core_constants.GITHUB_RAW_URL;
 const BUILTIN_SUBNET_URLS = {
     twitter: [ getenv("SUBNETS_TWITTER") || GITHUB_RAW_URL + "/Subnets/IPv4/twitter.lst", getenv("SUBNETS_TWITTER6") || GITHUB_RAW_URL + "/Subnets/IPv6/twitter.lst" ],
     meta: [ getenv("SUBNETS_META") || GITHUB_RAW_URL + "/Subnets/IPv4/meta.lst", getenv("SUBNETS_META6") || GITHUB_RAW_URL + "/Subnets/IPv6/meta.lst" ],

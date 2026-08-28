@@ -1,9 +1,11 @@
 #!/usr/bin/env ucode
 
-const SRS_MAIN_URL = "https://github.com/itdoginfo/allow-domains/releases/latest/download";
-const SRS_ADS_HAGEZI_PRO_URL = "https://github.com/zxc-rv/ad-filter/releases/latest/download/adlist.srs";
-const SRS_SUPERCELL_URL = "https://raw.githubusercontent.com/ushan0v/sing-box-supercell-ruleset/main/supercell.srs";
-const SRS_GITHUB_URL = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs";
+let constants = require("core.constants");
+
+const SRS_MAIN_URL = constants.SRS_MAIN_URL;
+const SRS_ADS_HAGEZI_PRO_URL = constants.SRS_ADS_HAGEZI_PRO_URL;
+const SRS_SUPERCELL_URL = constants.SRS_SUPERCELL_URL;
+const SRS_GITHUB_URL = constants.SRS_GITHUB_URL;
 
 const COMMUNITY_SERVICES = {
     russia_inside: true,

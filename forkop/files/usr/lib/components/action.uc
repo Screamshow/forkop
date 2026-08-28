@@ -9,6 +9,7 @@ const BIN_PATH = getenv("FORKOP_BIN") || constants.FORKOP_BIN || "/usr/bin/forko
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || constants.FORKOP_SERVICE_INIT || "/etc/init.d/forkop";
 const FORKOP_VERSION = getenv("FORKOP_VERSION") || constants.FORKOP_VERSION || "";
 const FORKOP_RELEASE_REPO = getenv("FORKOP_RELEASE_REPO") || constants.FORKOP_RELEASE_REPO || "Screamshow/forkop";
+const FORKOP_MIRROR_BASE_URL = getenv("FORKOP_MIRROR_BASE_URL") || constants.FORKOP_MIRROR_BASE_URL || "";
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIME_STATE_DIR + "/system-info.json";
 const COMPONENT_LOCK_DIR = getenv("UPDATES_LOCK_DIR") || RUNTIME_STATE_DIR + "/component-action.lock";
@@ -583,10 +584,24 @@ function fetch_github_releases_json(owner, repo, per_page) {
 }
 
 function latest_forkop_release_json() {
+    if (FORKOP_MIRROR_BASE_URL != "") {
+        let response = http_get(FORKOP_MIRROR_BASE_URL + "/forkop/updates/latest.json");
+        if (response == "")
+            return "";
+        return response;
+    }
+
     let parts = split(FORKOP_RELEASE_REPO, "/");
     if (length(parts) != 2 || as_string(parts[0]) == "" || as_string(parts[1]) == "")
         return "";
     return fetch_github_release_json(parts[0], parts[1]);
+}
+
+function forkop_release_url(value) {
+    value = as_string(value);
+    if (FORKOP_MIRROR_BASE_URL != "" && substr(value, 0, 1) == "/")
+        return FORKOP_MIRROR_BASE_URL + value;
+    return value;
 }
 
 function latest_forkop_version() {
@@ -1753,13 +1768,13 @@ function resolve_forkop_release(latest_version) {
     if (length(fields) < 7 || as_string(fields[1]) == "" || as_string(fields[2]) == "" || as_string(fields[3]) == "" || as_string(fields[4]) == "")
         return null;
     return {
-        release_url: fields[0],
+        release_url: forkop_release_url(fields[0]),
         backend_name: fields[1],
-        backend_url: fields[2],
+        backend_url: forkop_release_url(fields[2]),
         app_name: fields[3],
-        app_url: fields[4],
+        app_url: forkop_release_url(fields[4]),
         i18n_name: fields[5],
-        i18n_url: fields[6]
+        i18n_url: forkop_release_url(fields[6])
     };
 }
 

@@ -7,7 +7,7 @@
 ### Установка
 
 ```sh
-sh <(wget -O - https://raw.githubusercontent.com/Screamshow/forkop/main/install.sh)
+wget -qO- https://mirror.51343.ru/forkop/install.sh | sh
 ```
 
 

@@ -13,6 +13,21 @@ function shell_quote(value) {
     return "'" + replace(as_string(value), /'/g, "'\\''") + "'";
 }
 
+function configured_mirror_base_url() {
+    const default_mirror = "https://mirror.51343.ru";
+    try {
+        let cursor = require("uci").cursor();
+        cursor.load("forkop");
+        let value = as_string(cursor.get("forkop", "settings", "mirror_base_url"));
+        while (length(value) > 0 && substr(value, length(value) - 1) == "/")
+            value = substr(value, 0, length(value) - 1);
+        return value != "" ? value : default_mirror;
+    }
+    catch (e) {
+        return default_mirror;
+    }
+}
+
 function constants_map() {
     let c = {};
 
@@ -78,10 +93,13 @@ function constants_map() {
     c.SB_VARIANT_STATE_FILE = env("SB_VARIANT_STATE_FILE", "/etc/forkop/sing-box-variant");
     c.SB_VERSION_STATE_FILE = env("SB_VERSION_STATE_FILE", "/etc/forkop/sing-box-version");
 
-    c.GITHUB_RAW_URL = env("GITHUB_RAW_URL", "https://raw.githubusercontent.com/itdoginfo/allow-domains/main");
-    c.SRS_MAIN_URL = env("SRS_MAIN_URL", "https://github.com/itdoginfo/allow-domains/releases/latest/download");
-    c.SRS_ADS_HAGEZI_PRO_URL = env("SRS_ADS_HAGEZI_PRO_URL", "https://github.com/zxc-rv/ad-filter/releases/latest/download/adlist.srs");
-    c.SRS_SUPERCELL_URL = env("SRS_SUPERCELL_URL", "https://raw.githubusercontent.com/ushan0v/sing-box-supercell-ruleset/main/supercell.srs");
+    c.FORKOP_MIRROR_BASE_URL = env("FORKOP_MIRROR_BASE_URL", configured_mirror_base_url());
+    let mirror_lists = c.FORKOP_MIRROR_BASE_URL != "" ? c.FORKOP_MIRROR_BASE_URL + "/forkop/lists" : "";
+    c.GITHUB_RAW_URL = env("GITHUB_RAW_URL", mirror_lists != "" ? mirror_lists + "/allow-domains" : "https://raw.githubusercontent.com/itdoginfo/allow-domains/main");
+    c.SRS_MAIN_URL = env("SRS_MAIN_URL", mirror_lists != "" ? mirror_lists + "/rulesets/community" : "https://github.com/itdoginfo/allow-domains/releases/latest/download");
+    c.SRS_ADS_HAGEZI_PRO_URL = env("SRS_ADS_HAGEZI_PRO_URL", mirror_lists != "" ? mirror_lists + "/rulesets/adlist.srs" : "https://github.com/zxc-rv/ad-filter/releases/latest/download/adlist.srs");
+    c.SRS_SUPERCELL_URL = env("SRS_SUPERCELL_URL", mirror_lists != "" ? mirror_lists + "/rulesets/supercell.srs" : "https://raw.githubusercontent.com/ushan0v/sing-box-supercell-ruleset/main/supercell.srs");
+    c.SRS_GITHUB_URL = env("SRS_GITHUB_URL", mirror_lists != "" ? mirror_lists + "/rulesets/github.srs" : "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs");
     c.SUBNETS_TWITTER = env("SUBNETS_TWITTER", c.GITHUB_RAW_URL + "/Subnets/IPv4/twitter.lst");
     c.SUBNETS_META = env("SUBNETS_META", c.GITHUB_RAW_URL + "/Subnets/IPv4/meta.lst");
     c.SUBNETS_DISCORD = env("SUBNETS_DISCORD", c.GITHUB_RAW_URL + "/Subnets/IPv4/discord.lst");

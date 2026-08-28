@@ -3,6 +3,7 @@
 
 REPO_OWNER="Screamshow"
 REPO_NAME="forkop"
+MIRROR_BASE_URL="${FORKOP_MIRROR_BASE_URL:-https://mirror.51343.ru}"
 
 REQUIRED_SPACE_KB=15360
 CONNECT_TIMEOUT_SECONDS=15
@@ -63,7 +64,8 @@ Installs or updates Forkop packages:
   - luci-i18n-forkop-ru when requested or when LuCI language is Russian
 
 Can also install or switch sing-box variant:
-  - stable sing-box from OpenWrt feeds
+  - sing-box-tiny from the mirrored OpenWrt feeds (default)
+  - stable sing-box from the mirrored OpenWrt feeds
   - sing-box-extended from GitHub OpenWrt packages (for xHTTP support)
 EOF
 }
@@ -1492,6 +1494,34 @@ pkg_list_update() {
     fi
 }
 
+configure_apk_mirror() {
+    distfeeds="/etc/apk/repositories.d/distfeeds.list"
+    rewritten="$TMP_DIR/distfeeds.list"
+
+    [ "$PKG_IS_APK" -eq 1 ] || return 0
+    [ -s "$distfeeds" ] || fail "$distfeeds is missing or empty"
+
+    case "$MIRROR_BASE_URL" in
+        https://*|http://*) ;;
+        *) fail "Invalid Forkop mirror URL: $MIRROR_BASE_URL" ;;
+    esac
+    MIRROR_BASE_URL="${MIRROR_BASE_URL%/}"
+
+    sed -E \
+        "s#https?://[^/]+/(pub/software/openwrt/)?releases/#${MIRROR_BASE_URL}/openwrt/releases/#" \
+        "$distfeeds" > "$rewritten" || fail "Failed to prepare mirrored OpenWrt feeds"
+
+    grep -Fq "$MIRROR_BASE_URL/openwrt/releases/" "$rewritten" ||
+        fail "No OpenWrt release feeds were found in $distfeeds"
+    if grep -E 'https?://[^/]+/(pub/software/openwrt/)?releases/' "$rewritten" |
+        grep -Fv "$MIRROR_BASE_URL/openwrt/releases/" >/dev/null; then
+        fail "Some OpenWrt feeds could not be redirected to $MIRROR_BASE_URL"
+    fi
+
+    cp "$rewritten" "$distfeeds" || fail "Failed to enable mirrored OpenWrt feeds"
+    msg "OpenWrt package feeds now use $MIRROR_BASE_URL"
+}
+
 pkg_install_name() {
     pkg_name="$1"
 
@@ -1613,6 +1643,7 @@ installer_text() {
             i18n_skip) printf '%s\n' "Продолжаю без русского пакета интерфейса." ;;
             luci_ru) printf '%s\n' "Русский пакет интерфейса будет установлен автоматически." ;;
             sing_box_prompt) printf '%s\n' "Какую сборку singbox ставить?" ;;
+            sing_box_tiny) printf '%s\n' "singbox tiny (по умолчанию)" ;;
             sing_box_stable) printf '%s\n' "singbox stable" ;;
             sing_box_extended) printf '%s\n' "singbox extended (если нужен xhttp)" ;;
             sing_box_skip_msg) printf '%s\n' "Пропускаю установку sing-box." ;;
@@ -1631,6 +1662,7 @@ installer_text() {
         i18n_skip) printf '%s\n' "Continuing without the Russian interface language package." ;;
         luci_ru) printf '%s\n' "The Russian interface package will be installed automatically." ;;
         sing_box_prompt) printf '%s\n' "Which singbox build should be installed?" ;;
+        sing_box_tiny) printf '%s\n' "singbox tiny (default)" ;;
         sing_box_stable) printf '%s\n' "singbox stable" ;;
         sing_box_extended) printf '%s\n' "singbox extended (if xhttp is needed)" ;;
         sing_box_skip_msg) printf '%s\n' "Skipping sing-box installation." ;;
@@ -1712,20 +1744,36 @@ fetch_github_latest_release_json() {
     printf '%s' "$response"
 }
 
+fetch_forkop_latest_release_json() {
+    response="$(http_get "$MIRROR_BASE_URL/forkop/updates/latest.json" 2>/dev/null || true)"
+    [ -n "$response" ] || fail "Failed to query Forkop release metadata from $MIRROR_BASE_URL"
+    printf '%s' "$response"
+}
+
+mirror_asset_url() {
+    case "$1" in
+        http://*|https://*) printf '%s\n' "$1" ;;
+        /*) printf '%s%s\n' "$MIRROR_BASE_URL" "$1" ;;
+        *) printf '%s/%s\n' "$MIRROR_BASE_URL" "$1" ;;
+    esac
+}
+
 resolve_forkop_release() {
     asset_ext="ipk"
 
     [ "$PKG_IS_APK" -eq 1 ] && asset_ext="apk"
 
-    FORKOP_RELEASE_JSON="$(fetch_github_latest_release_json "$REPO_OWNER" "$REPO_NAME")"
+    FORKOP_RELEASE_JSON="$(fetch_forkop_latest_release_json)"
     FORKOP_RELEASE_TAG="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-tag 2>/dev/null)"
     [ -n "$FORKOP_RELEASE_TAG" ] || fail "Failed to detect the Forkop release tag"
 
     FORKOP_BACKEND_URL="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-url backend "$asset_ext" 2>/dev/null)"
     [ -n "$FORKOP_BACKEND_URL" ] || fail "The Forkop release does not contain a forkop .$asset_ext package"
+    FORKOP_BACKEND_URL="$(mirror_asset_url "$FORKOP_BACKEND_URL")"
 
     FORKOP_APP_URL="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-url app "$asset_ext" 2>/dev/null)"
     [ -n "$FORKOP_APP_URL" ] || fail "The Forkop release does not contain a luci-app-forkop .$asset_ext package"
+    FORKOP_APP_URL="$(mirror_asset_url "$FORKOP_APP_URL")"
 
     FORKOP_BACKEND_NAME="$(basename "$FORKOP_BACKEND_URL")"
     FORKOP_APP_NAME="$(basename "$FORKOP_APP_URL")"
@@ -1737,6 +1785,7 @@ resolve_forkop_release() {
     if [ "$FORKOP_I18N_REQUESTED" -eq 1 ]; then
         FORKOP_I18N_URL="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-url i18n "$asset_ext" 2>/dev/null)"
         [ -n "$FORKOP_I18N_URL" ] || fail "The Forkop release does not contain a luci-i18n-forkop-ru .$asset_ext package"
+        FORKOP_I18N_URL="$(mirror_asset_url "$FORKOP_I18N_URL")"
         FORKOP_I18N_NAME="$(basename "$FORKOP_I18N_URL")"
     fi
 }
@@ -1766,24 +1815,29 @@ select_sing_box_installation() {
     fi
 
     if [ ! -t 0 ]; then
-        SING_BOX_INSTALL_VARIANT="stable"
-        msg "$(installer_text sing_box_prompt): $default_choice ($(installer_text sing_box_stable), non-interactive)"
+        SING_BOX_INSTALL_VARIANT="tiny"
+        msg "$(installer_text sing_box_prompt): $default_choice ($(installer_text sing_box_tiny), non-interactive)"
         return 0
     fi
 
     while :; do
         printf '\n%s\n' "$(installer_text sing_box_prompt)"
-        printf '  1) %s\n' "$(installer_text sing_box_stable)"
-        printf '  2) %s\n' "$(installer_text sing_box_extended)"
+        printf '  1) %s\n' "$(installer_text sing_box_tiny)"
+        printf '  2) %s\n' "$(installer_text sing_box_stable)"
+        printf '  3) %s\n' "$(installer_text sing_box_extended)"
         printf '%s [%s]: ' "$(installer_text select)" "$default_choice"
         read -r answer || return 1
         [ -n "$answer" ] || answer="$default_choice"
 
         if [ "$answer" = "1" ]; then
-            SING_BOX_INSTALL_VARIANT="stable"
+            SING_BOX_INSTALL_VARIANT="tiny"
             return 0
         fi
         if [ "$answer" = "2" ]; then
+            SING_BOX_INSTALL_VARIANT="stable"
+            return 0
+        fi
+        if [ "$answer" = "3" ]; then
             SING_BOX_INSTALL_VARIANT="extended"
             return 0
         fi
@@ -1803,6 +1857,9 @@ install_selected_sing_box() {
             ;;
         stable)
             action="install_stable"
+            ;;
+        tiny)
+            action="install_tiny"
             ;;
         extended)
             action="install_extended"
@@ -1992,6 +2049,7 @@ main() {
     detect_fetcher
     sync_time
     check_system
+    configure_apk_mirror
 
     detect_legacy_installation
     decide_i18n_installation
@@ -2012,7 +2070,7 @@ main() {
     post_install
 
     msg "Forkop $FORKOP_PACKAGE_VERSION has been installed successfully"
-    msg "Source release: ${REPO_OWNER}/${REPO_NAME}@${FORKOP_RELEASE_TAG}"
+    msg "Source mirror: ${MIRROR_BASE_URL} (${FORKOP_RELEASE_TAG})"
     if [ "$FORKOP_CONFIG_READY" -eq 1 ]; then
         warn "Open LuCI and review your rules before enabling Forkop"
     else
