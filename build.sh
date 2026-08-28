@@ -180,7 +180,10 @@ build_backend_root() {
     "$output_root/usr/lib/forkop/core/constants.uc"
 
   normalize_package_root_modes "$output_root"
-  chmod 0755 "$output_root/etc/init.d/forkop" "$output_root/usr/bin/forkop"
+  chmod 0755 \
+    "$output_root/etc/init.d/forkop" \
+    "$output_root/usr/bin/forkop" \
+    "$output_root/usr/lib/forkop/service/mirror-migration.sh"
 }
 
 build_app_root() {
