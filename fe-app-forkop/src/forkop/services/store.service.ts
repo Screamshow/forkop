@@ -226,6 +226,7 @@ export interface StoreType {
     byedpiCheck: { loading: boolean };
     byedpiInstall: { loading: boolean };
     byedpiRemove: { loading: boolean };
+    zapretManagerInstall: { loading: boolean };
   };
   updatesChecks: Record<
     Forkop.ComponentName,

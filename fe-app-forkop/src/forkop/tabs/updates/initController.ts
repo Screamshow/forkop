@@ -895,6 +895,15 @@ function getComponentCards(): ComponentCard[] {
     installKey: 'byedpiInstall',
     removeKey: 'byedpiRemove',
   });
+  const zapretManagerActions: ComponentActionButton[] = [
+    {
+      key: 'zapretManagerInstall',
+      text: _('Install'),
+      icon: renderDownloadIcon24,
+      component: 'zapret_manager',
+      action: 'install',
+    },
+  ];
 
   return [
     {
@@ -957,6 +966,15 @@ function getComponentCards(): ComponentCard[] {
       latestVersion: getLatestVersion('byedpi'),
       releaseUrl: getGitHubReleaseUrl('byedpi'),
       actions: byedpiActions,
+    },
+    {
+      component: 'zapret_manager',
+      column: 1,
+      title: 'Zapret-Manager',
+      version: _('Mirror edition'),
+      latestVersion: '',
+      releaseUrl: 'https://github.com/Screamshow/Zapret-Manager',
+      actions: zapretManagerActions,
     },
   ];
 }

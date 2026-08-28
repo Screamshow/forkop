@@ -4458,14 +4458,16 @@ var initialDiagnosticStore = {
     zapret2Remove: { loading: false },
     byedpiCheck: { loading: false },
     byedpiInstall: { loading: false },
-    byedpiRemove: { loading: false }
+    byedpiRemove: { loading: false },
+    zapretManagerInstall: { loading: false }
   },
   updatesChecks: {
     forkop: { status: null, latest_version: "", release_url: "" },
     sing_box: { status: null, latest_version: "", release_url: "" },
     zapret: { status: null, latest_version: "", release_url: "" },
     zapret2: { status: null, latest_version: "", release_url: "" },
-    byedpi: { status: null, latest_version: "", release_url: "" }
+    byedpi: { status: null, latest_version: "", release_url: "" },
+    zapret_manager: { status: null, latest_version: "", release_url: "" }
   }
 };
 
@@ -4759,7 +4761,7 @@ function getForkopLogNotification(line) {
     return { kind: "error", line };
   }
   const update = line.match(
-    /\[component-update\]\s+(forkop|sing_box|zapret|zapret2|byedpi)\s+(\S+)/i
+    /\[component-update\]\s+(forkop|sing_box|zapret|zapret2|byedpi|zapret_manager)\s+(\S+)/i
   );
   if (!update) {
     return null;
@@ -4811,7 +4813,8 @@ var componentActionKeyMap = {
   "zapret2:remove": "zapret2Remove",
   "byedpi:check_update": "byedpiCheck",
   "byedpi:install": "byedpiInstall",
-  "byedpi:remove": "byedpiRemove"
+  "byedpi:remove": "byedpiRemove",
+  "zapret_manager:install": "zapretManagerInstall"
 };
 function getComponentActionKey(component, action) {
   return componentActionKeyMap[`${component}:${action}`];
@@ -4918,7 +4921,8 @@ function getEmptyUpdatesActions() {
     zapret2Remove: { loading: false },
     byedpiCheck: { loading: false },
     byedpiInstall: { loading: false },
-    byedpiRemove: { loading: false }
+    byedpiRemove: { loading: false },
+    zapretManagerInstall: { loading: false }
   };
 }
 function getEmptyDiagnosticsActions() {
@@ -13696,6 +13700,15 @@ function getComponentCards() {
     installKey: "byedpiInstall",
     removeKey: "byedpiRemove"
   });
+  const zapretManagerActions = [
+    {
+      key: "zapretManagerInstall",
+      text: _("Install"),
+      icon: renderDownloadIcon24,
+      component: "zapret_manager",
+      action: "install"
+    }
+  ];
   return [
     {
       component: "forkop",
@@ -13741,6 +13754,15 @@ function getComponentCards() {
       latestVersion: getLatestVersion("byedpi"),
       releaseUrl: getGitHubReleaseUrl("byedpi"),
       actions: byedpiActions
+    },
+    {
+      component: "zapret_manager",
+      column: 1,
+      title: "Zapret-Manager",
+      version: _("Mirror edition"),
+      latestVersion: "",
+      releaseUrl: "https://github.com/Screamshow/Zapret-Manager",
+      actions: zapretManagerActions
     }
   ];
 }

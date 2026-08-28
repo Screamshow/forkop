@@ -558,7 +558,8 @@ export namespace Forkop {
     | 'sing_box'
     | 'zapret'
     | 'zapret2'
-    | 'byedpi';
+    | 'byedpi'
+    | 'zapret_manager';
 
   export type ComponentAction =
     | 'check_update'

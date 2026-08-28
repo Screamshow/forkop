@@ -1051,6 +1051,31 @@ function install_byedpi(action) {
     action_success("byedpi", action, "ByeDPI package has been installed", current_version, pkg.version, 1, "latest", release.release_url || "");
 }
 
+function install_zapret_manager(action) {
+    let component = "zapret_manager";
+    let manager_url = FORKOP_MIRROR_BASE_URL + "/zapret-manager/proxy/raw.githubusercontent.com/Screamshow/Zapret-Manager/main/Zapret-Manager.sh";
+    let manager_file = tmp_dir + "/Zapret-Manager.sh";
+    let current_version = file_exists("/usr/bin/zms") ? "installed" : "not installed";
+
+    if (FORKOP_MIRROR_BASE_URL == "")
+        action_fail(component, action, "Forkop mirror URL is not configured", current_version);
+    if (!download_with_retry(manager_url, manager_file, "Zapret-Manager"))
+        action_fail(component, action, "Failed to download Zapret-Manager from the mirror", current_version);
+
+    let source = read_file(manager_file);
+    let matched = match(source, /ZAPRET_MANAGER_VERSION="([^"]+)"/);
+    let latest_version = matched != null ? as_string(matched[1]) : "mirror";
+    let wrapper = "#!/bin/sh\nexec sh <(wget -q -O - " + shell_quote(manager_url) + ") \"$@\"\n";
+    let auto_wrapper = "#!/bin/sh\nexec sh <(wget -q -O - " + shell_quote(manager_url) + ") \"$@\"\n";
+
+    if (!write_file("/usr/bin/zms", wrapper) || !write_file("/usr/bin/zmsA", auto_wrapper) ||
+        !command_success_from_args([ "chmod", "0755", "/usr/bin/zms", "/usr/bin/zmsA" ]))
+        action_fail(component, action, "Failed to install Zapret-Manager launchers", current_version, latest_version);
+
+    action_success(component, action, "Zapret-Manager has been installed from the Forkop mirror", current_version,
+        latest_version, 1, "latest", manager_url);
+}
+
 function remove_optional_component(component, package_name, label, runtime_module) {
     if (!pkg_is_installed(package_name)) {
         if (provider_installed(runtime_module))
@@ -1890,6 +1915,8 @@ function component_action(component, action) {
         install_byedpi(action);
     else if (component == "byedpi" && action == "remove")
         remove_optional_component("byedpi", "byedpi", "ByeDPI", LIB_DIR + "/providers/byedpi/runtime.uc");
+    else if (component == "zapret_manager" && action == "install")
+        install_zapret_manager(action);
     else
         action_fail(component != "" ? component : "unknown", action != "" ? action : "unknown", "Unknown component action");
 }
