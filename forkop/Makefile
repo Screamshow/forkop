@@ -53,7 +53,7 @@ define Package/forkop/postinst
 
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
 FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate || exit $$?
-/usr/lib/forkop/service/mirror-migration.sh || exit $$?
+/usr/share/forkop/mirror-migration.sh || exit $$?
 /usr/bin/forkop package_postinst
 endef
 
@@ -73,10 +73,10 @@ define Package/forkop/install
 
 	$(INSTALL_DIR) $(1)/usr/lib/forkop
 	$(CP) ./files/usr/lib/. $(1)/usr/lib/forkop/
-	chmod 0755 $(1)/usr/lib/forkop/service/mirror-migration.sh
 
 	$(INSTALL_DIR) $(1)/usr/share/forkop/defaults
 	$(INSTALL_CONF) ./files/etc/config/forkop $(1)/usr/share/forkop/defaults/forkop
+	$(INSTALL_BIN) ./files/usr/share/forkop/mirror-migration.sh $(1)/usr/share/forkop/mirror-migration.sh
 
 	sed -i -e 's/__COMPILED_VERSION_VARIABLE__/$(FORKOP_COMPILED_VERSION)/g' $(1)/usr/lib/forkop/core/constants.uc
 endef

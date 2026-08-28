@@ -128,7 +128,9 @@ else if (mode == "kind-from-reference-hint")
     print(kind_from_reference_hint(ARGV[1]), "\n");
 else if (mode == "remote-format")
     print(remote_format(ARGV[1]), "\n");
+else if (mode == "community-url")
+    print(community_url(ARGV[1]), "\n");
 else {
-    warn("Usage: singbox/rulesets.uc <file-extension|is-community|kind-from-reference-hint|remote-format> ...\n");
+    warn("Usage: singbox/rulesets.uc <file-extension|is-community|kind-from-reference-hint|remote-format|community-url> ...\n");
     exit(1);
 }

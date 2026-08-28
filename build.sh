@@ -173,6 +173,7 @@ build_backend_root() {
   install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop" "$output_root/etc/init.d/forkop"
   install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/etc/config/forkop"
   install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/usr/share/forkop/defaults/forkop"
+  install -m 0755 "$ROOT_DIR/forkop/files/usr/share/forkop/mirror-migration.sh" "$output_root/usr/share/forkop/mirror-migration.sh"
   install -m 0755 "$ROOT_DIR/forkop/files/usr/bin/forkop" "$output_root/usr/bin/forkop"
   cp -a "$ROOT_DIR/forkop/files/usr/lib/." "$output_root/usr/lib/forkop/"
 
@@ -183,7 +184,7 @@ build_backend_root() {
   chmod 0755 \
     "$output_root/etc/init.d/forkop" \
     "$output_root/usr/bin/forkop" \
-    "$output_root/usr/lib/forkop/service/mirror-migration.sh"
+    "$output_root/usr/share/forkop/mirror-migration.sh"
 }
 
 build_app_root() {
@@ -276,7 +277,7 @@ EOF
 #!/bin/sh
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate || exit $?
-/usr/lib/forkop/service/mirror-migration.sh || exit $?
+/usr/share/forkop/mirror-migration.sh || exit $?
 /usr/bin/forkop package_postinst
 EOF
 
@@ -413,7 +414,7 @@ EOF
   cat > "$scripts_dir/backend-post-install.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/lib/forkop/service/mirror-migration.sh && /usr/bin/forkop package_postinst"));
+    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/share/forkop/mirror-migration.sh && /usr/bin/forkop package_postinst"));
 exit(0);
 EOF
 
@@ -436,7 +437,7 @@ EOF
   cat > "$scripts_dir/backend-post-upgrade.sh" <<'EOF'
 #!/usr/bin/ucode
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "")
-    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/lib/forkop/service/mirror-migration.sh && /usr/bin/forkop package_postinst"));
+    exit(system("FORKOP_LIB=/usr/lib/forkop ucode -L /usr/lib/forkop /usr/lib/forkop/config/migration.uc migrate && /usr/share/forkop/mirror-migration.sh && /usr/bin/forkop package_postinst"));
 exit(0);
 EOF
 
