@@ -1496,7 +1496,6 @@ pkg_list_update() {
 
 configure_apk_mirror() {
     distfeeds="/etc/apk/repositories.d/distfeeds.list"
-    rewritten="$TMP_DIR/distfeeds.list"
 
     [ "$PKG_IS_APK" -eq 1 ] || return 0
     [ -s "$distfeeds" ] || fail "$distfeeds is missing or empty"
@@ -1507,18 +1506,21 @@ configure_apk_mirror() {
     esac
     MIRROR_BASE_URL="${MIRROR_BASE_URL%/}"
 
-    sed -E \
-        "s#https?://[^/]+/(pub/software/openwrt/)?releases/#${MIRROR_BASE_URL}/openwrt/releases/#" \
-        "$distfeeds" > "$rewritten" || fail "Failed to prepare mirrored OpenWrt feeds"
+    for repository_file in /etc/apk/repositories "$distfeeds"; do
+        [ -e "$repository_file" ] || continue
+        rewritten="$TMP_DIR/$(basename "$repository_file").mirror"
+        sed -E \
+            "s#https?://[^/]+/(pub/software/openwrt/)?releases/#${MIRROR_BASE_URL}/openwrt/releases/#" \
+            "$repository_file" > "$rewritten" || fail "Failed to prepare $repository_file"
+        if grep -E 'https?://[^/]+/(pub/software/openwrt/)?releases/' "$rewritten" |
+            grep -Fv "$MIRROR_BASE_URL/openwrt/releases/" >/dev/null; then
+            fail "Some OpenWrt feeds in $repository_file could not be redirected to $MIRROR_BASE_URL"
+        fi
+        cp "$rewritten" "$repository_file" || fail "Failed to update $repository_file"
+    done
 
-    grep -Fq "$MIRROR_BASE_URL/openwrt/releases/" "$rewritten" ||
-        fail "No OpenWrt release feeds were found in $distfeeds"
-    if grep -E 'https?://[^/]+/(pub/software/openwrt/)?releases/' "$rewritten" |
-        grep -Fv "$MIRROR_BASE_URL/openwrt/releases/" >/dev/null; then
-        fail "Some OpenWrt feeds could not be redirected to $MIRROR_BASE_URL"
-    fi
-
-    cp "$rewritten" "$distfeeds" || fail "Failed to enable mirrored OpenWrt feeds"
+    grep -Fq "$MIRROR_BASE_URL/openwrt/releases/" "$distfeeds" ||
+        fail "No mirrored OpenWrt release feeds were written to $distfeeds"
     msg "OpenWrt package feeds now use $MIRROR_BASE_URL"
 }
 
