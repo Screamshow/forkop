@@ -91,6 +91,7 @@ export const initialDiagnosticStore: Pick<
     zapret2_installed: 0,
     byedpi_version: 'loading',
     byedpi_installed: 0,
+    zapret_manager_installed: 0,
     server_inbounds_enabled_count: -1,
     openwrt_version: 'loading',
     device_model: 'loading',
@@ -142,6 +143,7 @@ export const initialDiagnosticStore: Pick<
     byedpiInstall: { loading: false },
     byedpiRemove: { loading: false },
     zapretManagerInstall: { loading: false },
+    zapretManagerRemove: { loading: false },
   },
   updatesChecks: {
     forkop: { status: null, latest_version: '', release_url: '' },

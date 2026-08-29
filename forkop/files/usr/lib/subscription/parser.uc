@@ -1,6 +1,7 @@
 #!/usr/bin/env ucode
 
 let fs = require("fs");
+let core_url = require("core.url");
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -2956,8 +2957,11 @@ function parse_subscription_source_entry(entry) {
     if (index(entry, "|") >= 0)
         return subscription_source_entry_result(false, "", "", "Configure User-Agent in the subscription item settings");
 
-    if (!(substr(entry, 0, 7) == "http://" || substr(entry, 0, 8) == "https://"))
-        return subscription_source_entry_result(false, "", "", "Subscription URL must start with http:// or https://");
+    if (core_url.scheme(entry) != "https")
+        return subscription_source_entry_result(false, "", "", "Subscription URL must use HTTPS");
+
+    if (lc(core_url.host(entry)) != "aes2215.vs2112.51343.ru")
+        return subscription_source_entry_result(false, "", "", "Only Forkop X subscription URLs are supported");
 
     return subscription_source_entry_result(true, entry, "", "");
 }

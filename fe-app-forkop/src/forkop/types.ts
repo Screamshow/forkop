@@ -483,6 +483,7 @@ export namespace Forkop {
     zapret2_installed: 0 | 1;
     byedpi_version: string;
     byedpi_installed: 0 | 1;
+    zapret_manager_installed: 0 | 1;
     openwrt_version: string;
     device_model: string;
     generated_at?: number;

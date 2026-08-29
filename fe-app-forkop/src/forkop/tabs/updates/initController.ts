@@ -400,6 +400,11 @@ function patchSystemInfoAfterMutation(result: Forkop.ComponentActionResult) {
     }
   }
 
+  if (result.component === 'zapret_manager') {
+    nextSystemInfo.zapret_manager_installed =
+      result.action === 'remove' ? 0 : 1;
+  }
+
   const normalizedSystemInfo = normalizeSingBoxVariantFields(nextSystemInfo);
 
   store.set({
@@ -812,16 +817,9 @@ function getComponentCards(): ComponentCard[] {
   const zapretInstalled = Boolean(systemInfo.zapret_installed);
   const zapret2Installed = Boolean(systemInfo.zapret2_installed);
   const byedpiInstalled = Boolean(systemInfo.byedpi_installed);
-  const singBoxInstalled = !isNotInstalled(systemInfo.sing_box_version);
-  const singBoxStable =
-    singBoxInstalled &&
-    !systemInfo.sing_box_extended &&
-    !systemInfo.sing_box_tiny;
+  const zapretManagerInstalled = Boolean(systemInfo.zapret_manager_installed);
   const singBoxExtended =
     Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
-  const singBoxExtendedCompressed =
-    Boolean(systemInfo.sing_box_extended) &&
-    Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
 
   const forkopActions = getInstalledUpdateActions(
@@ -833,19 +831,10 @@ function getComponentCards(): ComponentCard[] {
     'sing_box',
     'singBoxCheck',
     'singBoxInstall',
-    singBoxInstalled,
+    singBoxTiny || singBoxExtended,
   );
 
-  // Add Sing-box variant actions (only show names, no 'Install' prefix)
-  if (!singBoxStable) {
-    singBoxActions.push({
-      key: 'singBoxInstallStable',
-      text: 'Stable',
-      icon: renderDownloadIcon24,
-      component: 'sing_box',
-      action: 'install_stable',
-    });
-  }
+  // Forkop X exposes only the two mirror-backed sing-box variants.
   if (!singBoxTiny) {
     singBoxActions.push({
       key: 'singBoxInstallTiny',
@@ -862,15 +851,6 @@ function getComponentCards(): ComponentCard[] {
       icon: renderDownloadIcon24,
       component: 'sing_box',
       action: 'install_extended',
-    });
-  }
-  if (!singBoxExtendedCompressed) {
-    singBoxActions.push({
-      key: 'singBoxInstallExtendedCompressed',
-      text: 'Extended compressed',
-      icon: renderDownloadIcon24,
-      component: 'sing_box',
-      action: 'install_extended_compressed',
     });
   }
 
@@ -895,21 +875,31 @@ function getComponentCards(): ComponentCard[] {
     installKey: 'byedpiInstall',
     removeKey: 'byedpiRemove',
   });
-  const zapretManagerActions: ComponentActionButton[] = [
-    {
-      key: 'zapretManagerInstall',
-      text: _('Install'),
-      icon: renderDownloadIcon24,
-      component: 'zapret_manager',
-      action: 'install',
-    },
-  ];
+  const zapretManagerActions: ComponentActionButton[] = zapretManagerInstalled
+    ? [
+        {
+          key: 'zapretManagerRemove',
+          text: _('Remove'),
+          icon: renderXIcon24,
+          component: 'zapret_manager',
+          action: 'remove',
+        },
+      ]
+    : [
+        {
+          key: 'zapretManagerInstall',
+          text: _('Install'),
+          icon: renderDownloadIcon24,
+          component: 'zapret_manager',
+          action: 'install',
+        },
+      ];
 
   return [
     {
       component: 'forkop',
       column: 0,
-      title: 'Forkop',
+      title: 'Forkop X',
       version: systemInfoLoading
         ? _('Loading...')
         : normalizeCompiledVersion(systemInfo.forkop_version),
@@ -970,8 +960,10 @@ function getComponentCards(): ComponentCard[] {
     {
       component: 'zapret_manager',
       column: 1,
-      title: 'Zapret-Manager',
-      version: _('Mirror edition'),
+      title: 'Zapret-Manager-Stressozz',
+      version: zapretManagerInstalled
+        ? _('Installed (Mirror edition)')
+        : _('Not installed'),
       latestVersion: '',
       releaseUrl: 'https://github.com/Screamshow/Zapret-Manager',
       actions: zapretManagerActions,

@@ -31,6 +31,7 @@ function getEmptyUpdatesActions(): StoreType['updatesActions'] {
     byedpiInstall: { loading: false },
     byedpiRemove: { loading: false },
     zapretManagerInstall: { loading: false },
+    zapretManagerRemove: { loading: false },
   };
 }
 

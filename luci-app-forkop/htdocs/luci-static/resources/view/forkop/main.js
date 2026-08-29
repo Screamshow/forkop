@@ -4409,6 +4409,7 @@ var initialDiagnosticStore = {
     zapret2_installed: 0,
     byedpi_version: "loading",
     byedpi_installed: 0,
+    zapret_manager_installed: 0,
     server_inbounds_enabled_count: -1,
     openwrt_version: "loading",
     device_model: "loading"
@@ -4459,7 +4460,8 @@ var initialDiagnosticStore = {
     byedpiCheck: { loading: false },
     byedpiInstall: { loading: false },
     byedpiRemove: { loading: false },
-    zapretManagerInstall: { loading: false }
+    zapretManagerInstall: { loading: false },
+    zapretManagerRemove: { loading: false }
   },
   updatesChecks: {
     forkop: { status: null, latest_version: "", release_url: "" },
@@ -4814,7 +4816,8 @@ var componentActionKeyMap = {
   "byedpi:check_update": "byedpiCheck",
   "byedpi:install": "byedpiInstall",
   "byedpi:remove": "byedpiRemove",
-  "zapret_manager:install": "zapretManagerInstall"
+  "zapret_manager:install": "zapretManagerInstall",
+  "zapret_manager:remove": "zapretManagerRemove"
 };
 function getComponentActionKey(component, action) {
   return componentActionKeyMap[`${component}:${action}`];
@@ -4922,7 +4925,8 @@ function getEmptyUpdatesActions() {
     byedpiCheck: { loading: false },
     byedpiInstall: { loading: false },
     byedpiRemove: { loading: false },
-    zapretManagerInstall: { loading: false }
+    zapretManagerInstall: { loading: false },
+    zapretManagerRemove: { loading: false }
   };
 }
 function getEmptyDiagnosticsActions() {
@@ -8618,6 +8622,7 @@ var UNKNOWN_SYSTEM_INFO = {
   zapret2_installed: 0,
   byedpi_version: _("unknown"),
   byedpi_installed: 0,
+  zapret_manager_installed: 0,
   server_inbounds_enabled_count: -1,
   openwrt_version: _("unknown"),
   device_model: _("unknown")
@@ -10568,7 +10573,7 @@ function renderDiagnosticSystemInfoWidget() {
   const container = document.getElementById("fkp_diagnostic-page-system-info");
   const items = [
     {
-      key: "Forkop",
+      key: "Forkop X",
       value: normalizeCompiledVersion(diagnosticsSystemInfo.forkop_version)
     },
     {
@@ -13094,9 +13099,6 @@ if (typeof window !== "undefined") {
     pageUnloading2 = false;
   });
 }
-function isNotInstalled(version) {
-  return !version || version === "not installed";
-}
 function shouldShowInstallAfterCheck(component) {
   const status = getVisibleCheckResult(component)?.status;
   return status === "outdated" || status === "dev";
@@ -13319,6 +13321,9 @@ function patchSystemInfoAfterMutation(result) {
       nextSystemInfo.byedpi_installed = 1;
       nextSystemInfo.byedpi_version = version;
     }
+  }
+  if (result.component === "zapret_manager") {
+    nextSystemInfo.zapret_manager_installed = result.action === "remove" ? 0 : 1;
   }
   const normalizedSystemInfo = normalizeSingBoxVariantFields(nextSystemInfo);
   store.set({
@@ -13627,10 +13632,8 @@ function getComponentCards() {
   const zapretInstalled = Boolean(systemInfo.zapret_installed);
   const zapret2Installed = Boolean(systemInfo.zapret2_installed);
   const byedpiInstalled = Boolean(systemInfo.byedpi_installed);
-  const singBoxInstalled = !isNotInstalled(systemInfo.sing_box_version);
-  const singBoxStable = singBoxInstalled && !systemInfo.sing_box_extended && !systemInfo.sing_box_tiny;
+  const zapretManagerInstalled = Boolean(systemInfo.zapret_manager_installed);
   const singBoxExtended = Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
-  const singBoxExtendedCompressed = Boolean(systemInfo.sing_box_extended) && Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
   const forkopActions = getInstalledUpdateActions(
     "forkop",
@@ -13641,17 +13644,8 @@ function getComponentCards() {
     "sing_box",
     "singBoxCheck",
     "singBoxInstall",
-    singBoxInstalled
+    singBoxTiny || singBoxExtended
   );
-  if (!singBoxStable) {
-    singBoxActions.push({
-      key: "singBoxInstallStable",
-      text: "Stable",
-      icon: renderDownloadIcon24,
-      component: "sing_box",
-      action: "install_stable"
-    });
-  }
   if (!singBoxTiny) {
     singBoxActions.push({
       key: "singBoxInstallTiny",
@@ -13668,15 +13662,6 @@ function getComponentCards() {
       icon: renderDownloadIcon24,
       component: "sing_box",
       action: "install_extended"
-    });
-  }
-  if (!singBoxExtendedCompressed) {
-    singBoxActions.push({
-      key: "singBoxInstallExtendedCompressed",
-      text: "Extended compressed",
-      icon: renderDownloadIcon24,
-      component: "sing_box",
-      action: "install_extended_compressed"
     });
   }
   const zapretActions = getOptionalComponentActions({
@@ -13700,7 +13685,15 @@ function getComponentCards() {
     installKey: "byedpiInstall",
     removeKey: "byedpiRemove"
   });
-  const zapretManagerActions = [
+  const zapretManagerActions = zapretManagerInstalled ? [
+    {
+      key: "zapretManagerRemove",
+      text: _("Remove"),
+      icon: renderXIcon24,
+      component: "zapret_manager",
+      action: "remove"
+    }
+  ] : [
     {
       key: "zapretManagerInstall",
       text: _("Install"),
@@ -13713,7 +13706,7 @@ function getComponentCards() {
     {
       component: "forkop",
       column: 0,
-      title: "Forkop",
+      title: "Forkop X",
       version: systemInfoLoading ? _("Loading...") : normalizeCompiledVersion(systemInfo.forkop_version),
       latestVersion: getLatestVersion("forkop"),
       releaseUrl: getGitHubReleaseUrl("forkop"),
@@ -13758,8 +13751,8 @@ function getComponentCards() {
     {
       component: "zapret_manager",
       column: 1,
-      title: "Zapret-Manager",
-      version: _("Mirror edition"),
+      title: "Zapret-Manager-Stressozz",
+      version: zapretManagerInstalled ? _("Installed (Mirror edition)") : _("Not installed"),
       latestVersion: "",
       releaseUrl: "https://github.com/Screamshow/Zapret-Manager",
       actions: zapretManagerActions
@@ -14075,24 +14068,24 @@ var styles6 = `
 }
 
 .fkp_updates-page__components {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: flex-start;
     gap: 10px;
     width: 100%;
-    flex-wrap: wrap;
 }
 
 .fkp_updates-page__components-column {
     display: flex;
-    flex: 1 1 auto;
     flex-direction: column;
     gap: 10px;
-    min-width: max-content;
+    min-width: 0;
+    width: 100%;
 }
 
 @media (max-width: 760px) {
     .fkp_updates-page__components {
-        flex-direction: column;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .fkp_updates-page__components-column {
@@ -14108,7 +14101,9 @@ var styles6 = `
     display: flex;
     flex-direction: column;
     gap: 10px;
-    min-width: max-content;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .fkp_updates-page__component__header {

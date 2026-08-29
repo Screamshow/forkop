@@ -1070,6 +1070,10 @@ function build_system_info() {
     let zapret2_version = zapret2_installed ? provider_version(ZAPRET2_RUNTIME_UC) : "not installed";
     let byedpi_installed = provider_installed(BYEDPI_RUNTIME_UC) ? 1 : 0;
     let byedpi_version = byedpi_installed ? provider_version(BYEDPI_RUNTIME_UC) : "not installed";
+    let zms_source = as_string(fs.readfile("/usr/bin/zms"));
+    let zmsa_source = as_string(fs.readfile("/usr/bin/zmsA"));
+    let zapret_manager_installed = file_executable("/usr/bin/zms") && file_executable("/usr/bin/zmsA") &&
+        index(zms_source, "/zapret-manager/proxy/") >= 0 && index(zmsa_source, "/zapret-manager/proxy/") >= 0 ? 1 : 0;
     let device_model = first_line_value("/tmp/sysinfo/model", "unknown");
 
     return {
@@ -1087,6 +1091,7 @@ function build_system_info() {
         zapret2_installed,
         byedpi_version,
         byedpi_installed,
+        zapret_manager_installed,
         openwrt_version: openwrt_release(),
         device_model,
         generated_at: int(clock()[0])
