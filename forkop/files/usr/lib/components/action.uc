@@ -1072,6 +1072,7 @@ function install_zapret_manager(action) {
         !command_success_from_args([ "chmod", "0755", "/usr/bin/zms", "/usr/bin/zmsA" ]))
         action_fail(component, action, "Failed to install Zapret-Manager launchers", current_version, latest_version);
 
+    clear_version_caches();
     action_success(component, action, "Zapret-Manager has been installed from the Forkop mirror", current_version,
         latest_version, 1, "latest", manager_url);
 }

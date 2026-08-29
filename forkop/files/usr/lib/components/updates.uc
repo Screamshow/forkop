@@ -2486,33 +2486,6 @@ function dns_probe_passed(proxy_address) {
     return false;
 }
 
-function github_probe(proxy_address) {
-    let attempt = 1;
-    let timeout = 5;
-    while (attempt <= 10) {
-        let args = [ "curl", "-s", "-m", "" + timeout ];
-        if (as_string(proxy_address) != "") {
-            push(args, "-x");
-            push(args, "http://" + as_string(proxy_address));
-        }
-        push(args, "https://github.com");
-
-        if (command_success_from_args(args)) {
-            log_message(as_string(proxy_address) != "" ? "GitHub connection check passed (via proxy)" : "GitHub connection check passed", "info");
-            return true;
-        }
-
-        log_message("GitHub is unavailable [" + attempt + "/10] (max-timeout=" + timeout + ")", "info");
-        if (timeout < 10)
-            timeout++;
-        command_success_from_args([ "sleep", "3" ]);
-        attempt++;
-    }
-
-    log_message("GitHub connection check failed after 10 attempts; trying configured list downloads individually", "info");
-    return false;
-}
-
 function write_list_update_timestamp(timestamp) {
     ensure_dir(RUNTIME_STATE_DIR);
     write_file(LIST_UPDATE_STATE_FILE, as_string(timestamp) + "\n");
@@ -2529,8 +2502,6 @@ function list_update() {
         list_update_pid_end();
         exit(1);
     }
-    github_probe(proxy_address);
-
     log_message("Downloading and processing lists", "info");
     let sections = uci_sections("section");
     let ok = true;

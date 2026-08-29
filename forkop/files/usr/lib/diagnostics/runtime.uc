@@ -937,6 +937,10 @@ function get_luci_app_version() {
     return "";
 }
 
+function provider_installed(runtime_uc) {
+    return module_success(runtime_uc, [ "installed" ]);
+}
+
 function system_info_cache_is_valid() {
     let cache = read_json_file(SYSTEM_INFO_CACHE_FILE);
     if (type(cache) != "object")
@@ -945,7 +949,30 @@ function system_info_cache_is_valid() {
     let generated_at = arg_number(cache.generated_at || 0);
     if (now > 0 && generated_at > 0 && SYSTEM_INFO_CACHE_TTL > 0 && now - generated_at >= SYSTEM_INFO_CACHE_TTL)
         return false;
-    return cache.forkop_version == FORKOP_VERSION && cache.luci_app_version == get_luci_app_version();
+    if (cache.forkop_version != FORKOP_VERSION || cache.luci_app_version != get_luci_app_version())
+        return false;
+
+    let zms_source = as_string(fs.readfile("/usr/bin/zms"));
+    let zmsa_source = as_string(fs.readfile("/usr/bin/zmsA"));
+    let zapret_manager_installed = 0;
+    if (file_executable("/usr/bin/zms") && file_executable("/usr/bin/zmsA") &&
+        index(zms_source, "/zapret-manager/proxy/") >= 0 && index(zmsa_source, "/zapret-manager/proxy/") >= 0)
+        zapret_manager_installed = 1;
+
+    let zapret_installed = 0;
+    let zapret2_installed = 0;
+    let byedpi_installed = 0;
+    if (provider_installed(ZAPRET_RUNTIME_UC))
+        zapret_installed = 1;
+    if (provider_installed(ZAPRET2_RUNTIME_UC))
+        zapret2_installed = 1;
+    if (provider_installed(BYEDPI_RUNTIME_UC))
+        byedpi_installed = 1;
+
+    return int(cache.zapret_installed || 0) == zapret_installed &&
+        int(cache.zapret2_installed || 0) == zapret2_installed &&
+        int(cache.byedpi_installed || 0) == byedpi_installed &&
+        int(cache.zapret_manager_installed || 0) == zapret_manager_installed;
 }
 
 function ensure_subscription_runtime_dirs() {
@@ -1009,10 +1036,6 @@ function sing_box_capability_flags(sing_box_version, sing_box_version_output) {
         tailscale = 1;
 
     return { extended, tiny, tailscale };
-}
-
-function provider_installed(runtime_uc) {
-    return module_success(runtime_uc, [ "installed" ]);
 }
 
 function provider_version(runtime_uc) {
