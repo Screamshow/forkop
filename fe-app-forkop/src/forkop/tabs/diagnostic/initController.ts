@@ -907,7 +907,7 @@ function renderDiagnosticSystemInfoWidget() {
 
   const items = [
     {
-      key: 'Forkop',
+      key: 'Forkop X',
       value: normalizeCompiledVersion(diagnosticsSystemInfo.forkop_version),
     },
     {

@@ -9,10 +9,6 @@ on:
         description: Release tag to build and publish
         required: true
         type: string
-      release_notes:
-        description: 'Optional release notes/comment (use \n for line breaks; Markdown is preserved)'
-        required: false
-        type: string
       publish_release:
         description: Publish the built packages as a GitHub release
         required: false
@@ -29,7 +25,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       commitish: ${{ steps.version.outputs.commitish }}
-      release_notes: ${{ steps.version.outputs.release_notes }}
     steps:
       - uses: actions/checkout@v5.0.0
         with:
@@ -38,7 +33,6 @@ jobs:
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.release_tag || '' }}
-          INPUT_RELEASE_NOTES: ${{ inputs.release_notes || '' }}
         run: |
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
@@ -51,16 +45,6 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "commitish=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          python3 - <<'PY'
-          import os
-          import uuid
-
-          notes = os.environ['INPUT_RELEASE_NOTES']
-          notes = notes.replace('\r\n', '\n').replace('\r', '\n').replace('\\n', '\n')
-          delimiter = f'ghadelimiter_{uuid.uuid4().hex}'
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f'release_notes<<{delimiter}\n{notes}\n{delimiter}\n')
-          PY
 
   build:
     name: Build Forkop release packages
@@ -119,4 +103,3 @@ jobs:
           name: ${{ needs.preparation.outputs.version }}
           tag_name: ${{ needs.preparation.outputs.version }}
           target_commitish: ${{ needs.preparation.outputs.commitish }}
-          body: ${{ needs.preparation.outputs.release_notes }}

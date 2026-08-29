@@ -15,24 +15,24 @@ export const styles = `
 }
 
 .fkp_updates-page__components {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: flex-start;
     gap: 10px;
     width: 100%;
-    flex-wrap: wrap;
 }
 
 .fkp_updates-page__components-column {
     display: flex;
-    flex: 1 1 auto;
     flex-direction: column;
     gap: 10px;
-    min-width: max-content;
+    min-width: 0;
+    width: 100%;
 }
 
 @media (max-width: 760px) {
     .fkp_updates-page__components {
-        flex-direction: column;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .fkp_updates-page__components-column {
@@ -48,7 +48,9 @@ export const styles = `
     display: flex;
     flex-direction: column;
     gap: 10px;
-    min-width: max-content;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .fkp_updates-page__component__header {

@@ -1076,6 +1076,29 @@ function install_zapret_manager(action) {
         latest_version, 1, "latest", manager_url);
 }
 
+function remove_zapret_manager(action) {
+    let component = "zapret_manager";
+    let managed_marker = "/zapret-manager/proxy/";
+    let paths = [ "/usr/bin/zms", "/usr/bin/zmsA" ];
+    let removed = 0;
+
+    for (let path in paths) {
+        if (!file_exists(path))
+            continue;
+        if (index(read_file(path), managed_marker) < 0)
+            action_fail(component, action, "Existing " + path + " was not created by Forkop X and was not removed");
+        remove_file(path);
+        if (file_exists(path))
+            action_fail(component, action, "Failed to remove " + path);
+        removed++;
+    }
+
+    clear_version_caches();
+    action_success(component, action, removed > 0 ?
+        "Zapret-Manager launchers have been removed" :
+        "Zapret-Manager launchers are already removed", "installed", "", 1);
+}
+
 function remove_optional_component(component, package_name, label, runtime_module) {
     if (!pkg_is_installed(package_name)) {
         if (provider_installed(runtime_module))
@@ -1212,25 +1235,16 @@ function set_sing_box_extended_release_from_json(release_json, compressed) {
 
     return {
         tag,
-        release_url: trim(helper_output_input(release_json, "object-get-default", [ "html_url", "" ])),
-        asset_url,
+        release_url: forkop_release_url(trim(helper_output_input(release_json, "object-get-default", [ "html_url", "" ]))),
+        asset_url: forkop_release_url(asset_url),
         asset_name: path_basename(asset_url)
     };
 }
 
 function resolve_sing_box_extended_release(compressed) {
-    let release_json = fetch_github_release_json("shtorm-7", "sing-box-extended");
-    let resolved = set_sing_box_extended_release_from_json(release_json, compressed);
-    if (resolved != null)
-        return resolved;
-
-    let releases_json = fetch_github_releases_json("shtorm-7", "sing-box-extended", "30");
-    if (releases_json == "")
+    if (FORKOP_MIRROR_BASE_URL == "")
         return null;
-    let tag = trim(helper_output_input(releases_json, "sing-box-extended-release-tag", []));
-    if (tag == "")
-        return null;
-    release_json = helper_output_input(releases_json, "release-by-tag", [ tag ]);
+    let release_json = http_get(FORKOP_MIRROR_BASE_URL + "/forkop/sing-box-extended/latest.json");
     return set_sing_box_extended_release_from_json(release_json, compressed);
 }
 
@@ -1917,6 +1931,8 @@ function component_action(component, action) {
         remove_optional_component("byedpi", "byedpi", "ByeDPI", LIB_DIR + "/providers/byedpi/runtime.uc");
     else if (component == "zapret_manager" && action == "install")
         install_zapret_manager(action);
+    else if (component == "zapret_manager" && action == "remove")
+        remove_zapret_manager(action);
     else
         action_fail(component != "" ? component : "unknown", action != "" ? action : "unknown", "Unknown component action");
 }

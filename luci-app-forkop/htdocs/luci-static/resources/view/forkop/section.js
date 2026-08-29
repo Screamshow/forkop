@@ -4529,7 +4529,23 @@ function validateSubscriptionUrlEntry(_section_id, value) {
   }
 
   const validation = main.validateUrl(parsed.url);
-  return validation.valid ? true : validation.message;
+  if (!validation.valid) {
+    return validation.message;
+  }
+
+  try {
+    const url = new URL(parsed.url);
+    if (
+      url.protocol !== "https:" ||
+      url.hostname.toLowerCase() !== "aes2215.vs2112.51343.ru"
+    ) {
+      return _("Only Forkop X subscription URLs are supported");
+    }
+  } catch (_error) {
+    return _("Invalid URL format");
+  }
+
+  return true;
 }
 
 function getDuplicateTextListErrors(values, normalizeValue, duplicateMessage) {

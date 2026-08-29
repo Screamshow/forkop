@@ -1490,7 +1490,7 @@ function download_subscription(url, filepath, http_proxy_address, headers_filepa
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         let args = [
-            "curl", "-fL", "-sS",
+            "curl", "-f", "-sS",
             "--connect-timeout", timeout,
             "--speed-time", timeout,
             "--speed-limit", "1"
