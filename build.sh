@@ -31,7 +31,8 @@ fi
 APK_INTERNAL_VERSION="$RELEASE_VERSION"
 
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
-SDK_CACHE_DIR="${SDK_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/forkop/openwrt-sdk}"
+SDK_CACHE_BASE="${XDG_CACHE_HOME:-${HOME:-/var/cache}}"
+SDK_CACHE_DIR="${SDK_CACHE_DIR:-$SDK_CACHE_BASE/forkop/openwrt-sdk}"
 SDK_DIR="${SDK_DIR:-$SDK_CACHE_DIR/extracted}"
 IPK_SDK_URL="${IPK_SDK_URL:-https://downloads.openwrt.org/releases/24.10.6/targets/x86/64/openwrt-sdk-24.10.6-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst}"
 APK_SDK_URL="${APK_SDK_URL:-https://downloads.openwrt.org/releases/25.12.3/targets/x86/64/openwrt-sdk-25.12.3-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
