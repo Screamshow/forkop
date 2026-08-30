@@ -206,8 +206,17 @@ function subscription_urltest_group_outbound(outbound) {
     return as_string(outbound.type || "") == "urltest" && internal_flag(outbound.__forkop_allow_group);
 }
 
+function flintnet_subscription_source(source_entry) {
+    return lc(url_host(as_string(source_entry))) == "sub.flintnet.pro";
+}
+
 function subscription_outbound_tag(outbound) {
     return type(outbound) == "object" ? as_string(outbound.tag || "") : "";
+}
+
+function subscription_urltest_group_member(outbound, refs) {
+    let tag_name = subscription_outbound_tag(outbound);
+    return tag_name != "" && object_or_empty(object_or_empty(refs).urltest)[tag_name] === true;
 }
 
 function subscription_visibility_refs(outbounds) {
@@ -757,6 +766,8 @@ function add_subscription_source_with_state(config, section, source_index, sourc
     let visibility_refs = subscription_visibility_refs(outbounds);
     if (include_urltest_groups === false)
         hide_urltest_group_outbounds = false;
+    let exclude_flintnet_urltest_members =
+        include_urltest_groups === false && flintnet_subscription_source(source_entry);
     node_prefix = trim(as_string(node_prefix));
     let prepared = [];
     let display_names = [];
@@ -768,6 +779,8 @@ function add_subscription_source_with_state(config, section, source_index, sourc
     for (let i = 0; i < length(outbounds); i++) {
         let outbound = outbounds[i];
         if (include_urltest_groups === false && subscription_urltest_group_outbound(outbound))
+            continue;
+        if (exclude_flintnet_urltest_members && subscription_urltest_group_member(outbound, visibility_refs))
             continue;
         let display_name = as_string(outbound.remark || outbound.tag || ("server-" + (i + 1)));
         let base = as_string(outbound.tag || outbound.remark || ("server-" + (i + 1)));

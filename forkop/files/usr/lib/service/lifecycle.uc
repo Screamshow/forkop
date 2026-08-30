@@ -739,6 +739,7 @@ function start_main() {
     if (status != 0)
         return status;
 
+    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
     release_start_subscription_update_lock();
     module_success(ZAPRET_UC, [ "start-runtime" ]);
     module_success(ZAPRET2_UC, [ "start-runtime" ]);
@@ -1257,6 +1258,7 @@ function reload(reason) {
             cleanup_failed_runtime();
             return status;
         }
+        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
     }
     else if (plan.needs_nft_rebuild == 1 && nft_populate_enabled == 1) {
         status = nft_populate_runtime_sets();

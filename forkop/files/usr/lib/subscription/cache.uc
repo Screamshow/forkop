@@ -277,7 +277,7 @@ function section_subscription_update_interval(section) {
 
         let value = connections.subscription_update_interval(section, entry);
         if (value == "")
-            value = "1h";
+            value = "4h";
         let seconds = duration_to_seconds_value(value);
         if (result == "" || (seconds != null && (result_seconds == 0 || seconds < result_seconds))) {
             result = value;
@@ -432,14 +432,7 @@ let happ_compat_version = match(forkop_version, /^[0-9]+[.][0-9]+[.][0-9]+$/) !=
     : "2.8.0";
 let happ_compat_user_agent = "Happ/" + happ_compat_version;
 
-let auto_user_agent_profiles = [
-    happ_compat_user_agent,
-    "Happ",
-    "v2rayN",
-    "v2rayNG",
-    "Mihomo",
-    "Clash.Meta"
-];
+let auto_user_agent_profiles = [ happ_compat_user_agent ];
 
 let auto_user_agents = {};
 for (let profile in auto_user_agent_profiles)

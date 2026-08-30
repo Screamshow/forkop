@@ -1284,10 +1284,22 @@ function migrate_http_connection_urls(ctx) {
     }
 }
 
+// Flintnet's Xray JSON carries provider URLTest balancers whose members have
+// technical proxy tags. Import is disabled once during upgrade; users may
+// re-enable it manually afterwards.
+function migrate_flintnet_urltest_default(ctx) {
+    for (let source in ctx.model.subscription_url) {
+        let host = lc(core_url.host(option(source, "url", "")));
+        if (host == "sub.flintnet.pro")
+            set_option(ctx, source, "include_urltest_groups", "0");
+    }
+}
+
 const MIGRATIONS = [
     { id: "interface_sections", run: migrate_interface_sections },
     { id: "enable_component_checks", run: migrate_enable_component_checks },
-    { id: "http_connection_urls", run: migrate_http_connection_urls }
+    { id: "http_connection_urls", run: migrate_http_connection_urls },
+    { id: "flintnet_urltest_default", run: migrate_flintnet_urltest_default }
 ];
 
 function apply_migrations(ctx) {

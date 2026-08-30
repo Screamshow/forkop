@@ -606,9 +606,9 @@ function subscription_update_enabled(section, value) {
 function subscription_update_interval(section, value) {
     let child = child_item_by_value(section, "subscription_url", "url", value);
     if (child != null)
-        return child_option(child, "subscription_update_interval", "1h");
+        return child_option(child, "subscription_update_interval", "4h");
     return item_option(section, "subscription_url_settings", value, "subscription_update_interval",
-        option(section, "subscription_update_interval", "1h") || "1h");
+        option(section, "subscription_update_interval", "4h") || "4h");
 }
 
 function subscription_dashboard_metadata_enabled(section, value) {
@@ -619,31 +619,11 @@ function subscription_dashboard_metadata_enabled(section, value) {
 }
 
 function subscription_auto_user_agent(section, value) {
-    let child = child_item_by_value(section, "subscription_url", "url", value);
-    if (child != null) {
-        if (raw_option(child, "auto_user_agent") != null)
-            return child_bool(child, "auto_user_agent", true);
-        return child_option(child, "user_agent", "") == "";
-    }
-
-    let settings = item_settings(section, "subscription_url_settings", value);
-    if (raw_option(settings, "auto_user_agent") != null)
-        return item_bool(section, "subscription_url_settings", value, "auto_user_agent", true);
-    return item_option(section, "subscription_url_settings", value, "user_agent", "") == "";
+    return true;
 }
 
 function subscription_auto_hwid(section, value) {
-    let child = child_item_by_value(section, "subscription_url", "url", value);
-    if (child != null) {
-        if (raw_option(child, "auto_hwid") != null)
-            return child_bool(child, "auto_hwid", true);
-        return child_option(child, "hwid", "") == "";
-    }
-
-    let settings = item_settings(section, "subscription_url_settings", value);
-    if (raw_option(settings, "auto_hwid") != null)
-        return item_bool(section, "subscription_url_settings", value, "auto_hwid", true);
-    return item_option(section, "subscription_url_settings", value, "hwid", "") == "";
+    return true;
 }
 
 function subscription_include_urltest_groups(section, value) {
@@ -654,17 +634,11 @@ function subscription_include_urltest_groups(section, value) {
 }
 
 function subscription_hide_urltest_group_outbounds(section, value) {
-    let child = child_item_by_value(section, "subscription_url", "url", value);
-    if (child != null)
-        return child_bool(child, "hide_urltest_group_outbounds", true);
-    return item_bool(section, "subscription_url_settings", value, "hide_urltest_group_outbounds", true);
+    return true;
 }
 
 function subscription_hide_detour_outbounds(section, value) {
-    let child = child_item_by_value(section, "subscription_url", "url", value);
-    if (child != null)
-        return child_bool(child, "hide_detour_outbounds", true);
-    return item_bool(section, "subscription_url_settings", value, "hide_detour_outbounds", true);
+    return true;
 }
 
 function subscription_prefix_nodes(section, value) {

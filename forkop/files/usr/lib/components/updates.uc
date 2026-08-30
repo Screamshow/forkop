@@ -628,7 +628,7 @@ function section_subscription_update_interval(section) {
 
         let value = connections.subscription_update_interval(section, entry);
         if (value == "")
-            value = "1h";
+            value = "4h";
         let seconds = duration_to_seconds_value(value);
         if (result == "" || (seconds != null && (result_seconds == 0 || seconds < result_seconds))) {
             result = value;

@@ -1322,7 +1322,7 @@ function subscription_update_interval_for_source(section, entry) {
     if (!connections.subscription_update_enabled(section, entry))
         return "";
     let value = connections.subscription_update_interval(section, entry);
-    return value != "" ? value : "1h";
+    return value != "" ? value : "4h";
 }
 
 function validate_subscription_request_profile(section, entry) {

@@ -15,6 +15,7 @@ const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/fo
 const SERVICE_ACTION_DIR = getenv("FORKOP_UI_SERVICE_ACTION_DIR") || STATE_DIR + "/service-actions";
 const SERVICE_ACTION_LOCK_DIR = getenv("FORKOP_UI_SERVICE_ACTION_LOCK_DIR") || STATE_DIR + "/service-actions.lock";
 const LATENCY_ACTION_DIR = getenv("FORKOP_UI_LATENCY_ACTION_DIR") || STATE_DIR + "/latency-actions";
+const LATENCY_TEST_LOCK_DIR = getenv("FORKOP_LATENCY_TEST_LOCK_DIR") || "/var/run/forkop/automatic-latency-test.lock";
 const COMPONENT_ACTION_DIR = getenv("FORKOP_UI_COMPONENT_ACTION_DIR") || getenv("UPDATES_JOB_DIR") || "/var/run/forkop/component-actions";
 const SUBSCRIPTION_ACTION_DIR = getenv("FORKOP_UI_SUBSCRIPTION_ACTION_DIR") || getenv("FORKOP_SUBSCRIPTION_UPDATE_JOB_DIR") || "/var/run/forkop/subscription-update-jobs";
 const SING_BOX_VERSION_CACHE_FILE = getenv("FORKOP_UI_SING_BOX_VERSION_CACHE_FILE") || STATE_DIR + "/sing-box-version";
@@ -1397,8 +1398,17 @@ function latency_clash_method(latency_type) {
 }
 
 function latency_worker(path, latency_type, tag, timeout) {
+    let owner_pid = trim(command_output_from_args([ "sh", "-c", "echo $$" ]));
+    if (owner_pid == "" || !module_success(STATE_UC, [
+        "acquire-runtime-dir-lock", LATENCY_TEST_LOCK_DIR, owner_pid
+    ])) {
+        write_finished_action_state(path, false, "Another latency test is already running", 1);
+        return;
+    }
+
     let method = latency_clash_method(latency_type).method;
     let status = command_status(command_from_args([ BIN_PATH, "clash_api", method, tag, timeout, path ]) + " >/dev/null 2>&1");
+    module_success(STATE_UC, [ "release-runtime-dir-lock", LATENCY_TEST_LOCK_DIR ]);
     if (status == 0)
         write_finished_action_state(path, true, "Latency test completed", status);
     else

@@ -42,6 +42,7 @@ const CLOUDFLARE_OCTETS = getenv("CLOUDFLARE_OCTETS") || constants.CLOUDFLARE_OC
 const ZAPRET_LEGACY_DEFAULT_NFQWS_OPT = getenv("ZAPRET_LEGACY_DEFAULT_NFQWS_OPT") || constants.ZAPRET_LEGACY_DEFAULT_NFQWS_OPT || "";
 const DEFAULT_LATENCY_TEST_URL = getenv("DEFAULT_LATENCY_TEST_URL") || "https://www.gstatic.com/generate_204";
 const RUNTIME_STABLE_MIN_AGE = getenv("FORKOP_RUNTIME_STABLE_MIN_AGE") || "2";
+const AUTOMATIC_LATENCY_TEST_LOCK_DIR = getenv("FORKOP_AUTOMATIC_LATENCY_TEST_LOCK_DIR") || RUNTIME_STATE_DIR + "/automatic-latency-test.lock";
 
 const STATUS_UC = LIB_DIR + "/diagnostics/status.uc";
 const HELPERS_UC = LIB_DIR + "/core/helpers.uc";
@@ -1643,6 +1644,13 @@ function clash_proxy_type_map(base_url, auth) {
     return result;
 }
 
+function latency_testable_proxy_type(proxy_type) {
+    proxy_type = lc(as_string(proxy_type));
+    return proxy_type != "" && proxy_type != "direct" && proxy_type != "selector" &&
+        proxy_type != "urltest" && proxy_type != "fallback" && proxy_type != "block" &&
+        proxy_type != "dns";
+}
+
 function clash_latency_endpoint(base_url, proxy_tag, proxy_type) {
     proxy_type = as_string(proxy_type);
     if (lc(proxy_type) == "urltest")
@@ -1787,6 +1795,36 @@ function clash_api(action, arg1, arg2, arg3) {
     if (unknown.output != "")
         print(unknown.output);
     return 1;
+}
+
+function automatic_latency_test() {
+    let owner_pid = trim(command_output_from_args([ "sh", "-c", "echo $$" ]));
+    if (owner_pid == "" || !module_success(SERVICE_STATE_UC, [
+        "acquire-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR, owner_pid
+    ])) {
+        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test is already running; skipping" ]);
+        return 0;
+    }
+
+    let proxy_types = clash_proxy_type_map(clash_api_url(), clash_auth_args());
+    let proxy_tags = [];
+    for (let proxy_tag, proxy_type in proxy_types)
+        if (latency_testable_proxy_type(proxy_type))
+            push(proxy_tags, proxy_tag);
+
+    if (length(proxy_tags) == 0) {
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test skipped: no proxy outbounds available" ]);
+        return 0;
+    }
+
+    command_success_from_args([ "logger", "-t", "forkop", "[info] Starting automatic latency test for " + length(proxy_tags) + " proxy outbounds" ]);
+    let status = clash_api("get_proxy_latencies", sprintf("%J", proxy_tags), "5000", "");
+    module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+    command_success_from_args([ "logger", "-t", "forkop", status == 0 ?
+        "[info] Automatic latency test completed" :
+        "[warn] Automatic latency test completed with errors" ]);
+    return status;
 }
 
 function print_global(message) {
@@ -1952,6 +1990,8 @@ else if (mode == "neutralize-zapret-defaults")
     exit(neutralize_zapret_defaults());
 else if (mode == "clash-api")
     exit(clash_api(ARGV[1], ARGV[2], ARGV[3], ARGV[4]));
+else if (mode == "automatic-latency-test")
+    exit(automatic_latency_test());
 else if (mode == "show-config")
     exit(show_config(ARGV[1] || "masked"));
 else if (mode == "show-version")
