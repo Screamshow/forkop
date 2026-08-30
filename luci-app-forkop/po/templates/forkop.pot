@@ -1796,8 +1796,8 @@ msgstr ""
 msgid "Not running"
 msgstr ""
 
-#: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:4542
-msgid "Only Forkop X subscription URLs are supported"
+#: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:4544
+msgid "This subscription provider is not supported"
 msgstr ""
 
 #: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:2835

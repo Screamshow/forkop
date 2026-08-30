@@ -2960,8 +2960,13 @@ function parse_subscription_source_entry(entry) {
     if (core_url.scheme(entry) != "https")
         return subscription_source_entry_result(false, "", "", "Subscription URL must use HTTPS");
 
-    if (lc(core_url.host(entry)) != "aes2215.vs2112.51343.ru")
-        return subscription_source_entry_result(false, "", "", "Only Forkop X subscription URLs are supported");
+    let host = lc(core_url.host(entry));
+    let supported_hosts = {
+        "aes2215.vs2112.51343.ru": true,
+        "sub.flintnet.pro": true
+    };
+    if (!supported_hosts[host])
+        return subscription_source_entry_result(false, "", "", "This subscription provider is not supported");
 
     return subscription_source_entry_result(true, entry, "", "");
 }

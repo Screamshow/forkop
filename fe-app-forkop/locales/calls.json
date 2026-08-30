@@ -2998,10 +2998,10 @@
     ]
   },
   {
-    "call": "Only Forkop X subscription URLs are supported",
-    "key": "Only Forkop X subscription URLs are supported",
+    "call": "This subscription provider is not supported",
+    "key": "This subscription provider is not supported",
     "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:4542"
+      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:4544"
     ]
   },
   {

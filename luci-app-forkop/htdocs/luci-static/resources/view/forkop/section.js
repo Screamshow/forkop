@@ -4535,11 +4535,12 @@ function validateSubscriptionUrlEntry(_section_id, value) {
 
   try {
     const url = new URL(parsed.url);
-    if (
-      url.protocol !== "https:" ||
-      url.hostname.toLowerCase() !== "aes2215.vs2112.51343.ru"
-    ) {
-      return _("Only Forkop X subscription URLs are supported");
+    const supportedHosts = new Set([
+      "aes2215.vs2112.51343.ru",
+      "sub.flintnet.pro",
+    ]);
+    if (url.protocol !== "https:" || !supportedHosts.has(url.hostname.toLowerCase())) {
+      return _("This subscription provider is not supported");
     }
   } catch (_error) {
     return _("Invalid URL format");
