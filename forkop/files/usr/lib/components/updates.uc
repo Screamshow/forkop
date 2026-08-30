@@ -56,6 +56,8 @@ const SB_SERVICE_MIXED_INBOUND_PORT = getenv("SB_SERVICE_MIXED_INBOUND_PORT") ||
 const SB_VARIANT_STATE_FILE = getenv("SB_VARIANT_STATE_FILE") || "/etc/forkop/sing-box-variant";
 let core_constants = require("core.constants");
 const GITHUB_RAW_URL = getenv("GITHUB_RAW_URL") || core_constants.GITHUB_RAW_URL;
+const FORKOP_MIRROR_BASE_URL = core_constants.FORKOP_MIRROR_BASE_URL || "";
+const MIRROR_FAILURE_THRESHOLD = 6;
 const BUILTIN_SUBNET_URLS = {
     twitter: [ getenv("SUBNETS_TWITTER") || GITHUB_RAW_URL + "/Subnets/IPv4/twitter.lst", getenv("SUBNETS_TWITTER6") || GITHUB_RAW_URL + "/Subnets/IPv6/twitter.lst" ],
     meta: [ getenv("SUBNETS_META") || GITHUB_RAW_URL + "/Subnets/IPv4/meta.lst", getenv("SUBNETS_META6") || GITHUB_RAW_URL + "/Subnets/IPv6/meta.lst" ],
@@ -71,6 +73,7 @@ const BUILTIN_SUBNET_URLS = {
 let rule_config = null;
 let routing_rulesets_module_value = null;
 let singbox_rulesets_module_value = null;
+let list_mirror_download_state = {};
 
 function routing_rulesets_module() {
     if (routing_rulesets_module_value == null)
@@ -1940,6 +1943,7 @@ function jsdelivr_fallback_url(url) {
     url = as_string(url);
     let sources = [
         [ "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/", "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" ],
+        [ FORKOP_MIRROR_BASE_URL + "/forkop/lists/allow-domains/", "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" ],
         [ "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/", "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/" ]
     ];
 
@@ -1952,6 +1956,45 @@ function jsdelivr_fallback_url(url) {
     return "";
 }
 
+function mirror_source_prefix(url) {
+    let prefix = FORKOP_MIRROR_BASE_URL != "" ?
+        FORKOP_MIRROR_BASE_URL + "/forkop/lists/allow-domains/" : "";
+    return prefix != "" && substr(as_string(url), 0, length(prefix)) == prefix ? prefix : "";
+}
+
+function mirror_download_state(url) {
+    let prefix = mirror_source_prefix(url);
+    if (prefix == "")
+        return null;
+
+    if (type(list_mirror_download_state[prefix]) != "object")
+        list_mirror_download_state[prefix] = { failures: 0, fallback_active: false };
+
+    return list_mirror_download_state[prefix];
+}
+
+function record_mirror_download_success(state) {
+    if (state != null && !state.fallback_active)
+        state.failures = 0;
+}
+
+function record_mirror_download_failure(state) {
+    if (state == null || state.fallback_active)
+        return false;
+
+    state.failures += 1;
+    if (state.failures < MIRROR_FAILURE_THRESHOLD)
+        return false;
+
+    state.fallback_active = true;
+    log_message(
+        "Mirror source failed " + MIRROR_FAILURE_THRESHOLD +
+            " consecutive times; using jsDelivr for remaining allow-domains lists in this update",
+        "warn"
+    );
+    return true;
+}
+
 function download_to_file_once(url, filepath, proxy_address) {
     let command = command_from_args([ "wget", "-O", filepath, url ]);
     if (as_string(proxy_address) != "")
@@ -1961,33 +2004,50 @@ function download_to_file_once(url, filepath, proxy_address) {
     return command_success(command);
 }
 
-function download_to_file(url, filepath, proxy_address) {
+function download_jsdelivr_fallback(url, filepath, proxy_address) {
     let attempt = 1;
     while (attempt <= 3) {
         if (download_to_file_once(url, filepath, proxy_address))
             return true;
 
         log_message("Attempt " + attempt + "/3 to download " + as_string(url) + " failed", "warn");
-        command_success_from_args([ "sleep", "2" ]);
-        attempt++;
-    }
-
-    let fallback_url = jsdelivr_fallback_url(url);
-    if (fallback_url == "")
-        return false;
-
-    log_message("Primary rule-set source is unavailable; trying jsDelivr fallback", "warn");
-    attempt = 1;
-    while (attempt <= 3) {
-        if (download_to_file_once(fallback_url, filepath, proxy_address))
-            return true;
-
-        log_message("Attempt " + attempt + "/3 to download " + fallback_url + " failed", "warn");
-        command_success_from_args([ "sleep", "2" ]);
+        if (attempt < 3)
+            command_success_from_args([ "sleep", "2" ]);
         attempt++;
     }
 
     return false;
+}
+
+function download_to_file(url, filepath, proxy_address) {
+    let fallback_url = jsdelivr_fallback_url(url);
+    let mirror_state = mirror_download_state(url);
+    if (mirror_state != null && mirror_state.fallback_active) {
+        log_message("Mirror source is unavailable; downloading " + as_string(url) + " via jsDelivr", "info");
+        return fallback_url != "" && download_jsdelivr_fallback(fallback_url, filepath, proxy_address);
+    }
+
+    let attempt = 1;
+    while (attempt <= 3) {
+        if (download_to_file_once(url, filepath, proxy_address)) {
+            record_mirror_download_success(mirror_state);
+            return true;
+        }
+
+        log_message("Attempt " + attempt + "/3 to download " + as_string(url) + " failed", "warn");
+        let mirror_fallback_activated = record_mirror_download_failure(mirror_state);
+        if (mirror_fallback_activated)
+            break;
+        if (attempt < 3)
+            command_success_from_args([ "sleep", "2" ]);
+        attempt++;
+    }
+
+    if (fallback_url == "")
+        return false;
+
+    log_message("Primary rule-set source is unavailable; trying jsDelivr fallback", "warn");
+    return download_jsdelivr_fallback(fallback_url, filepath, proxy_address);
 }
 
 function convert_crlf_to_lf(path) {
@@ -2496,6 +2556,7 @@ function list_update() {
     if (!list_update_pid_begin())
         exit(0);
 
+    list_mirror_download_state = {};
     let settings = uci_settings();
     let proxy_address = service_proxy_address(settings, "lists");
     if (!dns_probe_passed(proxy_address)) {
