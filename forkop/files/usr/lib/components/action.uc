@@ -375,7 +375,7 @@ function pkg_install_name_downgrade(package_name, package_version) {
             return false;
         let package_spec = package_name + "=" + package_version;
         if (pkg_is_installed(package_name))
-            return command_success(command_from_args([ "apk", "fix", "--reinstall", "--upgrade", package_spec ]) + " </dev/null");
+            return command_success(command_from_args([ "apk", "add", "--force-reinstall", "--upgrade", package_spec ]) + " </dev/null");
         return command_success(command_from_args([ "apk", "add", package_spec ]) + " </dev/null");
     }
 
