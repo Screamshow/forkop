@@ -7,10 +7,18 @@ MIGRATION_ID="mirror_51343_ru_v1"
 SETTINGS_SECTION="forkop.settings"
 MIGRATION_ROOT="${FORKOP_MIGRATION_ROOT:-}"
 APK_BIN="${FORKOP_MIGRATION_APK_BIN:-apk}"
+OPKG_BIN="${FORKOP_MIGRATION_OPKG_BIN:-opkg}"
 CURL_BIN="${FORKOP_MIGRATION_CURL_BIN:-curl}"
 UCI_BIN="${FORKOP_MIGRATION_UCI_BIN:-uci}"
 
-command -v "$APK_BIN" >/dev/null 2>&1 || exit 0
+PACKAGE_MANAGER=""
+if command -v "$APK_BIN" >/dev/null 2>&1; then
+    PACKAGE_MANAGER="apk"
+elif command -v "$OPKG_BIN" >/dev/null 2>&1; then
+    PACKAGE_MANAGER="opkg"
+else
+    exit 0
+fi
 
 root_path() {
     printf '%s%s\n' "$MIGRATION_ROOT" "$1"
@@ -45,28 +53,33 @@ esac
 repositories="$(root_path /etc/apk/repositories)"
 repositories_dir="$(root_path /etc/apk/repositories.d)"
 keys_dir="$(root_path /etc/apk/keys)"
+opkg_distfeeds="$(root_path /etc/opkg/distfeeds.conf)"
 
-rewrite_repository_file "$repositories"
-rewrite_repository_file "$repositories_dir/distfeeds.list"
+if [ "$PACKAGE_MANAGER" = "apk" ]; then
+    rewrite_repository_file "$repositories"
+    rewrite_repository_file "$repositories_dir/distfeeds.list"
 
-mkdir -p "$keys_dir" "$repositories_dir"
-key_tmp="$keys_dir/forkop-mirror.pem.new"
-if ! "$CURL_BIN" -fsSL --connect-timeout 15 --max-time 60 \
-    "$MIRROR_BASE_URL/forkop/forkop-apk.pem" -o "$key_tmp"; then
-    rm -f "$key_tmp"
-    echo "Unable to download the Forkop mirror APK key" >&2
-    exit 1
+    mkdir -p "$keys_dir" "$repositories_dir"
+    key_tmp="$keys_dir/forkop-mirror.pem.new"
+    if ! "$CURL_BIN" -fsSL --connect-timeout 15 --max-time 60 \
+        "$MIRROR_BASE_URL/forkop/forkop-apk.pem" -o "$key_tmp"; then
+        rm -f "$key_tmp"
+        echo "Unable to download the Forkop mirror APK key" >&2
+        exit 1
+    fi
+    grep -Fq 'BEGIN PUBLIC KEY' "$key_tmp" || {
+        rm -f "$key_tmp"
+        echo "The downloaded Forkop mirror APK key is invalid" >&2
+        exit 1
+    }
+    mv "$key_tmp" "$keys_dir/forkop-mirror.pem"
+    chmod 0644 "$keys_dir/forkop-mirror.pem"
+
+    printf '%s\n' "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" \
+        > "$repositories_dir/forkop.list"
+else
+    rewrite_repository_file "$opkg_distfeeds"
 fi
-grep -Fq 'BEGIN PUBLIC KEY' "$key_tmp" || {
-    rm -f "$key_tmp"
-    echo "The downloaded Forkop mirror APK key is invalid" >&2
-    exit 1
-}
-mv "$key_tmp" "$keys_dir/forkop-mirror.pem"
-chmod 0644 "$keys_dir/forkop-mirror.pem"
-
-printf '%s\n' "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" \
-    > "$repositories_dir/forkop.list"
 
 "$UCI_BIN" -q set "$SETTINGS_SECTION.mirror_base_url=$MIRROR_BASE_URL"
 if ! "$UCI_BIN" -q get "$SETTINGS_SECTION.applied_migrations" 2>/dev/null |
