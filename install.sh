@@ -5,7 +5,8 @@ REPO_OWNER="Screamshow"
 REPO_NAME="forkop"
 MIRROR_BASE_URL="${FORKOP_MIRROR_BASE_URL:-https://mirror.51343.ru}"
 
-REQUIRED_SPACE_KB=15360
+INITIAL_INSTALL_REQUIRED_SPACE_KB=15360
+UPDATE_REQUIRED_SPACE_KB=6144
 CONNECT_TIMEOUT_SECONDS=15
 METADATA_TIMEOUT_SECONDS=60
 DOWNLOAD_TIMEOUT_SECONDS=600
@@ -102,6 +103,10 @@ read_openwrt_release_value() {
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+interactive_terminal_available() {
+    [ -r /dev/tty ] && [ -w /dev/tty ] && (: </dev/tty) 2>/dev/null
 }
 
 init_tmp_dir() {
@@ -1692,7 +1697,6 @@ check_system() {
     model=""
     target=""
     architecture=""
-    available_space=""
 
     [ -f /etc/openwrt_release ] || fail "This installer supports OpenWrt only"
 
@@ -1726,12 +1730,59 @@ check_system() {
 
     msg "OpenWrt $release, target $target, architecture $architecture"
 
+}
+
+available_flash_space_kb() {
     available_space="$(df /overlay 2>/dev/null | awk 'NR==2 {print $4}')"
     [ -n "$available_space" ] || available_space="$(df / 2>/dev/null | awk 'NR==2 {print $4}')"
 
-    if [ -n "$available_space" ] && [ "$available_space" -lt "$REQUIRED_SPACE_KB" ]; then
-        fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((REQUIRED_SPACE_KB / 1024)) MB"
+    case "$available_space" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+
+    printf '%s\n' "$available_space"
+}
+
+is_forkop_package_update() {
+    [ "$FORKOP_LEGACY_DETECTED" -eq 0 ] &&
+        [ -z "$SING_BOX_INSTALL_VARIANT" ] &&
+        pkg_is_installed "forkop" &&
+        pkg_is_installed "luci-app-forkop"
+}
+
+required_flash_space_kb() {
+    if is_forkop_package_update; then
+        printf '%s\n' "$UPDATE_REQUIRED_SPACE_KB"
+    else
+        printf '%s\n' "$INITIAL_INSTALL_REQUIRED_SPACE_KB"
     fi
+}
+
+can_replace_sing_box_with_tiny() {
+    [ -x /usr/bin/forkop ] &&
+        { pkg_is_installed "sing-box" || pkg_is_installed "sing-box-extended"; }
+}
+
+ensure_flash_space() {
+    required_space="$(required_flash_space_kb)"
+    available_space="$(available_flash_space_kb 2>/dev/null || true)"
+
+    [ -n "$available_space" ] || return 0
+    [ "$available_space" -ge "$required_space" ] && return 0
+
+    if is_forkop_package_update && can_replace_sing_box_with_tiny && interactive_terminal_available; then
+        warn "$(installer_text low_flash_space)"
+        if numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)"; then
+            warn "$(installer_text tiny_recovery_warning)"
+            /usr/bin/forkop component_action sing_box install_tiny ||
+                fail "Failed to replace sing-box with sing-box-tiny"
+
+            available_space="$(available_flash_space_kb 2>/dev/null || true)"
+            [ -n "$available_space" ] && [ "$available_space" -ge "$required_space" ] && return 0
+        fi
+    fi
+
+    fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
 }
 
 installer_is_ru() {
@@ -1756,6 +1807,9 @@ installer_text() {
             sing_box_stable) printf '%s\n' "singbox stable" ;;
             sing_box_extended) printf '%s\n' "singbox extended (если нужен xhttp)" ;;
             sing_box_skip_msg) printf '%s\n' "Пропускаю установку sing-box." ;;
+            low_flash_space) printf '%s\n' "Для обновления Forkop недостаточно свободного места во flash." ;;
+            tiny_recovery_prompt) printf '%s\n' "Заменить установленный sing-box на sing-box tiny, чтобы освободить место? Это может сделать конфигурацию с расширенными возможностями несовместимой" ;;
+            tiny_recovery_warning) printf '%s\n' "Останавливаю Forkop и заменяю sing-box. Настройки Forkop будут сохранены." ;;
             *) printf '%s\n' "$key" ;;
         esac
         return 0
@@ -1775,6 +1829,9 @@ installer_text() {
         sing_box_stable) printf '%s\n' "singbox stable" ;;
         sing_box_extended) printf '%s\n' "singbox extended (if xhttp is needed)" ;;
         sing_box_skip_msg) printf '%s\n' "Skipping sing-box installation." ;;
+        low_flash_space) printf '%s\n' "There is not enough free flash space to update Forkop." ;;
+        tiny_recovery_prompt) printf '%s\n' "Replace the installed sing-box with sing-box tiny to free space? This can make configurations that use advanced features incompatible" ;;
+        tiny_recovery_warning) printf '%s\n' "Stopping Forkop and replacing sing-box. Forkop settings will be preserved." ;;
         *) printf '%s\n' "$key" ;;
     esac
 }
@@ -1797,7 +1854,7 @@ numbered_yes_no_prompt() {
     prompt_text="$1"
     answer=""
 
-    if [ ! -t 0 ]; then
+    if ! interactive_terminal_available; then
         msg "$prompt_text: 1 ($(installer_text yes), non-interactive)"
         return 0
     fi
@@ -1807,7 +1864,7 @@ numbered_yes_no_prompt() {
         printf '  1) %s\n' "$(installer_text yes)"
         printf '  2) %s\n' "$(installer_text no)"
         printf '%s [2]: ' "$(installer_text select)"
-        read -r answer || return 1
+        read -r answer </dev/tty || return 1
 
         case "$answer" in
             1)
@@ -1923,7 +1980,7 @@ select_sing_box_installation() {
         return 0
     fi
 
-    if [ ! -t 0 ]; then
+    if ! interactive_terminal_available; then
         SING_BOX_INSTALL_VARIANT="tiny"
         msg "$(installer_text sing_box_prompt): $default_choice ($(installer_text sing_box_tiny), non-interactive)"
         return 0
@@ -1935,7 +1992,7 @@ select_sing_box_installation() {
         printf '  2) %s\n' "$(installer_text sing_box_stable)"
         printf '  3) %s\n' "$(installer_text sing_box_extended)"
         printf '%s [%s]: ' "$(installer_text select)" "$default_choice"
-        read -r answer || return 1
+        read -r answer </dev/tty || return 1
         [ -n "$answer" ] || answer="$default_choice"
 
         if [ "$answer" = "1" ]; then
@@ -2166,6 +2223,7 @@ main() {
 
     pkg_list_update || fail "Failed to update package lists"
     ensure_bootstrap_ucode_runtime
+    ensure_flash_space
 
     resolve_forkop_release
     download_forkop_packages
