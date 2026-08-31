@@ -27,6 +27,8 @@ SING_BOX_INSTALL_VARIANT=""
 SING_BOX_RECOVERY_PERFORMED=0
 SING_BOX_RECOVERY_OWNER=""
 SING_BOX_RECOVERY_RESTORE_ACTION=""
+ALLOW_LOW_SPACE_TINY=0
+CONFIRM_LEGACY_MIGRATION=0
 
 FORKOP_RELEASE_JSON=""
 FORKOP_RELEASE_TAG=""
@@ -69,7 +71,7 @@ fail() {
 
 usage() {
     cat <<EOF
-Usage: $0
+Usage: $0 [options]
 
 Installs or updates Forkop packages:
   - forkop
@@ -80,6 +82,12 @@ Can also install or switch sing-box variant:
   - sing-box-tiny from the mirrored OpenWrt feeds (default)
   - stable sing-box from the mirrored OpenWrt feeds
   - sing-box-extended from GitHub OpenWrt packages (for xHTTP support)
+
+Automation options (must be explicitly requested):
+  --allow-low-space-tiny       Allow stable/extended sing-box to be replaced
+                               with tiny when no interactive terminal exists
+  --confirm-legacy-migration   Confirm removal and migration of a detected
+                               legacy installation without an interactive terminal
 EOF
 }
 
@@ -89,6 +97,12 @@ parse_args() {
             -h|--help)
                 usage
                 exit 0
+                ;;
+            --allow-low-space-tiny)
+                ALLOW_LOW_SPACE_TINY=1
+                ;;
+            --confirm-legacy-migration)
+                CONFIRM_LEGACY_MIGRATION=1
                 ;;
             *)
                 fail "Unknown installer option: $1"
@@ -1778,6 +1792,20 @@ sing_box_recovery_owner() {
     fi
 }
 
+legacy_binary_managed_sing_box_present() {
+    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] &&
+        [ -r /etc/init.d/sing-box ] &&
+        grep -Fq 'managed sing-box service for binary variants' /etc/init.d/sing-box &&
+        [ -x /usr/bin/sing-box ]
+}
+
+sing_box_tiny_is_active() {
+    pkg_is_installed "sing-box-tiny" &&
+        ! pkg_is_installed "sing-box" &&
+        ! pkg_is_installed "sing-box-extended" &&
+        [ -x /usr/bin/sing-box ]
+}
+
 prepare_sing_box_recovery() {
     SING_BOX_RECOVERY_OWNER="$(sing_box_recovery_owner)"
     SING_BOX_RECOVERY_RESTORE_ACTION=""
@@ -1786,6 +1814,8 @@ prepare_sing_box_recovery() {
         SING_BOX_RECOVERY_RESTORE_ACTION="install_extended"
     elif pkg_is_installed "sing-box"; then
         SING_BOX_RECOVERY_RESTORE_ACTION="install_stable"
+    elif legacy_binary_managed_sing_box_present; then
+        SING_BOX_RECOVERY_RESTORE_ACTION="install_extended_compressed"
     fi
 
     [ -n "$SING_BOX_RECOVERY_OWNER" ] && [ -n "$SING_BOX_RECOVERY_RESTORE_ACTION" ]
@@ -1837,16 +1867,29 @@ ensure_flash_space() {
 
     prepare_sing_box_recovery ||
         fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB. No safely replaceable stable/extended sing-box variant was found."
-    interactive_terminal_available ||
-        fail "Not enough free flash space. Replacing sing-box with sing-box-tiny requires an interactive terminal."
-
     warn "$(installer_text low_flash_space)"
-    numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)" ||
-        fail "Installation was cancelled before changing sing-box"
+    if interactive_terminal_available; then
+        numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)" ||
+            fail "Installation was cancelled before changing sing-box"
+    elif [ "$ALLOW_LOW_SPACE_TINY" -eq 1 ]; then
+        msg "Low-space sing-box-tiny replacement was explicitly authorized by --allow-low-space-tiny"
+    else
+        fail "Not enough free flash space. Replacing sing-box with sing-box-tiny requires an interactive terminal or --allow-low-space-tiny."
+    fi
+
     warn "$(installer_text tiny_recovery_warning)"
-    run_sing_box_recovery_action "$SING_BOX_RECOVERY_OWNER" "install_tiny" ||
-        fail "Failed to replace sing-box with sing-box-tiny; the existing variant was left unchanged or restored by its component manager"
     SING_BOX_RECOVERY_PERFORMED=1
+    recovery_status=0
+    run_sing_box_recovery_action "$SING_BOX_RECOVERY_OWNER" "install_tiny" || recovery_status=$?
+    if ! sing_box_tiny_is_active; then
+        [ -r "$TMP_DIR/sing-box-space-recovery.log" ] &&
+            cat "$TMP_DIR/sing-box-space-recovery.log" >&2
+        fail "Failed to replace sing-box with sing-box-tiny; the installer will try to restore the previous variant"
+    fi
+    if [ "$recovery_status" -ne 0 ]; then
+        warn "The previous component manager reported an error, but sing-box-tiny is installed and active; continuing with the downloaded Forkop X packages"
+    fi
+    SING_BOX_INSTALL_VARIANT=""
 
     available_space="$(available_flash_space_kb 2>/dev/null || true)"
     if [ -n "$available_space" ] && [ "$available_space" -ge "$required_space" ]; then
@@ -2045,9 +2088,7 @@ select_sing_box_installation() {
     answer=""
     default_choice=1
 
-    if [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] &&
-        [ -r /etc/init.d/sing-box ] &&
-        grep -Fq 'managed sing-box service for binary variants' /etc/init.d/sing-box; then
+    if legacy_binary_managed_sing_box_present; then
         SING_BOX_INSTALL_VARIANT="extended-compressed"
         msg "The legacy binary-managed sing-box variant will be reinstalled for Forkop"
         return 0
@@ -2207,10 +2248,14 @@ rollback_legacy_config_on_failure() {
 confirm_legacy_migration() {
     [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 0
 
-    interactive_terminal_available ||
-        fail "Legacy migration requires an interactive terminal"
-    numbered_yes_no_prompt "$(installer_text legacy_migration_prompt)" ||
-        fail "Legacy migration was cancelled before changing installed packages"
+    if interactive_terminal_available; then
+        numbered_yes_no_prompt "$(installer_text legacy_migration_prompt)" ||
+            fail "Legacy migration was cancelled before changing installed packages"
+    elif [ "$CONFIRM_LEGACY_MIGRATION" -eq 1 ]; then
+        msg "Legacy migration was explicitly authorized by --confirm-legacy-migration"
+    else
+        fail "Legacy migration requires an interactive terminal or --confirm-legacy-migration"
+    fi
     prepare_legacy_config_backup
 }
 
