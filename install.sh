@@ -9,6 +9,7 @@ FLASH_RESERVE_KB=1024
 PACKAGE_INSTALL_OVERHEAD_KB=512
 PACKAGE_ARCHIVE_SPACE_FACTOR=2
 MISSING_DEPENDENCY_ALLOWANCE_KB=256
+APK_WORLD_FILE="${FORKOP_APK_WORLD_FILE:-/etc/apk/world}"
 CONNECT_TIMEOUT_SECONDS=15
 METADATA_TIMEOUT_SECONDS=60
 DOWNLOAD_TIMEOUT_SECONDS=600
@@ -1834,6 +1835,12 @@ sing_box_tiny_is_active() {
         [ -x /usr/bin/sing-box ]
 }
 
+apk_world_requests_sing_box_tiny() {
+    [ "$PKG_IS_APK" -eq 1 ] || return 1
+    [ -r "$APK_WORLD_FILE" ] || return 1
+    grep -Eq '^sing-box-tiny([<>=~].*)?$' "$APK_WORLD_FILE"
+}
+
 package_file_list() {
     package_name="$1"
     if [ "$PKG_IS_APK" -eq 1 ]; then
@@ -1912,7 +1919,6 @@ pkg_remove_name() {
 
 switch_sing_box_to_downloaded_tiny() {
     previous_package="$1"
-    [ "$previous_package" != "sing-box-tiny" ] || return 0
     [ -s "$SING_BOX_TINY_FILE" ] || return 1
 
     pkg_remove_name "$previous_package" || return 1
@@ -1947,7 +1953,13 @@ ensure_flash_space() {
     available_space="$(available_flash_space_kb 2>/dev/null || true)"
 
     [ -n "$available_space" ] || fail "Unable to determine free flash space"
-    if [ "$available_space" -ge "$required_space" ]; then
+    pending_world_tiny=0
+    if apk_world_requests_sing_box_tiny && ! sing_box_tiny_is_active; then
+        pending_world_tiny=1
+        warn "APK world requests sing-box-tiny, but the installed sing-box state does not satisfy it; repairing this before installing Forkop"
+    fi
+
+    if [ "$available_space" -ge "$required_space" ] && [ "$pending_world_tiny" -eq 0 ]; then
         msg "Flash preflight passed. Available: ${available_space} KB, installation plan: ${required_space} KB"
         return 0
     fi
@@ -1955,8 +1967,9 @@ ensure_flash_space() {
     previous_package="$(installed_sing_box_package 2>/dev/null || true)"
     [ -n "$previous_package" ] ||
         fail "Not enough free flash space. Available: ${available_space} KB, installation plan: ${required_space} KB. /usr/bin/sing-box is not owned by one supported package."
-    [ "$previous_package" != "sing-box-tiny" ] ||
+    if [ "$previous_package" = "sing-box-tiny" ] && [ "$pending_world_tiny" -eq 0 ]; then
         fail "Not enough free flash space after accounting for the already installed sing-box-tiny. Available: ${available_space} KB, installation plan: ${required_space} KB."
+    fi
 
     download_sing_box_tiny_package ||
         fail "Failed to download sing-box-tiny before changing the installed sing-box package"
