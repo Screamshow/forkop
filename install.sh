@@ -20,6 +20,7 @@ TMP_DIR=""
 FORKOP_WAS_ENABLED=0
 FORKOP_WAS_RUNNING=0
 FORKOP_LEGACY_DETECTED=0
+LEGACY_CLEANUP_DONE=0
 FORKOP_I18N_REQUESTED=0
 INSTALLER_LANG="en"
 SING_BOX_INSTALL_VARIANT=""
@@ -1750,8 +1751,14 @@ is_forkop_package_update() {
         pkg_is_installed "luci-app-forkop"
 }
 
+is_low_space_legacy_migration() {
+    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] &&
+        [ "$LEGACY_CLEANUP_DONE" -eq 1 ] &&
+        [ -z "$SING_BOX_INSTALL_VARIANT" ]
+}
+
 required_flash_space_kb() {
-    if is_forkop_package_update; then
+    if is_forkop_package_update || is_low_space_legacy_migration; then
         printf '%s\n' "$UPDATE_REQUIRED_SPACE_KB"
     else
         printf '%s\n' "$INITIAL_INSTALL_REQUIRED_SPACE_KB"
@@ -2047,6 +2054,8 @@ install_selected_sing_box() {
 }
 
 cleanup_legacy_installation() {
+    [ "$LEGACY_CLEANUP_DONE" -eq 0 ] || return 0
+
     state_file="$TMP_DIR/install-state.env"
 
     install_json_ucode installer-cleanup-legacy >"$state_file" ||
@@ -2054,6 +2063,14 @@ cleanup_legacy_installation() {
 
     # shellcheck disable=SC1090
     . "$state_file"
+    LEGACY_CLEANUP_DONE=1
+}
+
+reclaim_legacy_flash_space() {
+    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 0
+
+    msg "Removing legacy packages before the free-space check"
+    cleanup_legacy_installation
 }
 
 detect_legacy_installation() {
@@ -2223,6 +2240,7 @@ main() {
 
     pkg_list_update || fail "Failed to update package lists"
     ensure_bootstrap_ucode_runtime
+    reclaim_legacy_flash_space
     ensure_flash_space
 
     resolve_forkop_release
