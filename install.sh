@@ -5,7 +5,10 @@ REPO_OWNER="Screamshow"
 REPO_NAME="forkop"
 MIRROR_BASE_URL="${FORKOP_MIRROR_BASE_URL:-https://mirror.51343.ru}"
 
-INITIAL_INSTALL_REQUIRED_SPACE_KB=15360
+FLASH_RESERVE_KB=1024
+PACKAGE_INSTALL_OVERHEAD_KB=512
+PACKAGE_ARCHIVE_SPACE_FACTOR=2
+MISSING_DEPENDENCY_ALLOWANCE_KB=256
 CONNECT_TIMEOUT_SECONDS=15
 METADATA_TIMEOUT_SECONDS=60
 DOWNLOAD_TIMEOUT_SECONDS=600
@@ -24,9 +27,9 @@ LEGACY_CLEANUP_STARTED=0
 FORKOP_I18N_REQUESTED=0
 INSTALLER_LANG="en"
 SING_BOX_INSTALL_VARIANT=""
-SING_BOX_RECOVERY_PERFORMED=0
-SING_BOX_RECOVERY_OWNER=""
-SING_BOX_RECOVERY_RESTORE_ACTION=""
+SING_BOX_TINY_FILE=""
+SING_BOX_TINY_SWITCHED=0
+SING_BOX_CHANGE_STARTED=0
 ALLOW_LOW_SPACE_TINY=0
 CONFIRM_LEGACY_MIGRATION=0
 
@@ -41,6 +44,7 @@ FORKOP_APP_FILE=""
 FORKOP_I18N_URL=""
 FORKOP_I18N_NAME=""
 FORKOP_I18N_FILE=""
+FORKOP_INSTALL_REQUIRED_KB=0
 FORKOP_PACKAGE_VERSION=""
 FORKOP_CONFIG_READY=1
 FORKOP_CONFIG_VALIDATION_ERROR=""
@@ -62,7 +66,6 @@ warn() {
 }
 
 fail() {
-    restore_sing_box_on_failure
     rollback_legacy_config_on_failure
     restore_current_forkop_on_failure
     printf '\033[31;1m%s\033[0m\n' "$1" >&2
@@ -1780,16 +1783,41 @@ available_flash_space_kb() {
     printf '%s\n' "$available_space"
 }
 
-required_flash_space_kb() {
-    printf '%s\n' "$INITIAL_INSTALL_REQUIRED_SPACE_KB"
+file_size_kb() {
+    file_size_bytes="$(wc -c <"$1" 2>/dev/null || true)"
+    case "$file_size_bytes" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s\n' "$(((file_size_bytes + 1023) / 1024))"
 }
 
-sing_box_recovery_owner() {
-    if [ -x /usr/bin/forkop ]; then
-        printf '%s\n' "/usr/bin/forkop"
-    elif [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] && [ -x "/usr/bin/$LEGACY_BACKEND_PACKAGE" ]; then
-        printf '%s\n' "/usr/bin/$LEGACY_BACKEND_PACKAGE"
-    fi
+forkop_install_required_space_kb() {
+    archive_kb=0
+    for package_file in "$FORKOP_BACKEND_FILE" "$FORKOP_APP_FILE" "$FORKOP_I18N_FILE"; do
+        [ -n "$package_file" ] && [ -s "$package_file" ] || continue
+        package_kb="$(file_size_kb "$package_file")" || return 1
+        archive_kb=$((archive_kb + package_kb))
+    done
+
+    [ "$archive_kb" -gt 0 ] || return 1
+
+    missing_dependency_count=0
+    for dependency in \
+        ca-bundle kmod-inet-diag kmod-netlink-diag kmod-tun curl ucode \
+        ucode-mod-fs ucode-mod-uci kmod-nft-tproxy coreutils-base64 \
+        bind-dig nftables kmod-nft-nat ip-full luci-base; do
+        pkg_is_installed "$dependency" ||
+            missing_dependency_count=$((missing_dependency_count + 1))
+    done
+
+    # OpenWrt compresses the writable overlay, so package archive size is a
+    # useful baseline. Doubling it covers unpacking variance; missing direct
+    # dependencies get a separate conservative allowance.
+    printf '%s\n' "$((
+        archive_kb * PACKAGE_ARCHIVE_SPACE_FACTOR +
+        missing_dependency_count * MISSING_DEPENDENCY_ALLOWANCE_KB +
+        PACKAGE_INSTALL_OVERHEAD_KB + FLASH_RESERVE_KB
+    ))"
 }
 
 legacy_binary_managed_sing_box_present() {
@@ -1806,41 +1834,98 @@ sing_box_tiny_is_active() {
         [ -x /usr/bin/sing-box ]
 }
 
-prepare_sing_box_recovery() {
-    SING_BOX_RECOVERY_OWNER="$(sing_box_recovery_owner)"
-    SING_BOX_RECOVERY_RESTORE_ACTION=""
-
-    if pkg_is_installed "sing-box-extended"; then
-        SING_BOX_RECOVERY_RESTORE_ACTION="install_extended"
-    elif pkg_is_installed "sing-box"; then
-        SING_BOX_RECOVERY_RESTORE_ACTION="install_stable"
-    elif legacy_binary_managed_sing_box_present; then
-        SING_BOX_RECOVERY_RESTORE_ACTION="install_extended_compressed"
-    fi
-
-    [ -n "$SING_BOX_RECOVERY_OWNER" ] && [ -n "$SING_BOX_RECOVERY_RESTORE_ACTION" ]
-}
-
-run_sing_box_recovery_action() {
-    recovery_owner="$1"
-    recovery_action="$2"
-    recovery_log="$TMP_DIR/sing-box-space-recovery.log"
-
-    "$recovery_owner" component_action sing_box "$recovery_action" >"$recovery_log" 2>&1
-}
-
-restore_sing_box_on_failure() {
-    [ "$SING_BOX_RECOVERY_PERFORMED" -eq 1 ] || return 0
-
-    recovery_owner="$SING_BOX_RECOVERY_OWNER"
-    [ -x /usr/bin/forkop ] && recovery_owner="/usr/bin/forkop"
-    if [ -x "$recovery_owner" ] &&
-        run_sing_box_recovery_action "$recovery_owner" "$SING_BOX_RECOVERY_RESTORE_ACTION"; then
-        warn "The previous sing-box variant was restored after the installation failure"
-        SING_BOX_RECOVERY_PERFORMED=0
+package_file_list() {
+    package_name="$1"
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        apk info -L "$package_name" 2>/dev/null
     else
-        warn "Failed to restore the previous sing-box variant automatically"
+        opkg files "$package_name" 2>/dev/null
     fi
+}
+
+package_owns_path() {
+    package_name="$1"
+    owned_path="$2"
+    package_file_list "$package_name" |
+        sed 's#^\([^/]\)#/\1#' |
+        grep -Fxq "$owned_path"
+}
+
+installed_sing_box_package() {
+    owner=""
+    owner_count=0
+    for candidate in sing-box-tiny sing-box sing-box-extended; do
+        if pkg_is_installed "$candidate" && package_owns_path "$candidate" /usr/bin/sing-box; then
+            owner="$candidate"
+            owner_count=$((owner_count + 1))
+        fi
+    done
+    [ "$owner_count" -eq 1 ] || return 1
+    printf '%s\n' "$owner"
+}
+
+package_reclaimable_space_kb() {
+    package_name="$1"
+    archive_kb=""
+
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        current_package_dir="$TMP_DIR/current-sing-box-package"
+        mkdir -p "$current_package_dir" || return 1
+        apk fetch --output "$current_package_dir" "$package_name" </dev/null || return 1
+        current_package_file="$(find "$current_package_dir" -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+        [ -n "$current_package_file" ] && [ -s "$current_package_file" ] || return 1
+        archive_kb="$(file_size_kb "$current_package_file")" || return 1
+    else
+        archive_size_bytes="$(opkg info "$package_name" 2>/dev/null |
+            awk '$1 == "Size:" && $2 ~ /^[0-9]+$/ { value = $2 } END { print value }')"
+        case "$archive_size_bytes" in
+            ''|*[!0-9]*) return 1 ;;
+        esac
+        archive_kb=$(((archive_size_bytes + 1023) / 1024))
+    fi
+
+    # Count only 90% of the current package archive as guaranteed reclaimable.
+    # This leaves room for package metadata and preserved configuration files.
+    printf '%s\n' "$((archive_kb * 9 / 10))"
+}
+
+download_sing_box_tiny_package() {
+    [ -n "$SING_BOX_TINY_FILE" ] && [ -s "$SING_BOX_TINY_FILE" ] && return 0
+
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        apk fetch --output "$TMP_DIR" sing-box-tiny </dev/null || return 1
+        SING_BOX_TINY_FILE="$(find "$TMP_DIR" -maxdepth 1 -type f -name 'sing-box-tiny-*.apk' | head -n 1)"
+    else
+        (cd "$TMP_DIR" && opkg download sing-box-tiny </dev/null) || return 1
+        SING_BOX_TINY_FILE="$(find "$TMP_DIR" -maxdepth 1 -type f -name 'sing-box-tiny_*.ipk' | head -n 1)"
+    fi
+    [ -n "$SING_BOX_TINY_FILE" ] && [ -s "$SING_BOX_TINY_FILE" ]
+}
+
+pkg_remove_name() {
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        apk del --force-broken-world "$1" </dev/null
+    else
+        opkg remove --force-depends "$1" </dev/null
+    fi
+}
+
+switch_sing_box_to_downloaded_tiny() {
+    previous_package="$1"
+    [ "$previous_package" != "sing-box-tiny" ] || return 0
+    [ -s "$SING_BOX_TINY_FILE" ] || return 1
+
+    pkg_remove_name "$previous_package" || return 1
+    SING_BOX_CHANGE_STARTED=1
+    pkg_install_files "$SING_BOX_TINY_FILE" || return 1
+    validate_sing_box_tiny_install || return 1
+    SING_BOX_TINY_SWITCHED=1
+}
+
+validate_sing_box_tiny_install() {
+    sing_box_tiny_is_active || return 1
+    /usr/bin/sing-box version >/dev/null 2>&1 || return 1
+    [ -x /etc/init.d/sing-box ] || return 1
 }
 
 restore_current_forkop_on_failure() {
@@ -1856,17 +1941,39 @@ restore_current_forkop_on_failure() {
 }
 
 ensure_flash_space() {
-    required_space="$(required_flash_space_kb)"
+    required_space="$(forkop_install_required_space_kb)" ||
+        fail "Failed to calculate the Forkop package installation size"
+    FORKOP_INSTALL_REQUIRED_KB="$required_space"
     available_space="$(available_flash_space_kb 2>/dev/null || true)"
 
-    [ -n "$available_space" ] || return 0
+    [ -n "$available_space" ] || fail "Unable to determine free flash space"
     if [ "$available_space" -ge "$required_space" ]; then
-        msg "Flash preflight passed. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
+        msg "Flash preflight passed. Available: ${available_space} KB, installation plan: ${required_space} KB"
         return 0
     fi
 
-    prepare_sing_box_recovery ||
-        fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB. No safely replaceable stable/extended sing-box variant was found."
+    previous_package="$(installed_sing_box_package 2>/dev/null || true)"
+    [ -n "$previous_package" ] ||
+        fail "Not enough free flash space. Available: ${available_space} KB, installation plan: ${required_space} KB. /usr/bin/sing-box is not owned by one supported package."
+    [ "$previous_package" != "sing-box-tiny" ] ||
+        fail "Not enough free flash space after accounting for the already installed sing-box-tiny. Available: ${available_space} KB, installation plan: ${required_space} KB."
+
+    download_sing_box_tiny_package ||
+        fail "Failed to download sing-box-tiny before changing the installed sing-box package"
+    tiny_archive_kb="$(file_size_kb "$SING_BOX_TINY_FILE")" ||
+        fail "Failed to determine the downloaded sing-box-tiny package size"
+    tiny_required_kb=$(((tiny_archive_kb * 5 + 3) / 4 + PACKAGE_INSTALL_OVERHEAD_KB))
+    reclaimable_kb="$(package_reclaimable_space_kb "$previous_package" 2>/dev/null || true)"
+    [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR/current-sing-box-package"
+    case "$reclaimable_kb" in
+        ''|*[!0-9]*) fail "Failed to calculate space reclaimable from $previous_package" ;;
+    esac
+    expected_after_kb=$((available_space + reclaimable_kb - tiny_required_kb))
+    if [ "$expected_after_kb" -lt "$required_space" ]; then
+        fail "Not enough free flash space even after replacing $previous_package with sing-box-tiny. Available now: ${available_space} KB, reclaimable: ${reclaimable_kb} KB, tiny allowance: ${tiny_required_kb} KB, Forkop plan: ${required_space} KB."
+    fi
+
+    msg "Low-space plan: ${available_space} KB free + ${reclaimable_kb} KB reclaimable - ${tiny_required_kb} KB for tiny = ${expected_after_kb} KB; Forkop plan: ${required_space} KB"
     warn "$(installer_text low_flash_space)"
     if interactive_terminal_available; then
         numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)" ||
@@ -1878,26 +1985,17 @@ ensure_flash_space() {
     fi
 
     warn "$(installer_text tiny_recovery_warning)"
-    SING_BOX_RECOVERY_PERFORMED=1
-    recovery_status=0
-    run_sing_box_recovery_action "$SING_BOX_RECOVERY_OWNER" "install_tiny" || recovery_status=$?
-    if ! sing_box_tiny_is_active; then
-        [ -r "$TMP_DIR/sing-box-space-recovery.log" ] &&
-            cat "$TMP_DIR/sing-box-space-recovery.log" >&2
-        fail "Failed to replace sing-box with sing-box-tiny; the installer will try to restore the previous variant"
-    fi
-    if [ "$recovery_status" -ne 0 ]; then
-        warn "The previous component manager reported an error, but sing-box-tiny is installed and active; continuing with the downloaded Forkop X packages"
-    fi
+    switch_sing_box_to_downloaded_tiny "$previous_package" ||
+        fail "Failed to replace $previous_package with the already downloaded sing-box-tiny package"
     SING_BOX_INSTALL_VARIANT=""
 
     available_space="$(available_flash_space_kb 2>/dev/null || true)"
     if [ -n "$available_space" ] && [ "$available_space" -ge "$required_space" ]; then
-        msg "Flash preflight passed after switching to sing-box-tiny. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
+        msg "Flash preflight passed after switching to sing-box-tiny. Available: ${available_space} KB, installation plan: ${required_space} KB"
         return 0
     fi
 
-    fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
+    fail "Free flash after installing sing-box-tiny is below the calculated Forkop plan. Available: ${available_space:-unknown} KB, installation plan: ${required_space} KB. sing-box-tiny remains installed."
 }
 
 installer_is_ru() {
@@ -1922,9 +2020,9 @@ installer_text() {
             sing_box_stable) printf '%s\n' "singbox stable" ;;
             sing_box_extended) printf '%s\n' "singbox extended (если нужен xhttp)" ;;
             sing_box_skip_msg) printf '%s\n' "Пропускаю установку sing-box." ;;
-            low_flash_space) printf '%s\n' "Свободного места во flash меньше требуемых 15 МБ." ;;
-            tiny_recovery_prompt) printf '%s\n' "Заменить установленный sing-box stable/extended на sing-box tiny и повторить проверку? Расширенные возможности, включая xhttp, станут недоступны" ;;
-            tiny_recovery_warning) printf '%s\n' "Переключаю sing-box на tiny. При последующей ошибке установщик попытается восстановить прежний вариант." ;;
+            low_flash_space) printf '%s\n' "Для установки Forkop не хватает места, но предварительный расчет подтверждает, что переход на sing-box tiny освободит достаточно flash." ;;
+            tiny_recovery_prompt) printf '%s\n' "Заменить установленный пакет sing-box на sing-box tiny? Это постоянное изменение; расширенные возможности, включая xhttp, станут недоступны" ;;
+            tiny_recovery_warning) printf '%s\n' "Устанавливаю заранее скачанный sing-box tiny напрямую через системный пакетный менеджер." ;;
             legacy_migration_prompt) printf '%s\n' "Перейти с legacy-версии на Forkop X? Ее пакеты будут удалены только после сохранения конфигурации и успешной предварительной проверки" ;;
             legacy_backup_ready) printf '%s\n' "Резервная копия legacy-конфигурации создана" ;;
             legacy_cleanup_start) printf '%s\n' "Удаляю legacy-пакеты и начинаю миграцию конфигурации" ;;
@@ -1947,9 +2045,9 @@ installer_text() {
         sing_box_stable) printf '%s\n' "singbox stable" ;;
         sing_box_extended) printf '%s\n' "singbox extended (if xhttp is needed)" ;;
         sing_box_skip_msg) printf '%s\n' "Skipping sing-box installation." ;;
-        low_flash_space) printf '%s\n' "Free flash space is below the required 15 MB." ;;
-        tiny_recovery_prompt) printf '%s\n' "Replace the installed stable/extended sing-box with sing-box tiny and check again? Advanced features, including xhttp, will become unavailable" ;;
-        tiny_recovery_warning) printf '%s\n' "Switching sing-box to tiny. If installation later fails, the installer will try to restore the previous variant." ;;
+        low_flash_space) printf '%s\n' "The Forkop installation plan needs more space, but preflight confirms that switching to sing-box tiny will free enough flash." ;;
+        tiny_recovery_prompt) printf '%s\n' "Replace the installed sing-box package with sing-box tiny? This is a permanent change; advanced features, including xhttp, will become unavailable" ;;
+        tiny_recovery_warning) printf '%s\n' "Installing the already downloaded sing-box tiny directly through the system package manager." ;;
         legacy_migration_prompt) printf '%s\n' "Migrate the legacy installation to Forkop X? Its packages will be removed only after configuration backup and successful preflight checks" ;;
         legacy_backup_ready) printf '%s\n' "Legacy configuration backup created" ;;
         legacy_cleanup_start) printf '%s\n' "Removing legacy packages and starting configuration migration" ;;
@@ -2234,6 +2332,10 @@ prepare_legacy_config_backup() {
 rollback_legacy_config_on_failure() {
     [ -n "$LEGACY_CONFIG_BACKUP" ] && [ -r "$LEGACY_CONFIG_BACKUP" ] || return 0
     if [ "$LEGACY_CLEANUP_STARTED" -eq 0 ]; then
+        if [ "$SING_BOX_CHANGE_STARTED" -eq 1 ]; then
+            warn "The legacy configuration backup remains at $LEGACY_CONFIG_BACKUP after the sing-box package change"
+            return 0
+        fi
         rm -f "$LEGACY_CONFIG_BACKUP"
         LEGACY_CONFIG_BACKUP=""
         return 0
@@ -2414,8 +2516,8 @@ main() {
     msg "Downloading Forkop X packages before making system changes"
     download_forkop_packages
 
-    ensure_flash_space
     confirm_legacy_migration
+    ensure_flash_space
 
     if [ "$INSTALL_MODE" = "legacy" ]; then
         msg "Installing the Forkop X backend before removing legacy packages"

@@ -7,3 +7,10 @@ fe-app-forkop/.env
 sandbox/
 .build/
 dist/
+
+# Local router and deployment snapshots
+.known_hosts*
+backup-router-*/
+ops/deployed-nginx/
+*-openwrt-full-config-*.tar.gz
+*-selected-config-*.tar.gz

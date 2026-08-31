@@ -25,6 +25,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       commitish: ${{ steps.version.outputs.commitish }}
+      release_notes: ${{ steps.version.outputs.release_notes }}
     steps:
       - uses: actions/checkout@v5.0.0
         with:
@@ -45,6 +46,20 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "commitish=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          RAW_RELEASE_NOTES="$(git tag -l --format='%(contents)' "$VERSION")"
+          if [ -z "$RAW_RELEASE_NOTES" ]; then
+            RAW_RELEASE_NOTES="$(git log -1 --pretty=%B)"
+          fi
+          export RAW_RELEASE_NOTES
+          NORMALIZED_RELEASE_NOTES="$(node <<'NODE'
+          process.stdout.write(process.env.RAW_RELEASE_NOTES.replace('\\n', '\n'));
+          NODE
+          )"
+          {
+            echo 'release_notes<<FORKOP_RELEASE_NOTES_EOF'
+            printf '%s\n' "$NORMALIZED_RELEASE_NOTES"
+            echo 'FORKOP_RELEASE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
 
   build:
     name: Build Forkop release packages
@@ -101,5 +116,6 @@ jobs:
           prerelease: false
           make_latest: true
           name: ${{ needs.preparation.outputs.version }}
+          body: ${{ needs.preparation.outputs.release_notes }}
           tag_name: ${{ needs.preparation.outputs.version }}
           target_commitish: ${{ needs.preparation.outputs.commitish }}
