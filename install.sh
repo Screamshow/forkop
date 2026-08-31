@@ -21,6 +21,7 @@ FORKOP_WAS_ENABLED=0
 FORKOP_WAS_RUNNING=0
 FORKOP_LEGACY_DETECTED=0
 LEGACY_CLEANUP_DONE=0
+LEGACY_CLEANUP_STARTED=0
 FORKOP_I18N_REQUESTED=0
 INSTALLER_LANG="en"
 SING_BOX_INSTALL_VARIANT=""
@@ -43,6 +44,7 @@ LEGACY_BRAND="$(printf '\160\157\144\153\157\160')"
 LEGACY_BACKEND_PACKAGE="${LEGACY_BRAND}-plus"
 LEGACY_CONFIG_PACKAGE_ALT="${LEGACY_BRAND}_plus"
 LEGACY_CONFIG_BACKUP=""
+LEGACY_CONFIG_PATH=""
 
 command -v apk >/dev/null 2>&1 && PKG_IS_APK=1
 
@@ -55,6 +57,7 @@ warn() {
 }
 
 fail() {
+    rollback_legacy_config_on_failure
     printf '\033[31;1m%s\033[0m\n' "$1" >&2
     exit 1
 }
@@ -2070,12 +2073,14 @@ reclaim_legacy_flash_space() {
     [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 0
 
     msg "Removing legacy packages before the free-space check"
+    LEGACY_CLEANUP_STARTED=1
     cleanup_legacy_installation
 }
 
 detect_legacy_installation() {
     FORKOP_LEGACY_DETECTED=0
     LEGACY_CONFIG_BACKUP=""
+    LEGACY_CONFIG_PATH=""
 
     if ! pkg_is_installed "$LEGACY_BACKEND_PACKAGE"; then
         legacy_config_present=0
@@ -2095,14 +2100,45 @@ detect_legacy_installation() {
         "/etc/config/$LEGACY_BACKEND_PACKAGE" \
         "/etc/config/$LEGACY_CONFIG_PACKAGE_ALT"; do
         if [ -r "$legacy_config_path" ]; then
-            LEGACY_CONFIG_BACKUP="$TMP_DIR/legacy-config.backup"
+            LEGACY_CONFIG_BACKUP="/etc/.forkop-legacy-config-backup.$$"
             cp "$legacy_config_path" "$LEGACY_CONFIG_BACKUP" ||
                 fail "Failed to back up the legacy configuration"
+            chmod 0600 "$LEGACY_CONFIG_BACKUP" ||
+                fail "Failed to secure the legacy configuration backup"
+            LEGACY_CONFIG_PATH="$legacy_config_path"
             break
         fi
     done
 
     msg "Legacy installation detected; its packages will be removed and its configuration will be upgraded"
+}
+
+rollback_legacy_config_on_failure() {
+    [ "$LEGACY_CLEANUP_STARTED" -eq 1 ] || return 0
+    [ -n "$LEGACY_CONFIG_BACKUP" ] && [ -r "$LEGACY_CONFIG_BACKUP" ] || return 0
+    [ -n "$LEGACY_CONFIG_PATH" ] || return 0
+
+    cp "$LEGACY_CONFIG_BACKUP" "$LEGACY_CONFIG_PATH" 2>/dev/null || return 0
+    chmod 0600 "$LEGACY_CONFIG_PATH" 2>/dev/null || true
+    warn "Legacy configuration was restored after the failed migration. Its backup remains at $LEGACY_CONFIG_BACKUP"
+}
+
+confirm_low_space_legacy_migration() {
+    available_space="$(available_flash_space_kb 2>/dev/null || true)"
+    [ -n "$available_space" ] || return 0
+    [ "$available_space" -ge "$INITIAL_INSTALL_REQUIRED_SPACE_KB" ] && return 0
+
+    interactive_terminal_available ||
+        fail "Low-space legacy migration requires an interactive terminal"
+    warn "Only $((available_space / 1024)) MB of flash is free. Continuing removes legacy packages before Forkop is installed."
+    numbered_yes_no_prompt "Continue the low-space legacy migration? The legacy configuration is backed up, but removed packages cannot be restored automatically" ||
+        fail "Low-space legacy migration was cancelled before removing legacy packages"
+}
+
+remove_legacy_backup() {
+    [ -n "$LEGACY_CONFIG_BACKUP" ] || return 0
+    rm -f "$LEGACY_CONFIG_BACKUP"
+    LEGACY_CONFIG_BACKUP=""
 }
 
 decide_i18n_installation() {
@@ -2240,11 +2276,13 @@ main() {
 
     pkg_list_update || fail "Failed to update package lists"
     ensure_bootstrap_ucode_runtime
-    reclaim_legacy_flash_space
-    ensure_flash_space
 
     resolve_forkop_release
     download_forkop_packages
+
+    confirm_low_space_legacy_migration
+    reclaim_legacy_flash_space
+    ensure_flash_space
 
     cleanup_legacy_installation
     install_backend_package
@@ -2253,6 +2291,7 @@ main() {
     install_selected_sing_box
     validate_installed_configuration
     post_install
+    remove_legacy_backup
 
     msg "Forkop $FORKOP_PACKAGE_VERSION has been installed successfully"
     msg "Source mirror: ${MIRROR_BASE_URL} (${FORKOP_RELEASE_TAG})"
