@@ -6,7 +6,6 @@ REPO_NAME="forkop"
 MIRROR_BASE_URL="${FORKOP_MIRROR_BASE_URL:-https://mirror.51343.ru}"
 
 INITIAL_INSTALL_REQUIRED_SPACE_KB=15360
-UPDATE_REQUIRED_SPACE_KB=6144
 CONNECT_TIMEOUT_SECONDS=15
 METADATA_TIMEOUT_SECONDS=60
 DOWNLOAD_TIMEOUT_SECONDS=600
@@ -25,6 +24,9 @@ LEGACY_CLEANUP_STARTED=0
 FORKOP_I18N_REQUESTED=0
 INSTALLER_LANG="en"
 SING_BOX_INSTALL_VARIANT=""
+SING_BOX_RECOVERY_PERFORMED=0
+SING_BOX_RECOVERY_OWNER=""
+SING_BOX_RECOVERY_RESTORE_ACTION=""
 
 FORKOP_RELEASE_JSON=""
 FORKOP_RELEASE_TAG=""
@@ -40,6 +42,7 @@ FORKOP_I18N_FILE=""
 FORKOP_PACKAGE_VERSION=""
 FORKOP_CONFIG_READY=1
 FORKOP_CONFIG_VALIDATION_ERROR=""
+INSTALL_MODE="clean"
 LEGACY_BRAND="$(printf '\160\157\144\153\157\160')"
 LEGACY_BACKEND_PACKAGE="${LEGACY_BRAND}-plus"
 LEGACY_CONFIG_PACKAGE_ALT="${LEGACY_BRAND}_plus"
@@ -57,7 +60,9 @@ warn() {
 }
 
 fail() {
+    restore_sing_box_on_failure
     rollback_legacy_config_on_failure
+    restore_current_forkop_on_failure
     printf '\033[31;1m%s\033[0m\n' "$1" >&2
     exit 1
 }
@@ -1083,10 +1088,12 @@ function installer_cleanup_legacy() {
             packages_removed = false;
     }
 
-    if (!installer_remove_package_prefix("luci-i18n-forkop"))
-        packages_removed = false;
-    if (!installer_remove_package("luci-app-forkop"))
-        packages_removed = false;
+    if (!forkop_installed) {
+        if (!installer_remove_package_prefix("luci-i18n-forkop"))
+            packages_removed = false;
+        if (!installer_remove_package("luci-app-forkop"))
+            packages_removed = false;
+    }
 
     if (!packages_removed) {
         warn("Failed to remove one or more conflicting or legacy packages.\n");
@@ -1110,19 +1117,18 @@ function installer_cleanup_legacy() {
         remove_path(INSTALLER_FORKOP_LIB);
         remove_path(INSTALLER_FORKOP_INIT);
         remove_path(INSTALLER_FORKOP_BIN);
+        for (let path in [
+            INSTALLER_FORKOP_LUCI_VIEW,
+            INSTALLER_MENU_JSON,
+            INSTALLER_ACL_JSON,
+            INSTALLER_FORKOP_UCI_DEFAULTS,
+            INSTALLER_RU_LMO,
+            INSTALLER_EN_LMO,
+            INSTALLER_RU_LUA,
+            INSTALLER_EN_LUA
+        ])
+            remove_path(path);
     }
-
-    for (let path in [
-        INSTALLER_FORKOP_LUCI_VIEW,
-        INSTALLER_MENU_JSON,
-        INSTALLER_ACL_JSON,
-        INSTALLER_FORKOP_UCI_DEFAULTS,
-        INSTALLER_RU_LMO,
-        INSTALLER_EN_LMO,
-        INSTALLER_RU_LUA,
-        INSTALLER_EN_LUA
-    ])
-        remove_path(path);
 
     print("FORKOP_WAS_ENABLED=", was_enabled ? "1" : "0", "\n");
     print("FORKOP_WAS_RUNNING=", was_running ? "1" : "0", "\n");
@@ -1237,6 +1243,17 @@ function installer_post_install() {
             !run_args([ INSTALLER_FORKOP_INIT, "restart" ]))
             warn("Failed to start Forkop after upgrade.\n");
     }
+
+    return true;
+}
+
+function installer_restore_previous_service() {
+    if (env("FORKOP_WAS_ENABLED", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
+        run_args([ INSTALLER_FORKOP_INIT, "enable" ]);
+
+    if (env("FORKOP_WAS_RUNNING", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
+        return run_args([ INSTALLER_FORKOP_INIT, "start" ]) ||
+            run_args([ INSTALLER_FORKOP_INIT, "restart" ]);
 
     return true;
 }
@@ -1435,6 +1452,8 @@ else if (mode == "installer-finalize-legacy")
     exit(installer_finalize_legacy() ? 0 : 1);
 else if (mode == "installer-post-install")
     exit(installer_post_install() ? 0 : 1);
+else if (mode == "installer-restore-previous-service")
+    exit(installer_restore_previous_service() ? 0 : 1);
 else
     exit(1);
 EOF
@@ -1747,30 +1766,63 @@ available_flash_space_kb() {
     printf '%s\n' "$available_space"
 }
 
-is_forkop_package_update() {
-    [ "$FORKOP_LEGACY_DETECTED" -eq 0 ] &&
-        [ -z "$SING_BOX_INSTALL_VARIANT" ] &&
-        pkg_is_installed "forkop" &&
-        pkg_is_installed "luci-app-forkop"
-}
-
-is_low_space_legacy_migration() {
-    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] &&
-        [ "$LEGACY_CLEANUP_DONE" -eq 1 ] &&
-        [ -z "$SING_BOX_INSTALL_VARIANT" ]
-}
-
 required_flash_space_kb() {
-    if is_forkop_package_update || is_low_space_legacy_migration; then
-        printf '%s\n' "$UPDATE_REQUIRED_SPACE_KB"
-    else
-        printf '%s\n' "$INITIAL_INSTALL_REQUIRED_SPACE_KB"
+    printf '%s\n' "$INITIAL_INSTALL_REQUIRED_SPACE_KB"
+}
+
+sing_box_recovery_owner() {
+    if [ -x /usr/bin/forkop ]; then
+        printf '%s\n' "/usr/bin/forkop"
+    elif [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] && [ -x "/usr/bin/$LEGACY_BACKEND_PACKAGE" ]; then
+        printf '%s\n' "/usr/bin/$LEGACY_BACKEND_PACKAGE"
     fi
 }
 
-can_replace_sing_box_with_tiny() {
-    [ -x /usr/bin/forkop ] &&
-        { pkg_is_installed "sing-box" || pkg_is_installed "sing-box-extended"; }
+prepare_sing_box_recovery() {
+    SING_BOX_RECOVERY_OWNER="$(sing_box_recovery_owner)"
+    SING_BOX_RECOVERY_RESTORE_ACTION=""
+
+    if pkg_is_installed "sing-box-extended"; then
+        SING_BOX_RECOVERY_RESTORE_ACTION="install_extended"
+    elif pkg_is_installed "sing-box"; then
+        SING_BOX_RECOVERY_RESTORE_ACTION="install_stable"
+    fi
+
+    [ -n "$SING_BOX_RECOVERY_OWNER" ] && [ -n "$SING_BOX_RECOVERY_RESTORE_ACTION" ]
+}
+
+run_sing_box_recovery_action() {
+    recovery_owner="$1"
+    recovery_action="$2"
+    recovery_log="$TMP_DIR/sing-box-space-recovery.log"
+
+    "$recovery_owner" component_action sing_box "$recovery_action" >"$recovery_log" 2>&1
+}
+
+restore_sing_box_on_failure() {
+    [ "$SING_BOX_RECOVERY_PERFORMED" -eq 1 ] || return 0
+
+    recovery_owner="$SING_BOX_RECOVERY_OWNER"
+    [ -x /usr/bin/forkop ] && recovery_owner="/usr/bin/forkop"
+    if [ -x "$recovery_owner" ] &&
+        run_sing_box_recovery_action "$recovery_owner" "$SING_BOX_RECOVERY_RESTORE_ACTION"; then
+        warn "The previous sing-box variant was restored after the installation failure"
+        SING_BOX_RECOVERY_PERFORMED=0
+    else
+        warn "Failed to restore the previous sing-box variant automatically"
+    fi
+}
+
+restore_current_forkop_on_failure() {
+    [ "$INSTALL_MODE" = "update" ] || return 0
+    [ "$LEGACY_CLEANUP_DONE" -eq 1 ] || return 0
+
+    if FORKOP_WAS_ENABLED="$FORKOP_WAS_ENABLED" FORKOP_WAS_RUNNING="$FORKOP_WAS_RUNNING" \
+        install_json_ucode installer-restore-previous-service; then
+        warn "The previous Forkop service state was restored after the installation failure"
+    else
+        warn "Failed to restore the previous Forkop service state automatically"
+    fi
 }
 
 ensure_flash_space() {
@@ -1778,18 +1830,28 @@ ensure_flash_space() {
     available_space="$(available_flash_space_kb 2>/dev/null || true)"
 
     [ -n "$available_space" ] || return 0
-    [ "$available_space" -ge "$required_space" ] && return 0
+    if [ "$available_space" -ge "$required_space" ]; then
+        msg "Flash preflight passed. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
+        return 0
+    fi
 
-    if is_forkop_package_update && can_replace_sing_box_with_tiny && interactive_terminal_available; then
-        warn "$(installer_text low_flash_space)"
-        if numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)"; then
-            warn "$(installer_text tiny_recovery_warning)"
-            /usr/bin/forkop component_action sing_box install_tiny ||
-                fail "Failed to replace sing-box with sing-box-tiny"
+    prepare_sing_box_recovery ||
+        fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB. No safely replaceable stable/extended sing-box variant was found."
+    interactive_terminal_available ||
+        fail "Not enough free flash space. Replacing sing-box with sing-box-tiny requires an interactive terminal."
 
-            available_space="$(available_flash_space_kb 2>/dev/null || true)"
-            [ -n "$available_space" ] && [ "$available_space" -ge "$required_space" ] && return 0
-        fi
+    warn "$(installer_text low_flash_space)"
+    numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)" ||
+        fail "Installation was cancelled before changing sing-box"
+    warn "$(installer_text tiny_recovery_warning)"
+    run_sing_box_recovery_action "$SING_BOX_RECOVERY_OWNER" "install_tiny" ||
+        fail "Failed to replace sing-box with sing-box-tiny; the existing variant was left unchanged or restored by its component manager"
+    SING_BOX_RECOVERY_PERFORMED=1
+
+    available_space="$(available_flash_space_kb 2>/dev/null || true)"
+    if [ -n "$available_space" ] && [ "$available_space" -ge "$required_space" ]; then
+        msg "Flash preflight passed after switching to sing-box-tiny. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
+        return 0
     fi
 
     fail "Not enough free flash space. Available: $((available_space / 1024)) MB, required: $((required_space / 1024)) MB"
@@ -1817,9 +1879,12 @@ installer_text() {
             sing_box_stable) printf '%s\n' "singbox stable" ;;
             sing_box_extended) printf '%s\n' "singbox extended (если нужен xhttp)" ;;
             sing_box_skip_msg) printf '%s\n' "Пропускаю установку sing-box." ;;
-            low_flash_space) printf '%s\n' "Для обновления Forkop недостаточно свободного места во flash." ;;
-            tiny_recovery_prompt) printf '%s\n' "Заменить установленный sing-box на sing-box tiny, чтобы освободить место? Это может сделать конфигурацию с расширенными возможностями несовместимой" ;;
-            tiny_recovery_warning) printf '%s\n' "Останавливаю Forkop и заменяю sing-box. Настройки Forkop будут сохранены." ;;
+            low_flash_space) printf '%s\n' "Свободного места во flash меньше требуемых 15 МБ." ;;
+            tiny_recovery_prompt) printf '%s\n' "Заменить установленный sing-box stable/extended на sing-box tiny и повторить проверку? Расширенные возможности, включая xhttp, станут недоступны" ;;
+            tiny_recovery_warning) printf '%s\n' "Переключаю sing-box на tiny. При последующей ошибке установщик попытается восстановить прежний вариант." ;;
+            legacy_migration_prompt) printf '%s\n' "Перейти с legacy-версии на Forkop X? Ее пакеты будут удалены только после сохранения конфигурации и успешной предварительной проверки" ;;
+            legacy_backup_ready) printf '%s\n' "Резервная копия legacy-конфигурации создана" ;;
+            legacy_cleanup_start) printf '%s\n' "Удаляю legacy-пакеты и начинаю миграцию конфигурации" ;;
             *) printf '%s\n' "$key" ;;
         esac
         return 0
@@ -1839,9 +1904,12 @@ installer_text() {
         sing_box_stable) printf '%s\n' "singbox stable" ;;
         sing_box_extended) printf '%s\n' "singbox extended (if xhttp is needed)" ;;
         sing_box_skip_msg) printf '%s\n' "Skipping sing-box installation." ;;
-        low_flash_space) printf '%s\n' "There is not enough free flash space to update Forkop." ;;
-        tiny_recovery_prompt) printf '%s\n' "Replace the installed sing-box with sing-box tiny to free space? This can make configurations that use advanced features incompatible" ;;
-        tiny_recovery_warning) printf '%s\n' "Stopping Forkop and replacing sing-box. Forkop settings will be preserved." ;;
+        low_flash_space) printf '%s\n' "Free flash space is below the required 15 MB." ;;
+        tiny_recovery_prompt) printf '%s\n' "Replace the installed stable/extended sing-box with sing-box tiny and check again? Advanced features, including xhttp, will become unavailable" ;;
+        tiny_recovery_warning) printf '%s\n' "Switching sing-box to tiny. If installation later fails, the installer will try to restore the previous variant." ;;
+        legacy_migration_prompt) printf '%s\n' "Migrate the legacy installation to Forkop X? Its packages will be removed only after configuration backup and successful preflight checks" ;;
+        legacy_backup_ready) printf '%s\n' "Legacy configuration backup created" ;;
+        legacy_cleanup_start) printf '%s\n' "Removing legacy packages and starting configuration migration" ;;
         *) printf '%s\n' "$key" ;;
     esac
 }
@@ -2069,14 +2137,6 @@ cleanup_legacy_installation() {
     LEGACY_CLEANUP_DONE=1
 }
 
-reclaim_legacy_flash_space() {
-    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 0
-
-    msg "Removing legacy packages before the free-space check"
-    LEGACY_CLEANUP_STARTED=1
-    cleanup_legacy_installation
-}
-
 detect_legacy_installation() {
     FORKOP_LEGACY_DETECTED=0
     LEGACY_CONFIG_BACKUP=""
@@ -2100,11 +2160,6 @@ detect_legacy_installation() {
         "/etc/config/$LEGACY_BACKEND_PACKAGE" \
         "/etc/config/$LEGACY_CONFIG_PACKAGE_ALT"; do
         if [ -r "$legacy_config_path" ]; then
-            LEGACY_CONFIG_BACKUP="/etc/.forkop-legacy-config-backup.$$"
-            cp "$legacy_config_path" "$LEGACY_CONFIG_BACKUP" ||
-                fail "Failed to back up the legacy configuration"
-            chmod 0600 "$LEGACY_CONFIG_BACKUP" ||
-                fail "Failed to secure the legacy configuration backup"
             LEGACY_CONFIG_PATH="$legacy_config_path"
             break
         fi
@@ -2113,9 +2168,35 @@ detect_legacy_installation() {
     msg "Legacy installation detected; its packages will be removed and its configuration will be upgraded"
 }
 
+detect_install_mode() {
+    if [ "$FORKOP_LEGACY_DETECTED" -eq 1 ]; then
+        INSTALL_MODE="legacy"
+    elif pkg_is_installed "forkop"; then
+        INSTALL_MODE="update"
+    else
+        INSTALL_MODE="clean"
+    fi
+    msg "Installation mode: $INSTALL_MODE"
+}
+
+prepare_legacy_config_backup() {
+    [ -n "$LEGACY_CONFIG_PATH" ] || return 0
+
+    LEGACY_CONFIG_BACKUP="/etc/.forkop-legacy-config-backup.$$"
+    cp "$LEGACY_CONFIG_PATH" "$LEGACY_CONFIG_BACKUP" ||
+        fail "Failed to back up the legacy configuration"
+    chmod 0600 "$LEGACY_CONFIG_BACKUP" ||
+        fail "Failed to secure the legacy configuration backup"
+    msg "$(installer_text legacy_backup_ready): $LEGACY_CONFIG_BACKUP"
+}
+
 rollback_legacy_config_on_failure() {
-    [ "$LEGACY_CLEANUP_STARTED" -eq 1 ] || return 0
     [ -n "$LEGACY_CONFIG_BACKUP" ] && [ -r "$LEGACY_CONFIG_BACKUP" ] || return 0
+    if [ "$LEGACY_CLEANUP_STARTED" -eq 0 ]; then
+        rm -f "$LEGACY_CONFIG_BACKUP"
+        LEGACY_CONFIG_BACKUP=""
+        return 0
+    fi
     [ -n "$LEGACY_CONFIG_PATH" ] || return 0
 
     cp "$LEGACY_CONFIG_BACKUP" "$LEGACY_CONFIG_PATH" 2>/dev/null || return 0
@@ -2123,16 +2204,22 @@ rollback_legacy_config_on_failure() {
     warn "Legacy configuration was restored after the failed migration. Its backup remains at $LEGACY_CONFIG_BACKUP"
 }
 
-confirm_low_space_legacy_migration() {
-    available_space="$(available_flash_space_kb 2>/dev/null || true)"
-    [ -n "$available_space" ] || return 0
-    [ "$available_space" -ge "$INITIAL_INSTALL_REQUIRED_SPACE_KB" ] && return 0
+confirm_legacy_migration() {
+    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 0
 
     interactive_terminal_available ||
-        fail "Low-space legacy migration requires an interactive terminal"
-    warn "Only $((available_space / 1024)) MB of flash is free. Continuing removes legacy packages before Forkop is installed."
-    numbered_yes_no_prompt "Continue the low-space legacy migration? The legacy configuration is backed up, but removed packages cannot be restored automatically" ||
-        fail "Low-space legacy migration was cancelled before removing legacy packages"
+        fail "Legacy migration requires an interactive terminal"
+    numbered_yes_no_prompt "$(installer_text legacy_migration_prompt)" ||
+        fail "Legacy migration was cancelled before changing installed packages"
+    prepare_legacy_config_backup
+}
+
+begin_legacy_migration() {
+    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 0
+
+    msg "$(installer_text legacy_cleanup_start)"
+    LEGACY_CLEANUP_STARTED=1
+    cleanup_legacy_installation
 }
 
 remove_legacy_backup() {
@@ -2271,6 +2358,7 @@ main() {
     configure_package_mirror
 
     detect_legacy_installation
+    detect_install_mode
     decide_i18n_installation
     select_sing_box_installation
 
@@ -2278,15 +2366,21 @@ main() {
     ensure_bootstrap_ucode_runtime
 
     resolve_forkop_release
+    msg "Downloading Forkop X packages before making system changes"
     download_forkop_packages
 
-    confirm_low_space_legacy_migration
-    reclaim_legacy_flash_space
     ensure_flash_space
+    confirm_legacy_migration
 
-    cleanup_legacy_installation
-    install_backend_package
-    migrate_legacy_configuration
+    if [ "$INSTALL_MODE" = "legacy" ]; then
+        msg "Installing the Forkop X backend before removing legacy packages"
+        install_backend_package
+        begin_legacy_migration
+        migrate_legacy_configuration
+    else
+        cleanup_legacy_installation
+        install_backend_package
+    fi
     install_ui_packages
     install_selected_sing_box
     validate_installed_configuration
