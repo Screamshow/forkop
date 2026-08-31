@@ -10,6 +10,7 @@ PACKAGE_INSTALL_OVERHEAD_KB=512
 PACKAGE_ARCHIVE_SPACE_FACTOR=2
 MISSING_DEPENDENCY_ALLOWANCE_KB=256
 APK_WORLD_FILE="${FORKOP_APK_WORLD_FILE:-/etc/apk/world}"
+OPKG_DISTFEEDS_FILE="${FORKOP_OPKG_DISTFEEDS_FILE:-/etc/opkg/distfeeds.conf}"
 CONNECT_TIMEOUT_SECONDS=15
 METADATA_TIMEOUT_SECONDS=60
 DOWNLOAD_TIMEOUT_SECONDS=600
@@ -1623,11 +1624,16 @@ configure_apk_mirror() {
 }
 
 configure_opkg_mirror() {
-    distfeeds="/etc/opkg/distfeeds.conf"
+    distfeeds="$OPKG_DISTFEEDS_FILE"
 
     [ "$PKG_IS_APK" -eq 0 ] || return 0
     command_exists opkg || fail "OpenWrt opkg package manager is required"
     [ -s "$distfeeds" ] || fail "$distfeeds is missing or empty"
+
+    if grep -Eq '^[[:space:]]*src/gz[[:space:]]+routerich(_[[:alnum:]_-]+)?[[:space:]]+https?://packages\.routerich\.ru/' "$distfeeds"; then
+        msg "Routerich OPKG feeds remain unchanged; only Forkop release packages use $MIRROR_BASE_URL"
+        return 0
+    fi
 
     case "$MIRROR_BASE_URL" in
         https://*|http://*) ;;
