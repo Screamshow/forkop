@@ -1319,9 +1319,18 @@ function reload(reason) {
             as_string(SING_BOX_START_VERIFY_TIMEOUT)
         ]);
         if (status != 0) {
-            log_message("Reload verification failed after sing-box was reloaded; stopping Forkop runtime", "fatal");
-            cleanup_failed_runtime();
-            return status;
+            // A list update can race the initial startup and be the first operation
+            // which actually reloads sing-box with a newly-added remote rule set.
+            // Apply the same primary-to-upstream recovery used by start_main(), or
+            // that path would remain a single point of failure for every reload.
+            status = retry_sing_box_with_ruleset_fallback();
+            if (status != 0) {
+                if (singbox_ruleset_fallback_attempted)
+                    record_ruleset_start_failure();
+                log_message("Reload verification failed after sing-box was reloaded; stopping Forkop runtime", "fatal");
+                cleanup_failed_runtime();
+                return status;
+            }
         }
         status = module_status(PRIORITY_UC, [ "start-runtime" ]);
         if (status != 0) {
