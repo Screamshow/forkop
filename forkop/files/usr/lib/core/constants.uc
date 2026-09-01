@@ -100,6 +100,10 @@ function constants_map() {
     c.SRS_ADS_HAGEZI_PRO_URL = env("SRS_ADS_HAGEZI_PRO_URL", mirror_lists != "" ? mirror_lists + "/rulesets/adlist.srs" : "https://github.com/zxc-rv/ad-filter/releases/latest/download/adlist.srs");
     c.SRS_SUPERCELL_URL = env("SRS_SUPERCELL_URL", mirror_lists != "" ? mirror_lists + "/rulesets/supercell.srs" : "https://raw.githubusercontent.com/ushan0v/sing-box-supercell-ruleset/main/supercell.srs");
     c.SRS_GITHUB_URL = env("SRS_GITHUB_URL", mirror_lists != "" ? mirror_lists + "/rulesets/github.srs" : "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs");
+    c.SRS_FALLBACK_MAIN_URL = env("SRS_FALLBACK_MAIN_URL", "https://github.com/itdoginfo/allow-domains/releases/latest/download");
+    c.SRS_FALLBACK_ADS_HAGEZI_PRO_URL = env("SRS_FALLBACK_ADS_HAGEZI_PRO_URL", "https://github.com/zxc-rv/ad-filter/releases/latest/download/adlist.srs");
+    c.SRS_FALLBACK_SUPERCELL_URL = env("SRS_FALLBACK_SUPERCELL_URL", "https://raw.githubusercontent.com/ushan0v/sing-box-supercell-ruleset/main/supercell.srs");
+    c.SRS_FALLBACK_GITHUB_URL = env("SRS_FALLBACK_GITHUB_URL", "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs");
     c.SUBNETS_TWITTER = env("SUBNETS_TWITTER", c.GITHUB_RAW_URL + "/Subnets/IPv4/twitter.lst");
     c.SUBNETS_META = env("SUBNETS_META", c.GITHUB_RAW_URL + "/Subnets/IPv4/meta.lst");
     c.SUBNETS_DISCORD = env("SUBNETS_DISCORD", c.GITHUB_RAW_URL + "/Subnets/IPv4/discord.lst");

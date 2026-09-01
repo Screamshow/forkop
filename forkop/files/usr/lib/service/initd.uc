@@ -24,6 +24,7 @@ const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STATE_DIR + "/reload.pending";
 const START_RETRY_FILE = getenv("FORKOP_START_RETRY_FILE") || RUNTIME_STATE_DIR + "/start.retry";
 const START_RETRY_PID_FILE = getenv("FORKOP_START_RETRY_PID_FILE") || RUNTIME_STATE_DIR + "/start-retry.pid";
+const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
 const START_RETRY_DELAY_SECONDS = getenv("FORKOP_START_RETRY_DELAY_SECONDS") || "30";
 const SERVICE_TRIGGER_SYNC_FILE = getenv("FORKOP_SERVICE_TRIGGER_SYNC_FILE") || RUNTIME_STATE_DIR + "/service-triggers.sync";
 const INTERNAL_CONFIG_TRIGGER_GUARD = getenv("FORKOP_INTERNAL_CONFIG_TRIGGER_GUARD") || "/var/run/forkop.internal-config-change";
@@ -247,6 +248,10 @@ function clear_start_retry(path) {
 
 function start_retry_pending(path) {
     return file_exists(as_string(path || START_RETRY_FILE));
+}
+
+function start_failure_blocks_retry(path) {
+    return file_exists(as_string(path || START_FAILURE_FILE));
 }
 
 function cancel_scheduled_start_retry(path) {
@@ -571,6 +576,11 @@ function start_service(reason, owner_pid) {
         clear_start_retry(START_RETRY_FILE);
         cancel_scheduled_start_retry(START_RETRY_PID_FILE);
     }
+    else if (start_failure_blocks_retry(START_FAILURE_FILE)) {
+        clear_start_retry(START_RETRY_FILE);
+        cancel_scheduled_start_retry(START_RETRY_PID_FILE);
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[error] Forkop startup retry suppressed because all rule-set download sources failed; see the fatal startup error in LuCI logs" ]);
+    }
     else {
         mark_start_retry(START_RETRY_FILE, as_string(reason) == "triggered" ? "wan_retry_failed" : "start_failed");
         schedule_start_retry(START_RETRY_PID_FILE, START_RETRY_DELAY_SECONDS);
@@ -754,6 +764,8 @@ else if (mode == "clear-start-retry")
     clear_start_retry(ARGV[1]);
 else if (mode == "start-retry-pending")
     exit(start_retry_pending(ARGV[1]) ? 0 : 1);
+else if (mode == "start-failure-blocks-retry")
+    exit(start_failure_blocks_retry(ARGV[1]) ? 0 : 1);
 else if (mode == "schedule-start-retry")
     exit(schedule_start_retry(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "cancel-scheduled-start-retry")

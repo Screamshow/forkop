@@ -27,6 +27,7 @@ const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIM
 const RELOAD_STATE_FILE = getenv("FORKOP_RELOAD_STATE_FILE") || RUNTIME_STATE_DIR + "/reload-state";
 const RELOAD_STATE_SNAPSHOT_FILE = getenv("FORKOP_RELOAD_STATE_SNAPSHOT_FILE") || RUNTIME_STATE_DIR + "/reload-state.snapshot." + clock()[0] + "." + clock()[1];
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STATE_DIR + "/reload.pending";
+const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
 const SERVICE_TRIGGER_SYNC_FILE = getenv("FORKOP_SERVICE_TRIGGER_SYNC_FILE") || RUNTIME_STATE_DIR + "/service-triggers.sync";
 const SUBSCRIPTION_UPDATE_STATE_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_STATE_DIR") || RUNTIME_STATE_DIR + "/subscription-update";
 const SUBSCRIPTION_LINKS_DIR = getenv("FORKOP_SUBSCRIPTION_LINKS_DIR") || RUNTIME_STATE_DIR + "/subscription-links";
@@ -80,6 +81,10 @@ const SB_SERVICE_MIXED_INBOUND_ADDRESS = constant_value("SB_SERVICE_MIXED_INBOUN
 const SB_SERVICE_MIXED_INBOUND_PORT = constant_value("SB_SERVICE_MIXED_INBOUND_PORT", "4534");
 const SB_VARIANT_STATE_FILE = constant_value("SB_VARIANT_STATE_FILE", "/etc/forkop/sing-box-variant");
 const SB_VERSION_STATE_FILE = constant_value("SB_VERSION_STATE_FILE", "/etc/forkop/sing-box-version");
+const SRS_FALLBACK_MAIN_URL = constant_value("SRS_FALLBACK_MAIN_URL", "https://github.com/itdoginfo/allow-domains/releases/latest/download");
+const SRS_FALLBACK_ADS_HAGEZI_PRO_URL = constant_value("SRS_FALLBACK_ADS_HAGEZI_PRO_URL", "https://github.com/zxc-rv/ad-filter/releases/latest/download/adlist.srs");
+const SRS_FALLBACK_SUPERCELL_URL = constant_value("SRS_FALLBACK_SUPERCELL_URL", "https://raw.githubusercontent.com/ushan0v/sing-box-supercell-ruleset/main/supercell.srs");
+const SRS_FALLBACK_GITHUB_URL = constant_value("SRS_FALLBACK_GITHUB_URL", "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs");
 
 const ZAPRET_PROVIDER_NFQWS_BIN = constant_value("ZAPRET_PROVIDER_NFQWS_BIN", "/opt/zapret/nfq/nfqws");
 const ZAPRET_ROUTE_MARK_BASE = constant_value("ZAPRET_ROUTE_MARK_BASE", "0x01000000");
@@ -117,6 +122,8 @@ let subscription_deferred_sections = "";
 let nft_populate_enabled = NFT_POPULATE_ENABLED_DEFAULT;
 let rule_condition_cache_enabled = 0;
 let startup_config_fingerprint = "";
+let singbox_ruleset_fallback_active = false;
+let singbox_ruleset_fallback_attempted = false;
 
 function shell_quote(value) {
     return "'" + replace(as_string(value), /'/g, "'\\''") + "'";
@@ -252,7 +259,7 @@ function log_message(message, level) {
 }
 
 function lifecycle_env() {
-    return {
+    let result = {
         FORKOP_CONFIG_NAME: CONFIG_NAME,
         FORKOP_LIB: LIB_DIR,
         FORKOP_BIN: BIN_PATH,
@@ -288,6 +295,15 @@ function lifecycle_env() {
         BYEDPI_BIN: BYEDPI_BIN,
         FORKOP_RULE_CONDITION_CACHE_ENABLED: as_string(rule_condition_cache_enabled)
     };
+
+    if (singbox_ruleset_fallback_active) {
+        result.SRS_MAIN_URL = SRS_FALLBACK_MAIN_URL;
+        result.SRS_ADS_HAGEZI_PRO_URL = SRS_FALLBACK_ADS_HAGEZI_PRO_URL;
+        result.SRS_SUPERCELL_URL = SRS_FALLBACK_SUPERCELL_URL;
+        result.SRS_GITHUB_URL = SRS_FALLBACK_GITHUB_URL;
+    }
+
+    return result;
 }
 
 function command_env(assignments) {
@@ -503,6 +519,35 @@ function setting_bool(name, fallback) {
     return bool_text(value);
 }
 
+function clear_start_failure() {
+    remove_file(START_FAILURE_FILE);
+}
+
+function record_ruleset_start_failure() {
+    let section = config_get(CONFIG_NAME + ".settings.download_lists_via_proxy_section", "");
+    let through = section != "" ? " through section '" + section + "'" : "";
+    let direct_online = command_success_from_args([
+        "wget", "-q", "-T", "5", "-O", "/dev/null", "http://1.1.1.1/cdn-cgi/trace"
+    ]);
+    let message;
+
+    if (direct_online) {
+        message = "Required sing-box rule sets could not be downloaded from either the mirror or upstream sources" + through +
+            ". A direct WAN connectivity probe succeeded; check the selected VPN/proxy section, its outbound connectivity, and DNS.";
+    }
+    else {
+        message = "Required sing-box rule sets could not be downloaded from either the mirror or upstream sources" + through +
+            ". The direct Internet connectivity check also failed; check WAN, DNS, and the selected VPN/proxy section.";
+    }
+
+    ensure_dir(RUNTIME_STATE_DIR);
+    write_file(START_FAILURE_FILE,
+        "code=ruleset_download_failed\n" +
+        "message=" + message + "\n" +
+        "updated_at=" + clock()[0] + "\n");
+    log_message(message + " Automatic startup retries are disabled until the next manual start.", "fatal");
+}
+
 function dns_apply_status(args) {
     return module_status(DNS_APPLY_UC, args);
 }
@@ -663,10 +708,47 @@ function prepare_subscription_caches(mode) {
     return result.status;
 }
 
+function start_sing_box_and_wait() {
+    if (!command_success_from_args([ "/etc/init.d/sing-box", "start" ]))
+        return 1;
+
+    return module_status(STATE_UC, [
+        "wait-forkop-stable-start",
+        RT_TABLE_NAME,
+        NFT_TABLE_NAME,
+        NFT_FAKEIP_MARK,
+        as_string(SING_BOX_START_STABLE_MIN_AGE),
+        as_string(SING_BOX_START_VERIFY_TIMEOUT)
+    ]);
+}
+
+function retry_sing_box_with_ruleset_fallback() {
+    if (!module_success(STATE_UC, [ "has-remote-sing-box-ruleset-sources" ]))
+        return 1;
+
+    singbox_ruleset_fallback_attempted = true;
+    log_message("sing-box could not initialize remote rule sets from the primary source; retrying with upstream fallback URLs", "warn");
+    command_success_from_args([ "/etc/init.d/sing-box", "stop" ]);
+
+    singbox_ruleset_fallback_active = true;
+    let previous_nft_populate_enabled = nft_populate_enabled;
+    nft_populate_enabled = 0;
+    let status = singbox_init_config();
+    nft_populate_enabled = previous_nft_populate_enabled;
+    if (status != 0)
+        return status;
+
+    status = start_sing_box_and_wait();
+    if (status == 0)
+        log_message("sing-box started successfully with upstream rule-set fallback URLs", "info");
+    return status;
+}
+
 function start_main() {
     let status;
 
     log_message("Starting Forkop", "info");
+    clear_start_failure();
 
     status = validate_start_config();
     if (status != 0)
@@ -711,19 +793,14 @@ function start_main() {
 
     module_success(BYEDPI_UC, [ "start-runtime" ]);
 
-    if (!command_success_from_args([ "/etc/init.d/sing-box", "start" ])) {
-        log_message("Failed to start sing-box. Aborted.", "fatal");
-        return 1;
+    status = start_sing_box_and_wait();
+    if (status != 0)
+        status = retry_sing_box_with_ruleset_fallback();
+    if (status != 0 && singbox_ruleset_fallback_attempted) {
+        record_ruleset_start_failure();
+        log_message("sing-box did not reach a stable running state with either primary or fallback rule-set sources. Aborted.", "fatal");
+        return status;
     }
-
-    status = module_status(STATE_UC, [
-        "wait-forkop-stable-start",
-        RT_TABLE_NAME,
-        NFT_TABLE_NAME,
-        NFT_FAKEIP_MARK,
-        as_string(SING_BOX_START_STABLE_MIN_AGE),
-        as_string(SING_BOX_START_VERIFY_TIMEOUT)
-    ]);
     if (status != 0) {
         log_message("sing-box did not reach a stable running state after start. Aborted.", "fatal");
         return status;
