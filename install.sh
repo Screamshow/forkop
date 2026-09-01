@@ -38,12 +38,15 @@ CONFIRM_LEGACY_MIGRATION=0
 FORKOP_RELEASE_JSON=""
 FORKOP_RELEASE_TAG=""
 FORKOP_BACKEND_URL=""
+FORKOP_BACKEND_SHA256=""
 FORKOP_BACKEND_NAME=""
 FORKOP_BACKEND_FILE=""
 FORKOP_APP_URL=""
+FORKOP_APP_SHA256=""
 FORKOP_APP_NAME=""
 FORKOP_APP_FILE=""
 FORKOP_I18N_URL=""
+FORKOP_I18N_SHA256=""
 FORKOP_I18N_NAME=""
 FORKOP_I18N_FILE=""
 FORKOP_INSTALL_REQUIRED_KB=0
@@ -1450,6 +1453,23 @@ function release_asset_url(kind, ext) {
     }
 }
 
+function release_asset_sha256(kind, ext) {
+    let release = read_stdin_json();
+    if (type(release) != "object" || type(release.assets) != "array")
+        return;
+    let version = as_string(release.tag_name || "");
+    if (!release_version_valid(version))
+        return;
+    for (let asset in release.assets) {
+        if (type(asset) != "object" || !asset_matches(asset.name, kind, ext, version))
+            continue;
+        let digest = lc(as_string(asset.sha256 || ""));
+        if (match(digest, /^[0-9a-f]{64}$/) != null)
+            print(digest, "\n");
+        return;
+    }
+}
+
 let mode = ARGV[0] || "";
 
 if (mode == "github-message")
@@ -1458,6 +1478,8 @@ else if (mode == "release-tag")
     release_tag();
 else if (mode == "release-asset-url")
     release_asset_url(ARGV[1], ARGV[2]);
+else if (mode == "release-asset-sha256")
+    release_asset_sha256(ARGV[1], ARGV[2]);
 else if (mode == "uci-get") {
     let value = uci_get(ARGV[1]);
     if (value != "")
@@ -1525,6 +1547,20 @@ download_with_retry() {
     done
 
     return 1
+}
+
+verify_download_sha256() {
+    file_path="$1"
+    expected="$(printf '%s' "$2" | tr 'A-F' 'a-f')"
+    label="$3"
+
+    case "$expected" in
+        *[!0-9a-f]*|'') fail "Release metadata has no valid SHA-256 for $label" ;;
+    esac
+    [ "${#expected}" -eq 64 ] || fail "Release metadata has no valid SHA-256 for $label"
+    command_exists sha256sum || fail "sha256sum is required to verify $label"
+    actual="$(sha256sum "$file_path" | awk '{print $1}')"
+    [ "$actual" = "$expected" ] || fail "SHA-256 verification failed for $label"
 }
 
 pkg_is_installed() {
@@ -2181,10 +2217,12 @@ resolve_forkop_release() {
     FORKOP_BACKEND_URL="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-url backend "$asset_ext" 2>/dev/null)"
     [ -n "$FORKOP_BACKEND_URL" ] || fail "The Forkop release does not contain a forkop .$asset_ext package"
     FORKOP_BACKEND_URL="$(mirror_asset_url "$FORKOP_BACKEND_URL")"
+    FORKOP_BACKEND_SHA256="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-sha256 backend "$asset_ext" 2>/dev/null)"
 
     FORKOP_APP_URL="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-url app "$asset_ext" 2>/dev/null)"
     [ -n "$FORKOP_APP_URL" ] || fail "The Forkop release does not contain a luci-app-forkop .$asset_ext package"
     FORKOP_APP_URL="$(mirror_asset_url "$FORKOP_APP_URL")"
+    FORKOP_APP_SHA256="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-sha256 app "$asset_ext" 2>/dev/null)"
 
     FORKOP_BACKEND_NAME="$(basename "$FORKOP_BACKEND_URL")"
     FORKOP_APP_NAME="$(basename "$FORKOP_APP_URL")"
@@ -2197,6 +2235,7 @@ resolve_forkop_release() {
         FORKOP_I18N_URL="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-url i18n "$asset_ext" 2>/dev/null)"
         [ -n "$FORKOP_I18N_URL" ] || fail "The Forkop release does not contain a luci-i18n-forkop-ru .$asset_ext package"
         FORKOP_I18N_URL="$(mirror_asset_url "$FORKOP_I18N_URL")"
+        FORKOP_I18N_SHA256="$(printf '%s' "$FORKOP_RELEASE_JSON" | install_json_ucode release-asset-sha256 i18n "$asset_ext" 2>/dev/null)"
         FORKOP_I18N_NAME="$(basename "$FORKOP_I18N_URL")"
     fi
 }
@@ -2444,10 +2483,13 @@ download_forkop_packages() {
 
     download_with_retry "$FORKOP_BACKEND_URL" "$FORKOP_BACKEND_FILE" "$FORKOP_BACKEND_NAME" || fail "Failed to download $FORKOP_BACKEND_NAME"
     download_with_retry "$FORKOP_APP_URL" "$FORKOP_APP_FILE" "$FORKOP_APP_NAME" || fail "Failed to download $FORKOP_APP_NAME"
+    verify_download_sha256 "$FORKOP_BACKEND_FILE" "$FORKOP_BACKEND_SHA256" "$FORKOP_BACKEND_NAME"
+    verify_download_sha256 "$FORKOP_APP_FILE" "$FORKOP_APP_SHA256" "$FORKOP_APP_NAME"
 
     if [ -n "$FORKOP_I18N_URL" ]; then
         FORKOP_I18N_FILE="$TMP_DIR/$FORKOP_I18N_NAME"
         download_with_retry "$FORKOP_I18N_URL" "$FORKOP_I18N_FILE" "$FORKOP_I18N_NAME" || fail "Failed to download $FORKOP_I18N_NAME"
+        verify_download_sha256 "$FORKOP_I18N_FILE" "$FORKOP_I18N_SHA256" "$FORKOP_I18N_NAME"
     fi
 }
 

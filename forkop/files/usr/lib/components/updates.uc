@@ -1956,6 +1956,33 @@ function jsdelivr_fallback_url(url) {
     return "";
 }
 
+function github_raw_fallback_url(url) {
+    url = as_string(url);
+    let mirror_prefix = FORKOP_MIRROR_BASE_URL != "" ?
+        FORKOP_MIRROR_BASE_URL + "/forkop/lists/allow-domains/" : "";
+    let jsdelivr_prefix = "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/";
+
+    if (mirror_prefix != "" && substr(url, 0, length(mirror_prefix)) == mirror_prefix)
+        return "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/" +
+            substr(url, length(mirror_prefix));
+    if (substr(url, 0, length(jsdelivr_prefix)) == jsdelivr_prefix)
+        return "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/" +
+            substr(url, length(jsdelivr_prefix));
+    return "";
+}
+
+function fallback_urls(url) {
+    let result = [];
+    let jsdelivr = jsdelivr_fallback_url(url);
+    let github_raw = github_raw_fallback_url(url);
+
+    if (jsdelivr != "")
+        push(result, jsdelivr);
+    if (github_raw != "" && github_raw != jsdelivr)
+        push(result, github_raw);
+    return result;
+}
+
 function mirror_source_prefix(url) {
     let prefix = FORKOP_MIRROR_BASE_URL != "" ?
         FORKOP_MIRROR_BASE_URL + "/forkop/lists/allow-domains/" : "";
@@ -1996,15 +2023,18 @@ function record_mirror_download_failure(state) {
 }
 
 function download_to_file_once(url, filepath, proxy_address) {
-    let command = command_from_args([ "wget", "-O", filepath, url ]);
+    let command = command_from_args([ "wget", "-T", "20", "-t", "1", "-O", filepath, url ]);
     if (as_string(proxy_address) != "")
         command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
             " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + command;
 
-    return command_success(command);
+    let status = command_success(command);
+    if (!status)
+        fs.unlink(filepath);
+    return status;
 }
 
-function download_jsdelivr_fallback(url, filepath, proxy_address) {
+function download_fallback(url, filepath, proxy_address) {
     let attempt = 1;
     while (attempt <= 3) {
         if (download_to_file_once(url, filepath, proxy_address))
@@ -2020,11 +2050,14 @@ function download_jsdelivr_fallback(url, filepath, proxy_address) {
 }
 
 function download_to_file(url, filepath, proxy_address) {
-    let fallback_url = jsdelivr_fallback_url(url);
+    let fallbacks = fallback_urls(url);
     let mirror_state = mirror_download_state(url);
     if (mirror_state != null && mirror_state.fallback_active) {
-        log_message("Mirror source is unavailable; downloading " + as_string(url) + " via jsDelivr", "info");
-        return fallback_url != "" && download_jsdelivr_fallback(fallback_url, filepath, proxy_address);
+        log_message("Mirror source is unavailable; trying fallback sources for " + as_string(url), "info");
+        for (let fallback in fallbacks)
+            if (download_fallback(fallback, filepath, proxy_address))
+                return true;
+        return false;
     }
 
     let attempt = 1;
@@ -2043,11 +2076,14 @@ function download_to_file(url, filepath, proxy_address) {
         attempt++;
     }
 
-    if (fallback_url == "")
+    if (length(fallbacks) == 0)
         return false;
 
-    log_message("Primary rule-set source is unavailable; trying jsDelivr fallback", "warn");
-    return download_jsdelivr_fallback(fallback_url, filepath, proxy_address);
+    log_message("Primary rule-set source is unavailable; trying fallback sources", "warn");
+    for (let fallback in fallbacks)
+        if (download_fallback(fallback, filepath, proxy_address))
+            return true;
+    return false;
 }
 
 function convert_crlf_to_lf(path) {
@@ -2946,6 +2982,8 @@ else if (mode == "builtin-subnet-urls")
     print_builtin_subnet_urls(ARGV[1]);
 else if (mode == "jsdelivr-fallback-url")
     print(jsdelivr_fallback_url(ARGV[1]), "\n");
+else if (mode == "github-raw-fallback-url")
+    print(github_raw_fallback_url(ARGV[1]), "\n");
 else if (mode == "due-check-cron-schedule")
     due_check_cron_schedule(ARGV[1]);
 else if (mode == "list-update-cron-job")
