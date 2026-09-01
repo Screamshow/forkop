@@ -24,6 +24,8 @@ const SING_BOX_BIN = env("FORKOP_SING_BOX_BIN", "/usr/bin/sing-box");
 const SING_BOX_CRONET = env("FORKOP_SING_BOX_CRONET", "/usr/lib/libcronet.so");
 const SING_BOX_MANAGED_MARKER = env("SB_MANAGED_SERVICE_MARKER", "Forkop managed sing-box service for binary variants");
 const PACKAGE_UPGRADE_STATE = env("FORKOP_PACKAGE_UPGRADE_STATE", "/tmp/forkop-package-was-running");
+const COMPONENT_UPDATE_CHECK_CACHE_DIR = env("FORKOP_COMPONENT_UPDATE_CHECK_CACHE_DIR", "/var/run/forkop/component-update-checks");
+const COMPONENT_UPDATE_CHECK_STATE_FILE = env("FORKOP_COMPONENT_UPDATE_CHECK_STATE_FILE", "/var/run/forkop/component-update-check.timestamp");
 const PACKAGE_TEST_MODE = env("FORKOP_PACKAGE_TEST_MODE", "") != "";
 
 function shell_quote(value) {
@@ -53,6 +55,12 @@ function path_exists(path) {
 function unlink_if_exists(path) {
     if (path_exists(path))
         fs.unlink(as_string(path));
+}
+
+function clear_component_update_check_cache() {
+    for (let path in fs.glob(COMPONENT_UPDATE_CHECK_CACHE_DIR + "/*"))
+        unlink_if_exists(path);
+    unlink_if_exists(COMPONENT_UPDATE_CHECK_STATE_FILE);
 }
 
 function remove_rt_tables_entry() {
@@ -137,6 +145,8 @@ function prerm_cleanup(action) {
 function postinst_restore() {
     if (env("IPKG_INSTROOT", "") != "")
         return true;
+
+    clear_component_update_check_cache();
 
     let config = fs.readfile(CONFIG_PATH);
     if (config == null || trim(as_string(config)) == "") {
