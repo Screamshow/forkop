@@ -1850,7 +1850,7 @@ forkop_install_required_space_kb() {
     for dependency in \
         ca-bundle kmod-inet-diag kmod-netlink-diag kmod-tun curl ucode \
         ucode-mod-fs ucode-mod-uci kmod-nft-tproxy coreutils-base64 \
-        bind-dig nftables kmod-nft-nat ip-full luci-base; do
+        bind-dig nftables-json kmod-nft-nat ip-full luci-base; do
         pkg_is_installed "$dependency" ||
             missing_dependency_count=$((missing_dependency_count + 1))
     done

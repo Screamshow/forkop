@@ -91,10 +91,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-function isNotInstalled(version: string | undefined) {
-  return !version || version === 'not installed';
-}
-
 function shouldShowInstallAfterCheck(component: Forkop.ComponentName) {
   const status = getVisibleCheckResult(component)?.status;
 

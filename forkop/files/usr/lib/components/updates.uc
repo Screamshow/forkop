@@ -2023,7 +2023,9 @@ function record_mirror_download_failure(state) {
 }
 
 function download_to_file_once(url, filepath, proxy_address) {
-    let command = command_from_args([ "wget", "-T", "20", "-t", "1", "-O", filepath, url ]);
+    // OpenWrt ships BusyBox wget, which has no GNU wget `-t` retry option.
+    // Each call is already one explicit attempt inside download_fallback().
+    let command = command_from_args([ "wget", "--proxy=on", "-T", "20", "-O", filepath, url ]);
     if (as_string(proxy_address) != "")
         command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
             " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + command;
@@ -2557,6 +2559,17 @@ function list_update_pid_end() {
     remove_file(LIST_UPDATE_PID_FILE);
 }
 
+function finish_list_update(status) {
+    list_update_pid_end();
+    release_runtime_lock(RELOAD_LOCK_DIR);
+
+    // Reloading sing-box tears down the service proxy used by list downloads.
+    // A reload requested while this worker owns the runtime lock is queued by
+    // init.d and is only safe to run after every download has finished.
+    service_state_success([ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
+    exit(status == 0 ? 0 : 1);
+}
+
 function dns_probe_passed(proxy_address) {
     if (as_string(proxy_address) != "") {
         log_message("DNS check skipped because list downloads use service proxy", "info");
@@ -2592,12 +2605,21 @@ function list_update() {
     if (!list_update_pid_begin())
         exit(0);
 
+    // Share the same lock as lifecycle reloads.  Waiting here is intentional:
+    // a startup or config reload must settle before this worker opens requests
+    // through the sing-box service proxy.  Conversely, init.d queues reloads
+    // that arrive while this lock is held, and finish_list_update() runs them.
+    if (!acquire_runtime_lock(RELOAD_LOCK_DIR, true)) {
+        log_message("Lists update skipped because Forkop reload did not release the runtime lock", "warn");
+        list_update_pid_end();
+        exit(1);
+    }
+
     list_mirror_download_state = {};
     let settings = uci_settings();
     let proxy_address = service_proxy_address(settings, "lists");
     if (!dns_probe_passed(proxy_address)) {
-        list_update_pid_end();
-        exit(1);
+        finish_list_update(1);
     }
     log_message("Downloading and processing lists", "info");
     let sections = uci_sections("section");
@@ -2627,8 +2649,7 @@ function list_update() {
         log_message("Lists update failed", "info");
     }
 
-    list_update_pid_end();
-    exit(ok ? 0 : 1);
+    finish_list_update(ok ? 0 : 1);
 }
 
 function list_update_if_due() {

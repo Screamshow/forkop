@@ -105,6 +105,7 @@ const SINGBOX_UC = LIB_DIR + "/singbox/runtime.uc";
 const PRIORITY_UC = LIB_DIR + "/singbox/priority.uc";
 const DNS_FAILOVER_UC = LIB_DIR + "/singbox/dns_failover.uc";
 const SUBSCRIPTION_CACHE_UC = LIB_DIR + "/subscription/cache.uc";
+const RULESET_CACHE_UC = LIB_DIR + "/singbox/ruleset_cache.uc";
 const UPDATES_UC = LIB_DIR + "/components/updates.uc";
 const STATE_UC = LIB_DIR + "/service/state.uc";
 const RELOAD_UC = LIB_DIR + "/service/reload.uc";
@@ -122,8 +123,6 @@ let subscription_deferred_sections = "";
 let nft_populate_enabled = NFT_POPULATE_ENABLED_DEFAULT;
 let rule_condition_cache_enabled = 0;
 let startup_config_fingerprint = "";
-let singbox_ruleset_fallback_active = false;
-let singbox_ruleset_fallback_attempted = false;
 
 function shell_quote(value) {
     return "'" + replace(as_string(value), /'/g, "'\\''") + "'";
@@ -295,13 +294,6 @@ function lifecycle_env() {
         BYEDPI_BIN: BYEDPI_BIN,
         FORKOP_RULE_CONDITION_CACHE_ENABLED: as_string(rule_condition_cache_enabled)
     };
-
-    if (singbox_ruleset_fallback_active) {
-        result.SRS_MAIN_URL = SRS_FALLBACK_MAIN_URL;
-        result.SRS_ADS_HAGEZI_PRO_URL = SRS_FALLBACK_ADS_HAGEZI_PRO_URL;
-        result.SRS_SUPERCELL_URL = SRS_FALLBACK_SUPERCELL_URL;
-        result.SRS_GITHUB_URL = SRS_FALLBACK_GITHUB_URL;
-    }
 
     return result;
 }
@@ -523,31 +515,6 @@ function clear_start_failure() {
     remove_file(START_FAILURE_FILE);
 }
 
-function record_ruleset_start_failure() {
-    let section = config_get(CONFIG_NAME + ".settings.download_lists_via_proxy_section", "");
-    let through = section != "" ? " through section '" + section + "'" : "";
-    let direct_online = command_success_from_args([
-        "wget", "-q", "-T", "5", "-O", "/dev/null", "http://1.1.1.1/cdn-cgi/trace"
-    ]);
-    let message;
-
-    if (direct_online) {
-        message = "Required sing-box rule sets could not be downloaded from either the mirror or upstream sources" + through +
-            ". A direct WAN connectivity probe succeeded; check the selected VPN/proxy section, its outbound connectivity, and DNS.";
-    }
-    else {
-        message = "Required sing-box rule sets could not be downloaded from either the mirror or upstream sources" + through +
-            ". The direct Internet connectivity check also failed; check WAN, DNS, and the selected VPN/proxy section.";
-    }
-
-    ensure_dir(RUNTIME_STATE_DIR);
-    write_file(START_FAILURE_FILE,
-        "code=ruleset_download_failed\n" +
-        "message=" + message + "\n" +
-        "updated_at=" + clock()[0] + "\n");
-    log_message(message + " Automatic startup retries are disabled until the next manual start.", "fatal");
-}
-
 function dns_apply_status(args) {
     return module_status(DNS_APPLY_UC, args);
 }
@@ -722,28 +689,6 @@ function start_sing_box_and_wait() {
     ]);
 }
 
-function retry_sing_box_with_ruleset_fallback() {
-    if (!module_success(STATE_UC, [ "has-remote-sing-box-ruleset-sources" ]))
-        return 1;
-
-    singbox_ruleset_fallback_attempted = true;
-    log_message("sing-box could not initialize remote rule sets from the primary source; retrying with upstream fallback URLs", "warn");
-    command_success_from_args([ "/etc/init.d/sing-box", "stop" ]);
-
-    singbox_ruleset_fallback_active = true;
-    let previous_nft_populate_enabled = nft_populate_enabled;
-    nft_populate_enabled = 0;
-    let status = singbox_init_config();
-    nft_populate_enabled = previous_nft_populate_enabled;
-    if (status != 0)
-        return status;
-
-    status = start_sing_box_and_wait();
-    if (status == 0)
-        log_message("sing-box started successfully with upstream rule-set fallback URLs", "info");
-    return status;
-}
-
 function start_main() {
     let status;
 
@@ -794,13 +739,6 @@ function start_main() {
     module_success(BYEDPI_UC, [ "start-runtime" ]);
 
     status = start_sing_box_and_wait();
-    if (status != 0)
-        status = retry_sing_box_with_ruleset_fallback();
-    if (status != 0 && singbox_ruleset_fallback_attempted) {
-        record_ruleset_start_failure();
-        log_message("sing-box did not reach a stable running state with either primary or fallback rule-set sources. Aborted.", "fatal");
-        return status;
-    }
     if (status != 0) {
         log_message("sing-box did not reach a stable running state after start. Aborted.", "fatal");
         return status;
@@ -817,6 +755,10 @@ function start_main() {
         return status;
 
     module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
+    module_background(RULESET_CACHE_UC, [
+        "refresh-and-reload",
+        setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
+    ]);
     release_start_subscription_update_lock();
     module_success(ZAPRET_UC, [ "start-runtime" ]);
     module_success(ZAPRET2_UC, [ "start-runtime" ]);
@@ -1319,18 +1261,9 @@ function reload(reason) {
             as_string(SING_BOX_START_VERIFY_TIMEOUT)
         ]);
         if (status != 0) {
-            // A list update can race the initial startup and be the first operation
-            // which actually reloads sing-box with a newly-added remote rule set.
-            // Apply the same primary-to-upstream recovery used by start_main(), or
-            // that path would remain a single point of failure for every reload.
-            status = retry_sing_box_with_ruleset_fallback();
-            if (status != 0) {
-                if (singbox_ruleset_fallback_attempted)
-                    record_ruleset_start_failure();
-                log_message("Reload verification failed after sing-box was reloaded; stopping Forkop runtime", "fatal");
-                cleanup_failed_runtime();
-                return status;
-            }
+            log_message("Reload verification failed after sing-box was reloaded; stopping Forkop runtime", "fatal");
+            cleanup_failed_runtime();
+            return status;
         }
         status = module_status(PRIORITY_UC, [ "start-runtime" ]);
         if (status != 0) {
@@ -1380,6 +1313,11 @@ function reload(reason) {
 
     if (plan.needs_list_update == 1)
         module_background(UPDATES_UC, [ "list-update" ]);
+
+    module_background(RULESET_CACHE_UC, [
+        "refresh-and-reload",
+        setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
+    ]);
 
     return finish_reload_status(module_status(STATE_UC, [
         "write-captured-reload-state",

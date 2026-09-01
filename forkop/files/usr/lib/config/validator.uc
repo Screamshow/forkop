@@ -2032,6 +2032,10 @@ function check_runtime_requirements() {
     log_message("Checking required packages and runtime settings", "info");
 
     let ctx = context_from_runtime();
+
+    if (!command_exists("nft"))
+        fail_requirement("Required nftables executable 'nft' is missing. Install package 'nftables-json' and start Forkop again. Aborted.", "error");
+
     let sing_box_version_output = command_exists("sing-box") ? command_output_from_args([ "sing-box", "version" ]) : "";
     let sing_box_version = sing_box_compressed_marker_set(ctx) ? sing_box_version_state(ctx) : first_line_last_field(sing_box_version_output);
     let coreutils_base64_version = first_line_field_from_text(command_output("base64 --version 2>/dev/null"), 4);

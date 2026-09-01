@@ -20,6 +20,7 @@ const RUNTIME_CACHE_FORMAT_FILE = getenv("FORKOP_RUNTIME_CACHE_FORMAT_FILE") || 
 const RUNTIME_CACHE_FORMAT = getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "10";
 const PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR") || "/etc/forkop/subscription-cache";
 const PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE") || PERSISTENT_SUBSCRIPTION_CACHE_DIR + "/cache-format";
+const RULESET_CACHE_UC = LIB_DIR + "/singbox/ruleset_cache.uc";
 const PERSISTENT_SUBSCRIPTION_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT") || "9";
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STATE_DIR + "/reload.pending";
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
@@ -844,6 +845,14 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
         exit(1);
     }
     log_file_lines(runtime_log, "warn", "sing-box config generator: ");
+
+    let rule_set_materialize_mode = bool_option(settings, "download_lists_via_proxy", false) ?
+        "cache-only" : "allow-download";
+    if (!module_success([ RULESET_CACHE_UC, "materialize-config", temp_config, rule_set_materialize_mode ])) {
+        log_message("Failed to materialize remote rule sets into the persistent local cache. Aborted.", "fatal");
+        remove_files([ temp_config, runtime_log ]);
+        exit(1);
+    }
 
     let check_result = sing_box_check(temp_config, runtime_log);
     if (check_result.status != 0) {
