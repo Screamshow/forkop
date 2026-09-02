@@ -4455,6 +4455,7 @@ function validateSubscriptionUrlEntry(_section_id, value) {
     const supportedHosts = new Set([
       "aes2215.vs2112.51343.ru",
       "sub.flintnet.pro",
+      "sub.hat.onl",
     ]);
     if (url.protocol !== "https:" || !supportedHosts.has(url.hostname.toLowerCase())) {
       return _("This subscription provider is not supported");

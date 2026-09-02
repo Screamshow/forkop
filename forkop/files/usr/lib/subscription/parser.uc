@@ -2963,7 +2963,8 @@ function parse_subscription_source_entry(entry) {
     let host = lc(core_url.host(entry));
     let supported_hosts = {
         "aes2215.vs2112.51343.ru": true,
-        "sub.flintnet.pro": true
+        "sub.flintnet.pro": true,
+        "sub.hat.onl": true
     };
     if (!supported_hosts[host])
         return subscription_source_entry_result(false, "", "", "This subscription provider is not supported");
