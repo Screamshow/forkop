@@ -1944,6 +1944,7 @@ function jsdelivr_fallback_url(url) {
     let sources = [
         [ "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/", "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" ],
         [ FORKOP_MIRROR_BASE_URL + "/forkop/lists/allow-domains/", "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/" ],
+        [ FORKOP_MIRROR_BASE_URL + "/forkop/lists/b4geoip-forkop/", "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/" ],
         [ "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/", "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/" ]
     ];
 

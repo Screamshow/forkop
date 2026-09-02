@@ -44,6 +44,13 @@ const CHILD_ITEM_TYPES = [
 ];
 const SECONDARY_RULESET_RAW_PREFIX = "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/srs/";
 const SECONDARY_RULESET_CDN_PREFIX = "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/srs/";
+const SECONDARY_RULESET_MIRROR_PREFIX = "https://mirror.51343.ru/forkop/lists/b4geoip-forkop/srs/";
+const CURRENT_SECONDARY_RULESET_IDS = {
+    adobe: true, anthropic: true, apple: true, blizzard: true, bungie: true,
+    ccp: true, electronicarts: true, epicgames: true, google: true,
+    nintendo: true, play2go: true, riot: true, roblox: true, sony: true,
+    taketwo: true, ubisoft: true, valve: true, wargaming: true, xbox: true
+};
 const RETIRED_SECONDARY_RULESET_IDS = {
     aeza: true, akamai: true, amazon: true, belcloud: true, buyvm: true,
     cdn77: true, cloudflare: true, cogent: true, constant: true, contabo: true,
@@ -1336,12 +1343,39 @@ function migrate_retired_secondary_rulesets(ctx) {
     }
 }
 
+// Prefer the mirrored copy for existing b4geoip selections as well as new
+// ones. Raw GitHub and jsDelivr remain download fallbacks at runtime.
+function migrate_secondary_rulesets_to_mirror(ctx) {
+    for (let section in ctx.model.sections) {
+        let migrated = [];
+        let changed = false;
+        for (let reference in list_option(section, "rule_set_with_subnets")) {
+            reference = as_string(reference);
+            let prefix = index(reference, SECONDARY_RULESET_RAW_PREFIX) == 0
+                ? SECONDARY_RULESET_RAW_PREFIX
+                : (index(reference, SECONDARY_RULESET_CDN_PREFIX) == 0
+                    ? SECONDARY_RULESET_CDN_PREFIX
+                    : "");
+            let id = prefix != "" ? replace(reference, /^.*\//, "") : "";
+            id = replace(id, /\.srs$/, "");
+            if (prefix != "" && match(reference, /\.srs$/) != null && CURRENT_SECONDARY_RULESET_IDS[id]) {
+                reference = SECONDARY_RULESET_MIRROR_PREFIX + id + ".srs";
+                changed = true;
+            }
+            push(migrated, reference);
+        }
+        if (changed)
+            set_list_option(ctx, section, "rule_set_with_subnets", migrated);
+    }
+}
+
 const MIGRATIONS = [
     { id: "interface_sections", run: migrate_interface_sections },
     { id: "enable_component_checks", run: migrate_enable_component_checks },
     { id: "http_connection_urls", run: migrate_http_connection_urls },
     { id: "flintnet_urltest_default", run: migrate_flintnet_urltest_default },
-    { id: "retired_secondary_rulesets", run: migrate_retired_secondary_rulesets }
+    { id: "retired_secondary_rulesets", run: migrate_retired_secondary_rulesets },
+    { id: "secondary_rulesets_mirror_v1", run: migrate_secondary_rulesets_to_mirror }
 ];
 
 function apply_migrations(ctx) {

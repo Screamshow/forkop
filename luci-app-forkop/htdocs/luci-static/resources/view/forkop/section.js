@@ -6774,22 +6774,24 @@ function isBuiltinRulesetValue(value) {
   return Object.prototype.hasOwnProperty.call(main.DOMAIN_LIST_OPTIONS, value);
 }
 
+const SECONDARY_RULESET_MIRROR_PREFIX =
+  "https://mirror.51343.ru/forkop/lists/b4geoip-forkop/srs/";
 const SECONDARY_RULESET_RAW_PREFIX =
   "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/srs/";
 const SECONDARY_RULESET_CDN_PREFIX =
   "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/srs/";
 
 function secondaryRulesetUrl(value) {
-  return `${SECONDARY_RULESET_RAW_PREFIX}${value}.srs`;
+  return `${SECONDARY_RULESET_MIRROR_PREFIX}${value}.srs`;
 }
 
 function secondaryRulesetId(reference) {
   const value = `${reference || ""}`;
-  const prefix = value.startsWith(SECONDARY_RULESET_RAW_PREFIX)
-    ? SECONDARY_RULESET_RAW_PREFIX
-    : value.startsWith(SECONDARY_RULESET_CDN_PREFIX)
-      ? SECONDARY_RULESET_CDN_PREFIX
-      : "";
+  const prefix = [
+    SECONDARY_RULESET_MIRROR_PREFIX,
+    SECONDARY_RULESET_RAW_PREFIX,
+    SECONDARY_RULESET_CDN_PREFIX,
+  ].find((candidate) => value.startsWith(candidate));
   if (!prefix || !value.endsWith(".srs")) return "";
   const id = value.slice(prefix.length, -4);
   return Object.prototype.hasOwnProperty.call(
