@@ -3,6 +3,7 @@ import {
   formatMaskedSingBoxConfig,
   maskGlobalCheckText,
   maskSingBoxConfigValue,
+  maskSupportReportText,
 } from '../helpers/maskDiagnostics';
 
 describe('diagnostic masking', () => {
@@ -92,5 +93,16 @@ describe('diagnostic masking', () => {
     expect(masked).toContain("option ipaddr 'MASKED'");
     expect(masked).toContain("option url 'MASKED'");
     expect(masked).toContain("option private_key 'MASKED'");
+  });
+
+  it('masks proxy URIs and credential-bearing URLs from support-report logs', () => {
+    const masked = maskSupportReportText(
+      'retry vless://client-id@example.com:443#node\n' +
+        'request https://example.com/sub?token=secret-value',
+    );
+
+    expect(masked).not.toContain('client-id');
+    expect(masked).not.toContain('secret-value');
+    expect(masked).toContain('MASKED');
   });
 });

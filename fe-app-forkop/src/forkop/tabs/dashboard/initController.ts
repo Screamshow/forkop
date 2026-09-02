@@ -1,13 +1,10 @@
 import {
   getClashWsUrl,
-  isCopyableProxyLink,
   onMount,
   preserveScrollForPage,
 } from '../../../helpers';
-import { copyToClipboard } from '../../../helpers/copyToClipboard';
 import { showToast } from '../../../helpers/showToast';
 import { prettyBytes } from '../../../helpers/prettyBytes';
-import { renderCopyIcon24 } from '../../../icons';
 import { CustomForkopMethods, ForkopShellMethods } from '../../methods';
 import {
   logger,
@@ -200,6 +197,21 @@ function setSubscriptionUpdating(
   });
 }
 
+function subscriptionUpdateErrorMessage(message: string) {
+  const detail = `${message || ''}`.trim();
+  const fallback = _('Failed to update subscriptions');
+
+  if (
+    !detail ||
+    detail === fallback ||
+    detail === 'Subscription update failed'
+  ) {
+    return fallback;
+  }
+
+  return `${fallback}: ${detail}`;
+}
+
 function setSelectorSwitching(sectionName: string, tag?: string) {
   const sectionsWidget = store.get().sectionsWidget;
   const selectorSwitchingSections = {
@@ -297,7 +309,7 @@ async function completeSubscriptionUpdateJob(
 
   if (failed) {
     if (shouldNotify) {
-      showToast(_('Failed to update subscriptions'), 'error');
+      showToast(subscriptionUpdateErrorMessage(message), 'error');
     }
     return;
   }
@@ -347,7 +359,7 @@ async function followSubscriptionUpdateState(
 
       setSubscriptionUpdating(sectionName, false);
       if (!isTransientRpcError(message)) {
-        showToast(_('Failed to update subscriptions'), 'error');
+        showToast(subscriptionUpdateErrorMessage(message), 'error');
       }
     }
   } finally {
@@ -738,17 +750,6 @@ async function handleTestLatency(
   }
 }
 
-function handleCopyOutbound(outbound: Forkop.Outbound) {
-  const link = outbound.link;
-
-  if (link && isCopyableProxyLink(link)) {
-    copyToClipboard(link);
-    return;
-  }
-
-  showToast(_('Proxy link is unavailable'), 'error');
-}
-
 function formatUrlTestModalValue(value: unknown) {
   if (typeof value === 'boolean') {
     return value ? _('Yes') : _('No');
@@ -866,23 +867,6 @@ function renderUrlTestSelectedValue(info: Forkop.UrlTestInfo) {
   );
 }
 
-function renderUrlTestCopyButton(
-  title: string,
-  onClick: (event: MouseEvent) => void,
-) {
-  return E(
-    'button',
-    {
-      type: 'button',
-      class: 'btn fkp_dashboard-page__urltest-details__copy-button',
-      title,
-      'aria-label': title,
-      click: onClick,
-    },
-    renderCopyIcon24(),
-  );
-}
-
 function renderUrlTestInfoModal(outbound: Forkop.Outbound) {
   const info = outbound.urlTestInfo;
 
@@ -982,15 +966,6 @@ function renderUrlTestInfoModal(outbound: Forkop.Outbound) {
                       ),
                     ],
                   ),
-                  member.canCopyLink
-                    ? renderUrlTestCopyButton(_('Copy proxy link'), (event) => {
-                        event.preventDefault();
-                        handleCopyOutbound(member);
-                      })
-                    : E('span', {
-                        class:
-                          'fkp_dashboard-page__urltest-details__copy-placeholder',
-                      }),
                 ],
               ),
             )
@@ -1378,15 +1353,6 @@ function renderPriorityInfoModal(outbound: Forkop.Outbound) {
                       ),
                     ],
                   ),
-                  member.canCopyLink
-                    ? renderUrlTestCopyButton(_('Copy proxy link'), (event) => {
-                        event.preventDefault();
-                        handleCopyOutbound(member);
-                      })
-                    : E('span', {
-                        class:
-                          'fkp_dashboard-page__urltest-details__copy-placeholder',
-                      }),
                 ],
               ),
             )
@@ -1468,7 +1434,7 @@ async function handleUpdateSubscription(section: Forkop.OutboundGroup) {
 
       setSubscriptionUpdating(section.sectionName, false);
       if (!isTransientRpcError(message)) {
-        showToast(_('Failed to update subscriptions'), 'error');
+        showToast(subscriptionUpdateErrorMessage(message), 'error');
       }
     }
   } finally {
@@ -1582,7 +1548,6 @@ async function renderSectionsWidget() {
       },
       onTestLatency: () => {},
       onChooseOutbound: () => {},
-      onCopyOutbound: () => {},
       onShowUrlTestInfo: () => {},
       onShowPriorityInfo: () => {},
       onUpdateSubscription: () => {},
@@ -1634,9 +1599,6 @@ async function renderSectionsWidget() {
       },
       onChooseOutbound: (sectionName, selector, tag) => {
         void handleChooseOutbound(sectionName, selector, tag);
-      },
-      onCopyOutbound: (_section, outbound) => {
-        handleCopyOutbound(outbound);
       },
       onShowUrlTestInfo: (outbound) => {
         handleShowUrlTestInfo(outbound);

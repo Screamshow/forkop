@@ -1,10 +1,5 @@
-import {
-  renderLoaderCircleIcon24,
-  renderCopyIcon24,
-  renderLinkIcon24,
-  renderInfoIcon24,
-} from '../../../../icons';
-import { isCopyableProxyLink, svgEl } from '../../../../helpers';
+import { renderLoaderCircleIcon24, renderInfoIcon24 } from '../../../../icons';
+import { svgEl } from '../../../../helpers';
 import { prettyBytes } from '../../../../helpers/prettyBytes';
 import { Forkop } from '../../../types';
 import { renderFlagEmojis } from './renderFlagEmojis';
@@ -19,10 +14,6 @@ interface IRenderSectionsProps {
     sectionName: string,
     selector: string,
     tag: string,
-  ) => void;
-  onCopyOutbound: (
-    section: Forkop.OutboundGroup,
-    outbound: Forkop.Outbound,
   ) => void;
   onShowUrlTestInfo: (outbound: Forkop.Outbound) => void;
   onShowPriorityInfo: (outbound: Forkop.Outbound) => void;
@@ -100,7 +91,7 @@ function renderMetadataAction(label: string, url?: string) {
       title: label,
       'aria-label': label,
     },
-    renderLinkIcon24(),
+    label,
   );
 }
 
@@ -132,9 +123,9 @@ function renderSubscriptionMetadata(
   ].filter(Boolean) as { label: string; value: string }[];
 
   const actions = [
-    renderMetadataAction('Profile', metadata.webPageUrl),
-    renderMetadataAction('Support', metadata.supportUrl),
-    renderMetadataAction('More details', metadata.announceUrl),
+    renderMetadataAction(_('Profile'), metadata.webPageUrl),
+    renderMetadataAction(_('Support'), metadata.supportUrl),
+    renderMetadataAction(_('More details'), metadata.announceUrl),
   ].filter(Boolean) as HTMLElement[];
 
   return E('div', { class: 'fkp_dashboard-page__subscription-meta' }, [
@@ -252,7 +243,6 @@ export function getLatencyTestLabel(
 function renderDefaultState({
   section,
   onChooseOutbound,
-  onCopyOutbound,
   onShowUrlTestInfo,
   onShowPriorityInfo,
   onTestLatency,
@@ -293,8 +283,6 @@ function renderDefaultState({
       return 'fkp_dashboard-page__outbound-grid__item__latency--red';
     }
 
-    const canCopyLink =
-      Boolean(outbound.canCopyLink) || isCopyableProxyLink(outbound.link);
     const footerLabel = getOutboundFooterLabel(outbound);
     const selectorSwitching = Boolean(selectorSwitchingTag);
     const outboundSwitching = selectorSwitchingTag === outbound.code;
@@ -352,25 +340,6 @@ function renderDefaultState({
           : []),
         E('div', { class: 'fkp_dashboard-page__outbound-grid__item__header' }, [
           E('b', {}, renderFlagEmojis(outbound.displayName)),
-          ...(canCopyLink
-            ? [
-                E(
-                  'button',
-                  {
-                    type: 'button',
-                    class:
-                      'btn fkp_dashboard-page__outbound-grid__item__copy-button',
-                    title: _('Copy proxy link'),
-                    'aria-label': _('Copy proxy link'),
-                    click: (event: MouseEvent) => {
-                      event.stopPropagation();
-                      onCopyOutbound(section, outbound);
-                    },
-                  },
-                  renderCopyIcon24(),
-                ),
-              ]
-            : []),
           ...(outbound.urlTestInfo
             ? [
                 E(

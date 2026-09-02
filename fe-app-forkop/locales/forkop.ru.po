@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-29 06:32+0300\n"
-"PO-Revision-Date: 2026-08-29 06:32+0300\n"
+"POT-Creation-Date: 2026-09-02 08:15+0300\n"
+"PO-Revision-Date: 2026-09-02 08:15+0300\n"
 "Last-Translator: Screamshow\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -140,14 +140,8 @@ msgstr "Нужно указать хотя бы один корректный IP
 msgid "Auto refresh"
 msgstr "Автообновление"
 
-msgid "Auto-generate HWID"
-msgstr "Авто-генерация HWID"
-
 msgid "Automatic component update checks"
 msgstr "Автоматическая проверка обновлений компонентов"
-
-msgid "Automatic User-Agent selection"
-msgstr "Авто-подбор User-Agent"
 
 msgid "Automatically add text to the name of each server from this subscription for convenient filtering."
 msgstr "Автоматически добавлять текст к имени каждого сервера из этой подписки для удобной фильтрации."
@@ -319,9 +313,6 @@ msgstr "Скопировано"
 
 msgid "Copy"
 msgstr "Копировать"
-
-msgid "Copy proxy link"
-msgstr "Скопировать ссылку прокси"
 
 msgid "Could not compare FakeIP and control public IPs"
 msgstr "Не удалось сравнить публичные IP FakeIP и контрольной проверки"
@@ -515,6 +506,9 @@ msgstr "Скачивать подписку через секцию"
 msgid "Download subscriptions via the selected section"
 msgstr "Скачивать подписки через выбранную секцию"
 
+msgid "Download support report"
+msgstr "Скачать отчёт для поддержки"
+
 msgid "Download through"
 msgstr "Скачивать через"
 
@@ -581,12 +575,6 @@ msgstr "Введите название уровня"
 msgid "Enter a valid DNS server address"
 msgstr "Укажите корректный адрес DNS-сервера"
 
-msgid "Enter HWID"
-msgstr "Укажите HWID"
-
-msgid "Enter the HWID sent with subscription requests"
-msgstr "HWID, который будет отправляться при запросах подписки"
-
 msgid "Enter the subscription URL"
 msgstr "Введите URL подписки"
 
@@ -644,6 +632,9 @@ msgstr "Не удалось закрыть подключения"
 msgid "Failed to copy!"
 msgstr "Не удалось скопировать!"
 
+msgid "Failed to create support report"
+msgstr "Не удалось создать отчёт для поддержки"
+
 msgid "Failed to execute"
 msgstr "Не удалось выполнить"
 
@@ -682,6 +673,9 @@ msgstr "Принудительная маршрутизация устройст
 
 msgid "Forkop Error"
 msgstr "Ошибка Forkop"
+
+msgid "Forkop logs could not be collected."
+msgstr "Не удалось собрать журналы Forkop."
 
 msgid "Forkop manages ciadpi pid files itself, so pidfile options are not allowed here."
 msgstr "Forkop сам управляет pid-файлами ciadpi, поэтому параметры pidfile здесь запрещены."
@@ -740,9 +734,6 @@ msgstr "NFQWS2 Forkop готов"
 msgid "Fuzzing is not supported here because Forkop needs deterministic runtime validation."
 msgstr "Fuzzing здесь не поддерживается, потому что Forkop нужна предсказуемая runtime-валидация."
 
-msgid "Generate HWID from router hardware information for this subscription"
-msgstr "Генерировать HWID из аппаратной информации роутера для этой подписки"
-
 msgid "Generated inbound"
 msgstr "Созданный inbound"
 
@@ -752,14 +743,8 @@ msgstr "Получить глобальную проверку"
 msgid "Global check"
 msgstr "Глобальная проверка"
 
-msgid "Hide cascade connection nodes"
-msgstr "Скрывать узлы каскадных подключений"
-
-msgid "Hide individual nodes that are already included in imported subscription URLTest groups"
-msgstr "Скрывать отдельные узлы, которые уже входят в импортированные URLTest группы подписки"
-
-msgid "Hide intermediate nodes used as detours by other subscription nodes"
-msgstr "Скрывать промежуточные узлы, которые используются как detour для других узлов подписки"
+msgid "Global check could not be collected."
+msgstr "Не удалось собрать общую проверку."
 
 msgid "Hide selected servers."
 msgstr "Скрывать выбранные серверы."
@@ -781,9 +766,6 @@ msgstr "Скрывать серверы с одним из выбранных т
 
 msgid "Hide servers with one of the selected transports."
 msgstr "Скрывать серверы с одним из выбранных транспортов."
-
-msgid "Hide URLTest group nodes"
-msgstr "Скрывать узлы URLTest групп"
 
 msgid "Hide values"
 msgstr "Скрывать значения"
@@ -811,9 +793,6 @@ msgstr "Как часто проверять, восстановился ли DN
 
 msgid "HTTP error"
 msgstr "Ошибка HTTP"
-
-msgid "HWID"
-msgstr "HWID"
 
 msgid "Idle timeout"
 msgstr "Таймаут простоя"
@@ -1139,6 +1118,9 @@ msgstr "Наблюдаемые интерфейсы"
 msgid "Monitoring"
 msgstr "Мониторинг"
 
+msgid "More details"
+msgstr "Подробнее"
+
 msgid "Must be a number in the range of 0 - 10000"
 msgstr "Должно быть числом в диапазоне 0 - 10000"
 
@@ -1234,9 +1216,6 @@ msgstr "Не отвечает"
 
 msgid "Not running"
 msgstr "Не запущено"
-
-msgid "This subscription provider is not supported"
-msgstr "Этот провайдер подписок не поддерживается"
 
 msgid "Only from the specified countries."
 msgstr "Только из указанных стран."
@@ -1361,11 +1340,11 @@ msgstr "Уровни приоритета"
 msgid "Priority settings"
 msgstr "Настройки приоритета"
 
+msgid "Profile"
+msgstr "Профиль"
+
 msgid "Protocol"
 msgstr "Протокол"
-
-msgid "Proxy link is unavailable"
-msgstr "Ссылка прокси недоступна"
 
 msgid "Public host"
 msgstr "Публичный хост"
@@ -1487,9 +1466,6 @@ msgstr "Секции"
 msgid "Security"
 msgstr "Защита"
 
-msgid "Select a common client profile or enter a custom User-Agent"
-msgstr "Выберите распространённый профиль клиента или введите свой User-Agent"
-
 msgid "Select a network interface"
 msgstr "Выберите сетевой интерфейс"
 
@@ -1522,9 +1498,6 @@ msgstr "Выберите протокол DNS"
 
 msgid "Select network interface for VPN connection"
 msgstr "Выберите сетевой интерфейс для VPN-подключения"
-
-msgid "Select or enter a User-Agent"
-msgstr "Выберите или введите User-Agent"
 
 msgid "Select or enter path for sing-box cache file. Change this ONLY if you know what you are doing"
 msgstr "Выберите или введите путь к файлу кеша sing-box. Изменяйте это, ТОЛЬКО если вы знаете, что делаете"
@@ -1586,9 +1559,6 @@ msgstr "Информация о сервисах"
 msgid "Settings"
 msgstr "Настройки"
 
-msgid "Show metadata on dashboard"
-msgstr "Отображать метаданные в дашборде"
-
 msgid "Show only selected servers."
 msgstr "Показывать только выбранные серверы."
 
@@ -1612,9 +1582,6 @@ msgstr "Показывать серверы, имена которых совп�
 
 msgid "Show sing-box config"
 msgstr "Показать sing-box конфигурацию"
-
-msgid "Show subscription metadata for this source on the dashboard"
-msgstr "Отображать метаданные этой подписки в дашборде"
 
 msgid "Sing-box autostart disabled"
 msgstr "Автостарт sing-box отключен"
@@ -1718,6 +1685,12 @@ msgstr "Настройки URL подписки"
 msgid "Subscriptions updated"
 msgstr "Подписки обновлены"
 
+msgid "Support"
+msgstr "Поддержка"
+
+msgid "Support report downloaded"
+msgstr "Отчёт для поддержки скачан"
+
 msgid "System info"
 msgstr "Системная информация"
 
@@ -1793,6 +1766,9 @@ msgstr "Этот флаг не принимает значение."
 msgid "This option requires a value."
 msgstr "Этой опции требуется значение."
 
+msgid "This subscription provider is not supported"
+msgstr "Этот провайдер подписок не поддерживается"
+
 msgid "Time"
 msgstr "Время"
 
@@ -1825,9 +1801,6 @@ msgstr "Транспорт"
 
 msgid "Troubleshooting"
 msgstr "Устранение неполадок"
-
-msgid "Try compatible User-Agent profiles automatically when downloading this subscription"
-msgstr "Автоматически пробовать совместимые профили User-Agent при загрузке этой подписки"
 
 msgid "TTL must be a positive number"
 msgstr "TTL должно быть положительным числом"
@@ -1957,9 +1930,6 @@ msgstr ""
 
 msgid "Used by"
 msgstr "Используется"
-
-msgid "User-Agent"
-msgstr "User-Agent"
 
 msgid "Username cannot be empty"
 msgstr "Логин не может быть пустым"

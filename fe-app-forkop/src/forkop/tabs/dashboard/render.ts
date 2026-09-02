@@ -78,7 +78,6 @@ export function render() {
             },
             onTestLatency: () => {},
             onChooseOutbound: () => {},
-            onCopyOutbound: () => {},
             onShowUrlTestInfo: () => {},
             onShowPriorityInfo: () => {},
             onUpdateSubscription: () => {},

@@ -262,29 +262,21 @@ export const styles = `
     margin-left: auto;
     display: flex;
     justify-content: flex-end;
-    gap: var(--subscription-meta-action-gap);
+    gap: 8px;
 }
 
 .fkp_dashboard-page .btn.fkp_dashboard-page__subscription-meta__action {
-    width: var(--subscription-meta-action-size);
-    height: var(--subscription-meta-action-size);
-    min-width: var(--subscription-meta-action-size);
-    min-height: var(--subscription-meta-action-size);
-    padding: 2px;
+    width: auto;
+    min-width: 0;
+    min-height: 32px;
+    padding: 5px 10px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    line-height: 1;
+    line-height: 1.2;
     margin: 0;
-}
-
-.fkp_dashboard-page__subscription-meta__action svg {
-    width: 15px;
-    height: 15px;
-    display: block;
-    flex: 0 0 auto;
 }
 
 .fkp_dashboard-page__subscription-meta__announce {
@@ -319,7 +311,7 @@ export const styles = `
     }
 
     .fkp_dashboard-page__subscription-meta__title {
-        max-width: calc(100% - 42px);
+        max-width: calc(100% - 92px);
     }
 }
 

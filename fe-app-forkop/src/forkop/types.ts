@@ -109,8 +109,6 @@ export namespace Forkop {
     type: string;
     description?: string;
     selected: boolean;
-    link?: string;
-    canCopyLink?: boolean;
     country?: string;
     runtimeAvailable?: boolean;
     urlTestInfo?: UrlTestInfo;
@@ -123,8 +121,6 @@ export namespace Forkop {
     latency: number;
     type: string;
     selected: boolean;
-    link?: string;
-    canCopyLink?: boolean;
     country?: string;
   }
 

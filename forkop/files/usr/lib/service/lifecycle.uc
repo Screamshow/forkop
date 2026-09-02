@@ -39,6 +39,7 @@ const RUNTIME_CACHE_FORMAT_FILE = getenv("FORKOP_RUNTIME_CACHE_FORMAT_FILE") || 
 const PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR") || "/etc/forkop/subscription-cache";
 const PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE") || PERSISTENT_SUBSCRIPTION_CACHE_DIR + "/cache-format";
 const PERSISTENT_SUBSCRIPTION_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT") || "9";
+const LIFECYCLE_UC = LIB_DIR + "/service/lifecycle.uc";
 const SUBSCRIPTION_BOOTSTRAP_RETRY_PID_FILE = getenv("FORKOP_SUBSCRIPTION_BOOTSTRAP_RETRY_PID_FILE") || RUNTIME_STATE_DIR + "/subscription-bootstrap-retry.pid";
 const DNS_FAILOVER_STATE_FILE = getenv("FORKOP_DNS_FAILOVER_STATE_FILE") || RUNTIME_STATE_DIR + "/dns-failover.json";
 const DNS_FAILOVER_PID_FILE = getenv("FORKOP_DNS_FAILOVER_PID_FILE") || RUNTIME_STATE_DIR + "/dns-failover.pid";
@@ -754,17 +755,33 @@ function start_main() {
     if (status != 0)
         return status;
 
-    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
-    module_background(RULESET_CACHE_UC, [
-        "refresh-and-reload",
-        setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
-    ]);
     release_start_subscription_update_lock();
     module_success(ZAPRET_UC, [ "start-runtime" ]);
     module_success(ZAPRET2_UC, [ "start-runtime" ]);
 
-    module_background(UPDATES_UC, [ "list-update" ]);
     return 0;
+}
+
+/*
+ * On a cold start the reload state exists only after start_impl() completes.
+ * Refresh rule-sets first: if their cache changed, reload before automatic
+ * latency probes begin, so a large probe batch is never cancelled by reload.
+ */
+function refresh_rulesets_then_start_latency() {
+    let proxy_address = setting_bool("download_lists_via_proxy", false)
+        ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT)
+        : "";
+    let status = module_status(RULESET_CACHE_UC, [ "refresh", proxy_address ]);
+
+    if (status == 0) {
+        log_message("Rule-set cache changed; reloading Forkop before automatic latency test", "info");
+        command_status_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]);
+        return;
+    }
+
+    if (status != 1)
+        log_message("Rule-set cache refresh failed; starting automatic latency test without a reload", "warn");
+    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
 }
 
 function start_impl() {
@@ -805,6 +822,8 @@ function start_impl() {
         return status;
     }
 
+    module_background(LIFECYCLE_UC, [ "refresh-rulesets-then-start-latency" ]);
+    module_background(UPDATES_UC, [ "list-update" ]);
     module_background(DIAGNOSTICS_UC, [ "get-system-info" ]);
     return 0;
 }
@@ -1452,6 +1471,10 @@ else if (mode == "dns-failover-apply")
     status = dns_failover_apply(ARGV[1] || "");
 else if (mode == "restart")
     status = restart();
+else if (mode == "refresh-rulesets-then-start-latency") {
+    refresh_rulesets_then_start_latency();
+    status = 0;
+}
 else if (mode == "enable")
     status = enable_service();
 else if (mode == "disable")

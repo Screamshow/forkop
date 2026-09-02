@@ -4,6 +4,7 @@ import {
   renderCirclePlayIcon24,
   renderCircleStopIcon24,
   renderCogIcon24,
+  renderDownloadIcon24,
   renderPauseIcon24,
   renderPlayIcon24,
   renderRotateCcwIcon24,
@@ -27,6 +28,7 @@ interface IRenderAvailableActionsProps {
   globalCheck: ActionProps;
   viewLogs: ActionProps;
   showSingBoxConfig: ActionProps;
+  supportReport: ActionProps;
 }
 
 export function renderAvailableActions({
@@ -38,6 +40,7 @@ export function renderAvailableActions({
   globalCheck,
   viewLogs,
   showSingBoxConfig,
+  supportReport,
 }: IRenderAvailableActionsProps) {
   return E('div', { class: 'fkp_diagnostic-page__right-bar__actions' }, [
     E('b', {}, _('Available actions')),
@@ -116,6 +119,15 @@ export function renderAvailableActions({
         text: _('Show sing-box config'),
         loading: showSingBoxConfig.loading,
         disabled: showSingBoxConfig.disabled,
+      }),
+    ]),
+    ...insertIf(supportReport.visible, [
+      renderButton({
+        onClick: supportReport.onClick,
+        icon: renderDownloadIcon24,
+        text: _('Download support report'),
+        loading: supportReport.loading,
+        disabled: supportReport.disabled,
       }),
     ]),
   ]);

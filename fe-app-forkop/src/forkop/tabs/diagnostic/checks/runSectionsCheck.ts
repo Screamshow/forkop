@@ -36,9 +36,7 @@ export async function runSectionsCheck() {
     items: [],
   });
 
-  const sections = await getDashboardSections({
-    includeSubscriptionCopyState: false,
-  });
+  const sections = await getDashboardSections();
 
   if (!sections.success) {
     updateCheckStore({

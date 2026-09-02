@@ -1,4 +1,5 @@
 import { onMount, preserveScrollForPage } from '../../../helpers';
+import { showToast } from '../../../helpers/showToast';
 import { runDnsCheck } from './checks/runDnsCheck';
 import { runSingBoxCheck } from './checks/runSingBoxCheck';
 import { runInboundsCheck } from './checks/runInboundsCheck';
@@ -67,6 +68,7 @@ import {
 import {
   formatMaskedSingBoxConfig,
   maskGlobalCheckText,
+  maskSupportReportText,
   stringifySingBoxConfig,
 } from './helpers/maskDiagnostics';
 
@@ -158,6 +160,57 @@ function isMutatingServiceActionLoading() {
     isLocalMutatingServiceActionLoading() ||
     isServiceTransitionStatus(store.get().servicesInfoWidget.data.forkopStatus)
   );
+}
+
+function downloadSupportReport(text: string) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  link.href = url;
+  link.download = `forkop-support-report-${stamp}.txt`;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function handleDownloadSupportReport() {
+  setDiagnosticActionLoading('supportReport', true);
+
+  try {
+    const [globalCheck, logs] = await Promise.all([
+      ForkopShellMethods.globalCheck(),
+      ForkopShellMethods.checkLogs(),
+    ]);
+    const globalText = globalCheck.success
+      ? String(globalCheck.data ?? '')
+      : _('Global check could not be collected.');
+    const logsText = logs.success
+      ? String(logs.data ?? '')
+      : _('Forkop logs could not be collected.');
+
+    downloadSupportReport(
+      [
+        'Forkop support report',
+        `Generated: ${new Date().toISOString()}`,
+        '',
+        '=== Global check (sensitive values masked) ===',
+        maskSupportReportText(globalText).trim(),
+        '',
+        '=== Recent Forkop logs ===',
+        maskSupportReportText(logsText).trim(),
+        '',
+      ].join('\n'),
+    );
+    showToast(_('Support report downloaded'), 'success');
+  } catch (error) {
+    logger.error('[DIAGNOSTIC]', 'handleDownloadSupportReport - e', error);
+    showToast(_('Failed to create support report'), 'error');
+  } finally {
+    setDiagnosticActionLoading('supportReport', false);
+  }
 }
 
 function getForkopStatusText(running: boolean, enabled: boolean) {
@@ -890,6 +943,12 @@ function renderDiagnosticAvailableActionsWidget() {
       loading: diagnosticsActions.showSingBoxConfig.loading,
       visible: true,
       onClick: handleShowSingBoxConfig,
+      disabled: utilityActionsDisabled,
+    },
+    supportReport: {
+      loading: diagnosticsActions.supportReport.loading,
+      visible: true,
+      onClick: () => void handleDownloadSupportReport(),
       disabled: utilityActionsDisabled,
     },
   });

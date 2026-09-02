@@ -948,11 +948,11 @@ describe('getDashboardSections', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(subscriptionOutbound?.link).toBe('');
-    expect(subscriptionOutbound?.canCopyLink).toBe(false);
+    expect(subscriptionOutbound).not.toHaveProperty('link');
+    expect(subscriptionOutbound).not.toHaveProperty('canCopyLink');
   });
 
-  it('uses cached subscription links without a click-time backend lookup', async () => {
+  it('does not expose cached subscription links to the dashboard', async () => {
     mocks.getConfigSections.mockResolvedValue([
       proxySection({
         subscription_urls: ['https://subscription.example/list'],
@@ -978,11 +978,9 @@ describe('getDashboardSections', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(subscriptionOutbound?.link).toBe(
-      'vless://00000000-0000-4000-8000-000000000002@example.com:443#Subscription',
-    );
     expect(subscriptionOutbound?.displayName).toBe('Provider Subscription');
-    expect(subscriptionOutbound?.canCopyLink).toBe(true);
+    expect(subscriptionOutbound).not.toHaveProperty('link');
+    expect(subscriptionOutbound).not.toHaveProperty('canCopyLink');
   });
 
   it('does not expose countries when URLTest filtering is set to all servers', async () => {

@@ -4,7 +4,6 @@ import {
   canUseDirectClashApi,
   getClashHttpUrl,
   getProxyUrlName,
-  isCopyableProxyLink,
 } from '../../../helpers';
 import { getOutboundTagBySection } from '../../runtimeTags';
 import { ForkopShellMethods } from '../shell';
@@ -12,10 +11,6 @@ import { ForkopShellMethods } from '../shell';
 interface IGetDashboardSectionsResponse {
   success: boolean;
   data: Forkop.OutboundGroup[];
-}
-
-interface IGetDashboardSectionsOptions {
-  includeSubscriptionCopyState?: boolean;
 }
 
 type ClashProxyEntry = {
@@ -955,8 +950,6 @@ function buildUrlTestInfo({
         manualLinkByCode.get(childCode) ||
         cachedProxyLinks.get(childCode) ||
         '';
-      const canCopyLink = isCopyableProxyLink(link);
-
       return [
         {
           code: childCode,
@@ -970,8 +963,6 @@ function buildUrlTestInfo({
           latency: childEntry?.value?.history?.[0]?.delay || 0,
           type: childEntry?.value?.type || '',
           selected: selectedCode === childCode,
-          link,
-          canCopyLink,
           country: showDetectedCountries
             ? outboundMetadata?.countries?.[childCode]
             : undefined,
@@ -1070,8 +1061,6 @@ function buildPriorityInfo({
         manualLinkByCode.get(childCode) ||
         cachedProxyLinks.get(childCode) ||
         '';
-      const canCopyLink = isCopyableProxyLink(link);
-
       return {
         code: childCode,
         displayName: getOutboundDisplayName(
@@ -1084,8 +1073,6 @@ function buildPriorityInfo({
         latency: childEntry?.value?.history?.[0]?.delay || 0,
         type: childEntry?.value?.type || '',
         selected: selectedCode === childCode,
-        link,
-        canCopyLink,
         country: showDetectedCountries
           ? outboundMetadata?.countries?.[childCode]
           : undefined,
@@ -1196,7 +1183,6 @@ function buildProxyGroupOutbounds(
     }
 
     const link = manualLinkByCode.get(code) || cachedProxyLinks.get(code) || '';
-    const canCopyLink = isCopyableProxyLink(link);
     const displayName =
       priorityConfig?.displayName ||
       urlTestConfig?.displayName ||
@@ -1216,8 +1202,6 @@ function buildProxyGroupOutbounds(
         latency: item?.value.history?.[0]?.delay || 0,
         type: priorityConfig ? 'Priority' : item?.value.type || 'URLTest',
         selected: selector?.value?.now === code,
-        link,
-        canCopyLink,
         description: outboundMetadata?.descriptions?.[code],
         country: showDetectedCountries
           ? outboundMetadata?.countries?.[code]
@@ -1432,19 +1416,7 @@ function getOutboundMetadata(dashboardCache?: DashboardSectionCache) {
   };
 }
 
-function getCachedProxyLinks(dashboardCache?: DashboardSectionCache) {
-  return new Map(
-    Object.entries(objectMap(dashboardCache?.links)).filter(([, link]) =>
-      isCopyableProxyLink(link),
-    ),
-  );
-}
-
-export async function getDashboardSections(
-  options: IGetDashboardSectionsOptions = {},
-): Promise<IGetDashboardSectionsResponse> {
-  const includeSubscriptionCopyState =
-    options.includeSubscriptionCopyState ?? true;
+export async function getDashboardSections(): Promise<IGetDashboardSectionsResponse> {
   const configSections = hydrateConfigSections(await getConfigSections());
   const [clashProxies, runtimeMetadata] = await Promise.all([
     getClashApiProxies(configSections),
@@ -1488,9 +1460,7 @@ export async function getDashboardSections(
                 dashboardCache,
               )
             : undefined;
-          const cachedProxyLinks = includeSubscriptionCopyState
-            ? getCachedProxyLinks(dashboardCache)
-            : new Map<string, string>();
+          const cachedProxyLinks = new Map<string, string>();
           const urltestGroups = mergeUrlTestGroups(
             getUrlTestGroups(dashboardCache),
             runtimeMetadata.urltestGroups,
@@ -1539,7 +1509,6 @@ export async function getDashboardSections(
                 latency: outbound?.value?.history?.[0]?.delay || 0,
                 type: outbound?.value?.type || '',
                 selected: true,
-                canCopyLink: false,
                 runtimeAvailable: Boolean(outbound),
               },
             ],
@@ -1566,7 +1535,6 @@ export async function getDashboardSections(
                 latency: outbound?.value?.history?.[0]?.delay || 0,
                 type: outbound?.value?.type || '',
                 selected: true,
-                canCopyLink: false,
               },
             ],
           };

@@ -121,6 +121,9 @@ export const initialDiagnosticStore: Pick<
     showSingBoxConfig: {
       loading: false,
     },
+    supportReport: {
+      loading: false,
+    },
   },
   diagnosticsRunAction: { loading: false },
   diagnosticsChecks: getDiagnosticsChecks(_('Not running')),
