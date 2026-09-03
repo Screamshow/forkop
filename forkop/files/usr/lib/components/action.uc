@@ -1868,7 +1868,14 @@ function install_forkop() {
         command_success_from_args([ "/etc/init.d/rpcd", "restart" ]);
     command_success_from_args([ "killall", "-HUP", "rpcd" ]);
 
-    restart_forkop_after_successful_change();
+    // The backend package post-install hook has already restored a Forkop
+    // instance that was running before this release upgrade. Avoid a second
+    // full restart and its readiness wait, but retain the restart fallback
+    // if the package lifecycle did not leave Forkop healthy.
+    if (forkop_was_running && forkop_status_running_with_timeout())
+        updates_log("Forkop was restored by the package upgrade; final restart skipped");
+    else
+        restart_forkop_after_successful_change();
     clear_version_caches();
     let new_version = installed_package_version("forkop");
     if (new_version == "")
