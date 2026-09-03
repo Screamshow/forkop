@@ -1897,6 +1897,16 @@ function global_check(arg1, arg2) {
     show_config(visibility);
 
     print_global("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    print_global("🧪 Forkop configuration validation");
+    let validation = module_capture(LIB_DIR + "/config/validator.uc", [ "validate-runtime" ]);
+    if (validation.status == 0)
+        print_global("✅ Forkop configuration is valid");
+    else {
+        let message = trim(as_string(validation.output));
+        print_global(message == "" ? "❌ Forkop configuration validation failed" : "❌ " + message);
+    }
+
+    print_global("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     print_global("📄 WAN config");
     if (uci_show("network.wan")) {
         if (visibility == "raw")

@@ -329,6 +329,16 @@ function module_success(module_path, args) {
     return module_status(module_path, args) == 0;
 }
 
+function validation_failure_message(result) {
+    for (let line in split(as_string(result.output), "\n")) {
+        line = trim(line);
+        if (line != "")
+            return line;
+    }
+
+    return "The configuration could not be validated. Aborted.";
+}
+
 function mark_pending_reload(reason) {
     return module_success(STATE_UC, [ "mark-pending-reload", PENDING_RELOAD_FILE, reason ]);
 }
@@ -551,10 +561,10 @@ function validate_start_config() {
     if (status != 0)
         return status;
 
-    status = module_status(VALIDATOR_UC, [ "validate-runtime" ]);
-    if (status != 0) {
-        log_message("Runtime config validation failed. Aborted.", "fatal");
-        return status;
+    let validation = module_capture(VALIDATOR_UC, [ "validate-runtime" ]);
+    if (validation.status != 0) {
+        log_message("Forkop configuration is invalid: " + validation_failure_message(validation), "fatal");
+        return validation.status;
     }
 
     return 0;

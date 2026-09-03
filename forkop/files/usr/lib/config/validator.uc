@@ -985,13 +985,13 @@ function validate_port_condition_value(value, section) {
 
 function validate_subscription_source_entry_value(entry, section) {
     if (index(as_string(entry), "|") >= 0)
-        fail_validation("Invalid subscription URL in rule '" + section + "': Configure User-Agent in the subscription item settings. Aborted.");
+        fail_validation("Invalid subscription URL: Configure User-Agent in the subscription item settings. Aborted.");
 
     let parsed = subscription_parser().parse_subscription_source_entry(entry);
     if (parsed.valid)
         return;
 
-    fail_validation("Invalid subscription URL in rule '" + section + "': " + parsed.error + ". Aborted.");
+    fail_validation("Invalid subscription URL: " + parsed.error + ". Aborted.");
 }
 
 function valid_http_url(value) {

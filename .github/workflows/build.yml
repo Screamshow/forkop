@@ -47,9 +47,6 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "commitish=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           RAW_RELEASE_NOTES="$(git tag -l --format='%(contents)' "$VERSION")"
-          if [ -z "$RAW_RELEASE_NOTES" ]; then
-            RAW_RELEASE_NOTES="$(git log -1 --pretty=%B)"
-          fi
           export RAW_RELEASE_NOTES
           NORMALIZED_RELEASE_NOTES="$(node <<'NODE'
           process.stdout.write(process.env.RAW_RELEASE_NOTES.replace('\\n', '\n'));
