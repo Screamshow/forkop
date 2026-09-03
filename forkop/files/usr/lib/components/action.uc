@@ -1840,12 +1840,26 @@ function install_forkop() {
         (release.i18n_url != "" && !download_with_retry(release.i18n_url, i18n_file, release.i18n_name)))
         action_fail("forkop", "install", "Failed to download Forkop release packages", FORKOP_VERSION, latest_version);
 
-    if (!run_logged("Installing LuCI app package " + release.app_name, pkg_install_files_command([ app_file ])))
-        action_fail("forkop", "install", "Failed to install LuCI app package", FORKOP_VERSION, latest_version);
-    if (i18n_file != "" && !run_logged("Installing LuCI Russian i18n package " + release.i18n_name, pkg_install_files_command([ i18n_file ])))
-        action_fail("forkop", "install", "Failed to install LuCI Russian i18n package", FORKOP_VERSION, latest_version);
-    if (!run_logged("Installing Forkop package " + release.backend_name, pkg_install_files_command([ backend_file ])))
-        action_fail("forkop", "install", "Failed to install Forkop package", FORKOP_VERSION, latest_version);
+    // apk refreshes repository indexes for every `add` invocation. Install the
+    // release files in one transaction on APK systems to retain dependency
+    // resolution while avoiding two redundant index refreshes. Keep opkg's
+    // established ordering unchanged.
+    if (is_apk()) {
+        let files = [ app_file ];
+        if (i18n_file != "")
+            push(files, i18n_file);
+        push(files, backend_file);
+        if (!run_logged("Installing Forkop release packages", pkg_install_files_command(files)))
+            action_fail("forkop", "install", "Failed to install Forkop release packages", FORKOP_VERSION, latest_version);
+    }
+    else {
+        if (!run_logged("Installing LuCI app package " + release.app_name, pkg_install_files_command([ app_file ])))
+            action_fail("forkop", "install", "Failed to install LuCI app package", FORKOP_VERSION, latest_version);
+        if (i18n_file != "" && !run_logged("Installing LuCI Russian i18n package " + release.i18n_name, pkg_install_files_command([ i18n_file ])))
+            action_fail("forkop", "install", "Failed to install LuCI Russian i18n package", FORKOP_VERSION, latest_version);
+        if (!run_logged("Installing Forkop package " + release.backend_name, pkg_install_files_command([ backend_file ])))
+            action_fail("forkop", "install", "Failed to install Forkop package", FORKOP_VERSION, latest_version);
+    }
 
     remove_file("/var/luci-indexcache");
     command_success("rm -f /var/luci-indexcache* /tmp/luci-indexcache* 2>/dev/null");
