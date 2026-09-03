@@ -1962,6 +1962,9 @@ function github_raw_fallback_url(url) {
     let mirror_prefix = FORKOP_MIRROR_BASE_URL != "" ?
         FORKOP_MIRROR_BASE_URL + "/forkop/lists/allow-domains/" : "";
     let jsdelivr_prefix = "https://cdn.jsdelivr.net/gh/itdoginfo/allow-domains@main/";
+    let b4geoip_mirror_prefix = FORKOP_MIRROR_BASE_URL != "" ?
+        FORKOP_MIRROR_BASE_URL + "/forkop/lists/b4geoip-forkop/" : "";
+    let b4geoip_jsdelivr_prefix = "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/";
 
     if (mirror_prefix != "" && substr(url, 0, length(mirror_prefix)) == mirror_prefix)
         return "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/" +
@@ -1969,6 +1972,12 @@ function github_raw_fallback_url(url) {
     if (substr(url, 0, length(jsdelivr_prefix)) == jsdelivr_prefix)
         return "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/" +
             substr(url, length(jsdelivr_prefix));
+    if (b4geoip_mirror_prefix != "" && substr(url, 0, length(b4geoip_mirror_prefix)) == b4geoip_mirror_prefix)
+        return "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/" +
+            substr(url, length(b4geoip_mirror_prefix));
+    if (substr(url, 0, length(b4geoip_jsdelivr_prefix)) == b4geoip_jsdelivr_prefix)
+        return "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/" +
+            substr(url, length(b4geoip_jsdelivr_prefix));
     return "";
 }
 

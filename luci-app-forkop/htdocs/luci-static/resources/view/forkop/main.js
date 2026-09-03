@@ -998,7 +998,6 @@ var SECONDARY_RULESET_OPTIONS = {
   electronicarts: "Electronic Arts",
   epicgames: "Epic Games",
   nintendo: "Nintendo",
-  play2go: "Play2Go",
   riot: "Riot Games",
   roblox: "Roblox",
   sony: "Sony",
