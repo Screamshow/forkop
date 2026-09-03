@@ -15,3 +15,10 @@ backup-router-*/
 ops/deployed-nginx/
 *-openwrt-full-config-*.tar.gz
 *-selected-config-*.tar.gz
+
+# Local verification and release working files
+/tests/
+/docs/releases/
+/ops/mirror/
+/.github/workflows/backend-ci.yml
+/.github/workflows/shellcheck.yml
