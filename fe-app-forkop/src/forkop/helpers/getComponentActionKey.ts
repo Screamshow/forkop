@@ -23,6 +23,8 @@ const componentActionKeyMap: Record<string, UpdatesActionKey> = {
   'byedpi:remove': 'byedpiRemove',
   'zapret_manager:install': 'zapretManagerInstall',
   'zapret_manager:remove': 'zapretManagerRemove',
+  'packet_steering:enable': 'packetSteeringEnable',
+  'packet_steering:restore': 'packetSteeringRestore',
 };
 
 export function getComponentActionKey(

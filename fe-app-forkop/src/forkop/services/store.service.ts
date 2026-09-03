@@ -206,6 +206,7 @@ export interface StoreType {
     byedpi_version: string;
     byedpi_installed: number;
     zapret_manager_installed: number;
+    packet_steering_mode: string;
     server_inbounds_enabled_count: number;
     openwrt_version: string;
     device_model: string;
@@ -230,6 +231,8 @@ export interface StoreType {
     byedpiRemove: { loading: boolean };
     zapretManagerInstall: { loading: boolean };
     zapretManagerRemove: { loading: boolean };
+    packetSteeringEnable: { loading: boolean };
+    packetSteeringRestore: { loading: boolean };
   };
   updatesChecks: Record<
     Forkop.ComponentName,

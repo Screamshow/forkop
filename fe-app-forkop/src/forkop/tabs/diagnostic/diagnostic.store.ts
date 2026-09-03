@@ -92,6 +92,7 @@ export const initialDiagnosticStore: Pick<
     byedpi_version: 'loading',
     byedpi_installed: 0,
     zapret_manager_installed: 0,
+    packet_steering_mode: '',
     server_inbounds_enabled_count: -1,
     openwrt_version: 'loading',
     device_model: 'loading',
@@ -147,6 +148,8 @@ export const initialDiagnosticStore: Pick<
     byedpiRemove: { loading: false },
     zapretManagerInstall: { loading: false },
     zapretManagerRemove: { loading: false },
+    packetSteeringEnable: { loading: false },
+    packetSteeringRestore: { loading: false },
   },
   updatesChecks: {
     forkop: { status: null, latest_version: '', release_url: '' },
@@ -155,5 +158,6 @@ export const initialDiagnosticStore: Pick<
     zapret2: { status: null, latest_version: '', release_url: '' },
     byedpi: { status: null, latest_version: '', release_url: '' },
     zapret_manager: { status: null, latest_version: '', release_url: '' },
+    packet_steering: { status: null, latest_version: '', release_url: '' },
   },
 };

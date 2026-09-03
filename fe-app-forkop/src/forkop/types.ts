@@ -480,6 +480,7 @@ export namespace Forkop {
     byedpi_version: string;
     byedpi_installed: 0 | 1;
     zapret_manager_installed: 0 | 1;
+    packet_steering_mode: string;
     openwrt_version: string;
     device_model: string;
     generated_at?: number;
@@ -556,7 +557,8 @@ export namespace Forkop {
     | 'zapret'
     | 'zapret2'
     | 'byedpi'
-    | 'zapret_manager';
+    | 'zapret_manager'
+    | 'packet_steering';
 
   export type ComponentAction =
     | 'check_update'
@@ -565,7 +567,9 @@ export namespace Forkop {
     | 'install_extended'
     | 'install_extended_compressed'
     | 'install_tiny'
-    | 'install_stable';
+    | 'install_stable'
+    | 'enable'
+    | 'restore';
 
   export interface ComponentActionResult {
     success: boolean;

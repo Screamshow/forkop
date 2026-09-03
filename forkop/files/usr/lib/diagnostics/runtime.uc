@@ -1099,6 +1099,7 @@ function build_system_info() {
     let zapret_manager_installed = file_executable("/usr/bin/zms") && file_executable("/usr/bin/zmsA") &&
         index(zms_source, "/zapret-manager/proxy/") >= 0 && index(zmsa_source, "/zapret-manager/proxy/") >= 0 ? 1 : 0;
     let device_model = first_line_value("/tmp/sysinfo/model", "unknown");
+    let packet_steering_mode = trim(uci_core.get("network.@globals[0].packet_steering"));
 
     return {
         forkop_version: FORKOP_VERSION,
@@ -1116,6 +1117,7 @@ function build_system_info() {
         byedpi_version,
         byedpi_installed,
         zapret_manager_installed,
+        packet_steering_mode,
         openwrt_version: openwrt_release(),
         device_model,
         generated_at: int(clock()[0])

@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-02 08:15+0300\n"
-"PO-Revision-Date: 2026-09-02 08:15+0300\n"
+"POT-Creation-Date: 2026-09-03 08:41+0300\n"
+"PO-Revision-Date: 2026-09-03 08:41+0300\n"
 "Last-Translator: Screamshow\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -553,6 +553,9 @@ msgstr "Включить смешанный прокси"
 
 msgid "Enable Mixed Proxy Authentication"
 msgstr "Включить авторизацию смешанного прокси"
+
+msgid "Enable mode 2"
+msgstr "Включить режим 2"
 
 msgid "Enable Output Network Interface"
 msgstr "Включить выходной сетевой интерфейс"
@@ -1112,6 +1115,9 @@ msgstr "Порт смешанного прокси"
 msgid "Mixed Proxy Username"
 msgstr "Логин смешанного прокси"
 
+msgid "Mode 2 enabled"
+msgstr "Режим 2 включён"
+
 msgid "Monitored Interfaces"
 msgstr "Наблюдаемые интерфейсы"
 
@@ -1192,6 +1198,9 @@ msgstr "Список узлов пуст"
 
 msgid "Nodes"
 msgstr "Узлы"
+
+msgid "Normal mode"
+msgstr "Обычный режим"
 
 msgid "Not configured"
 msgstr "Не настроено"
@@ -1396,6 +1405,9 @@ msgstr "Выбор ресурсов по IP или CIDR внутри nfqws2 зд
 
 msgid "Restart Forkop"
 msgstr "Перезапустить Forkop"
+
+msgid "Restore normal mode"
+msgstr "Вернуть обычный режим"
 
 msgid "Resume updates"
 msgstr "Продолжить обновление"

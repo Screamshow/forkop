@@ -22,6 +22,7 @@ const UNKNOWN_SYSTEM_INFO: StoreType['diagnosticsSystemInfo'] = {
   byedpi_version: _('unknown'),
   byedpi_installed: 0,
   zapret_manager_installed: 0,
+  packet_steering_mode: '',
   server_inbounds_enabled_count: -1,
   openwrt_version: _('unknown'),
   device_model: _('unknown'),

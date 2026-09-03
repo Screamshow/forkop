@@ -1892,6 +1892,26 @@ function dispatch_sing_box(action) {
         install_package_sing_box(action, false);
 }
 
+function set_packet_steering(action) {
+    let init_script = "/etc/init.d/packet_steering";
+    let config_path = "network.@globals[0].packet_steering";
+    let current_mode = trim(uci_core.get(config_path));
+    let target_mode = action == "enable" ? "2" : "1";
+
+    if (!file_exists(init_script))
+        action_fail("packet_steering", action, "Packet Steering service is not available", current_mode, target_mode);
+    if (!uci_core.available() ||
+        !uci_core.set(config_path, target_mode) ||
+        !uci_core.commit("network") ||
+        !command_success_from_args([ init_script, "restart" ]))
+        action_fail("packet_steering", action, "Failed to apply Packet Steering mode " + target_mode, current_mode, target_mode);
+
+    remove_file(SYSTEM_INFO_CACHE_FILE);
+    action_success("packet_steering", action,
+        target_mode == "2" ? "Packet Steering mode 2 has been enabled" : "Packet Steering normal mode has been restored",
+        target_mode, target_mode, current_mode == target_mode ? 0 : 1, "", "");
+}
+
 function normalize_component_name(component) {
     component = as_string(component);
     if (component == "sing-box" || component == "singbox")
@@ -1934,6 +1954,8 @@ function component_action(component, action) {
         install_zapret_manager(action);
     else if (component == "zapret_manager" && action == "remove")
         remove_zapret_manager(action);
+    else if (component == "packet_steering" && (action == "enable" || action == "restore"))
+        set_packet_steering(action);
     else
         action_fail(component != "" ? component : "unknown", action != "" ? action : "unknown", "Unknown component action");
 }

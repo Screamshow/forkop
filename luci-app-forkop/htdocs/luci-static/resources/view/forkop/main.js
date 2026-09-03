@@ -1006,7 +1006,32 @@ var SECONDARY_RULESET_OPTIONS = {
   ubisoft: "Ubisoft",
   valve: "Valve",
   wargaming: "Wargaming",
-  xbox: "Xbox",
+  aeza: "Aeza",
+  akamai: "Akamai",
+  amazon: "Amazon",
+  belcloud: "BelCloud",
+  buyvm: "BuyVM",
+  cdn77: "CDN77",
+  cloudflare: "Cloudflare",
+  cogent: "Cogent",
+  constant: "Constant",
+  contabo: "Contabo",
+  datacamp: "DataCamp",
+  digitalocean: "DigitalOcean",
+  digitalone: "DigitalOne",
+  fastly: "Fastly",
+  gcore: "Gcore",
+  glesys: "GleSYS",
+  gthost: "GTHost",
+  hetzner: "Hetzner",
+  meganz: "MEGA",
+  melbicom: "Melbicom",
+  oracle: "Oracle",
+  ovh: "OVH",
+  scalaxy: "Scalaxy",
+  scaleway: "Scaleway",
+  vercel: "Vercel",
+  zerocdn: "ZeroCDN",
   adobe: "Adobe",
   anthropic: "Anthropic",
   apple: "Apple",
@@ -4265,6 +4290,7 @@ var initialDiagnosticStore = {
     byedpi_version: "loading",
     byedpi_installed: 0,
     zapret_manager_installed: 0,
+    packet_steering_mode: "",
     server_inbounds_enabled_count: -1,
     openwrt_version: "loading",
     device_model: "loading"
@@ -4319,7 +4345,9 @@ var initialDiagnosticStore = {
     byedpiInstall: { loading: false },
     byedpiRemove: { loading: false },
     zapretManagerInstall: { loading: false },
-    zapretManagerRemove: { loading: false }
+    zapretManagerRemove: { loading: false },
+    packetSteeringEnable: { loading: false },
+    packetSteeringRestore: { loading: false }
   },
   updatesChecks: {
     forkop: { status: null, latest_version: "", release_url: "" },
@@ -4327,7 +4355,8 @@ var initialDiagnosticStore = {
     zapret: { status: null, latest_version: "", release_url: "" },
     zapret2: { status: null, latest_version: "", release_url: "" },
     byedpi: { status: null, latest_version: "", release_url: "" },
-    zapret_manager: { status: null, latest_version: "", release_url: "" }
+    zapret_manager: { status: null, latest_version: "", release_url: "" },
+    packet_steering: { status: null, latest_version: "", release_url: "" }
   }
 };
 
@@ -4675,7 +4704,9 @@ var componentActionKeyMap = {
   "byedpi:install": "byedpiInstall",
   "byedpi:remove": "byedpiRemove",
   "zapret_manager:install": "zapretManagerInstall",
-  "zapret_manager:remove": "zapretManagerRemove"
+  "zapret_manager:remove": "zapretManagerRemove",
+  "packet_steering:enable": "packetSteeringEnable",
+  "packet_steering:restore": "packetSteeringRestore"
 };
 function getComponentActionKey(component, action) {
   return componentActionKeyMap[`${component}:${action}`];
@@ -4784,7 +4815,9 @@ function getEmptyUpdatesActions() {
     byedpiInstall: { loading: false },
     byedpiRemove: { loading: false },
     zapretManagerInstall: { loading: false },
-    zapretManagerRemove: { loading: false }
+    zapretManagerRemove: { loading: false },
+    packetSteeringEnable: { loading: false },
+    packetSteeringRestore: { loading: false }
   };
 }
 function getEmptyDiagnosticsActions() {
@@ -8443,6 +8476,7 @@ var UNKNOWN_SYSTEM_INFO = {
   byedpi_version: _("unknown"),
   byedpi_installed: 0,
   zapret_manager_installed: 0,
+  packet_steering_mode: "",
   server_inbounds_enabled_count: -1,
   openwrt_version: _("unknown"),
   device_model: _("unknown")
@@ -13535,6 +13569,7 @@ function getComponentCards() {
   const zapret2Installed = Boolean(systemInfo.zapret2_installed);
   const byedpiInstalled = Boolean(systemInfo.byedpi_installed);
   const zapretManagerInstalled = Boolean(systemInfo.zapret_manager_installed);
+  const packetSteeringEnabled = systemInfo.packet_steering_mode === "2";
   const singBoxExtended = Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
   const forkopActions = getInstalledUpdateActions(
@@ -13658,6 +13693,27 @@ function getComponentCards() {
       latestVersion: "",
       releaseUrl: "https://github.com/Screamshow/Zapret-Manager",
       actions: zapretManagerActions
+    },
+    {
+      component: "packet_steering",
+      column: 2,
+      title: "Packet Steering",
+      version: packetSteeringEnabled ? _("Mode 2 enabled") : _("Normal mode"),
+      actions: [
+        packetSteeringEnabled ? {
+          key: "packetSteeringRestore",
+          text: _("Restore normal mode"),
+          icon: renderRotateCcwIcon24,
+          component: "packet_steering",
+          action: "restore"
+        } : {
+          key: "packetSteeringEnable",
+          text: _("Enable mode 2"),
+          icon: renderRotateCcwIcon24,
+          component: "packet_steering",
+          action: "enable"
+        }
+      ]
     }
   ];
 }
@@ -13850,14 +13906,15 @@ function renderUpdatesComponents() {
   if (!container) {
     return;
   }
-  const columns = [[], []];
+  const columns = [[], [], []];
   getComponentCards().forEach((card) => {
     columns[card.column].push(renderComponentCard(card));
   });
   return preserveScrollForPage(() => {
     container.replaceChildren(
       E("div", { class: "fkp_updates-page__components-column" }, columns[0]),
-      E("div", { class: "fkp_updates-page__components-column" }, columns[1])
+      E("div", { class: "fkp_updates-page__components-column" }, columns[1]),
+      E("div", { class: "fkp_updates-page__components-column" }, columns[2])
     );
   });
 }
@@ -13971,7 +14028,7 @@ var styles6 = `
 
 .fkp_updates-page__components {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: flex-start;
     gap: 10px;
     width: 100%;
@@ -13983,6 +14040,12 @@ var styles6 = `
     gap: 10px;
     min-width: 0;
     width: 100%;
+}
+
+@media (max-width: 1100px) {
+    .fkp_updates-page__components {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {

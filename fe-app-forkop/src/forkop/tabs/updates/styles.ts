@@ -16,7 +16,7 @@ export const styles = `
 
 .fkp_updates-page__components {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: flex-start;
     gap: 10px;
     width: 100%;
@@ -28,6 +28,12 @@ export const styles = `
     gap: 10px;
     min-width: 0;
     width: 100%;
+}
+
+@media (max-width: 1100px) {
+    .fkp_updates-page__components {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {
