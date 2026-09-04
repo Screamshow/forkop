@@ -1636,6 +1636,7 @@ commit_package_mirror_transaction() {
 
 configure_apk_mirror() {
     distfeeds="/etc/apk/repositories.d/distfeeds.list"
+    mirror_key="/etc/apk/keys/forkop-mirror.pem"
 
     [ "$PKG_IS_APK" -eq 1 ] || return 0
     [ -s "$distfeeds" ] || fail "$distfeeds is missing or empty"
@@ -1645,6 +1646,15 @@ configure_apk_mirror() {
         *) fail "Invalid Forkop mirror URL: $MIRROR_BASE_URL" ;;
     esac
     MIRROR_BASE_URL="${MIRROR_BASE_URL%/}"
+
+    mkdir -p /etc/apk/keys || fail "Failed to create /etc/apk/keys"
+    mirror_key_tmp="$TMP_DIR/forkop-mirror.pem"
+    download_with_retry "$MIRROR_BASE_URL/forkop/forkop-apk.pem" "$mirror_key_tmp" "Forkop mirror APK key" ||
+        fail "Unable to download the Forkop mirror APK key"
+    grep -Fq 'BEGIN PUBLIC KEY' "$mirror_key_tmp" ||
+        fail "The downloaded Forkop mirror APK key is invalid"
+    cp "$mirror_key_tmp" "$mirror_key" || fail "Failed to install the Forkop mirror APK key"
+    chmod 0644 "$mirror_key" || fail "Failed to set permissions on the Forkop mirror APK key"
 
     begin_package_mirror_transaction
     for repository_file in /etc/apk/repositories "$distfeeds"; do

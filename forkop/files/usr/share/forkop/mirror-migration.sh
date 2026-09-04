@@ -62,20 +62,23 @@ if [ "$PACKAGE_MANAGER" = "apk" ]; then
     rewrite_repository_file "$repositories_dir/distfeeds.list"
 
     mkdir -p "$keys_dir" "$repositories_dir"
-    key_tmp="$keys_dir/forkop-mirror.pem.new"
-    if ! "$CURL_BIN" -fsSL --connect-timeout 15 --max-time 60 \
-        "$MIRROR_BASE_URL/forkop/forkop-apk.pem" -o "$key_tmp"; then
-        rm -f "$key_tmp"
-        echo "Unable to download the Forkop mirror APK key" >&2
-        exit 1
+    key_file="$keys_dir/forkop-mirror.pem"
+    if ! grep -Fq 'BEGIN PUBLIC KEY' "$key_file" 2>/dev/null; then
+        key_tmp="$key_file.new"
+        if ! "$CURL_BIN" -fsSL --connect-timeout 15 --max-time 60 \
+            "$MIRROR_BASE_URL/forkop/forkop-apk.pem" -o "$key_tmp"; then
+            rm -f "$key_tmp"
+            echo "Unable to download the Forkop mirror APK key" >&2
+            exit 1
+        fi
+        grep -Fq 'BEGIN PUBLIC KEY' "$key_tmp" || {
+            rm -f "$key_tmp"
+            echo "The downloaded Forkop mirror APK key is invalid" >&2
+            exit 1
+        }
+        mv "$key_tmp" "$key_file"
+        chmod 0644 "$key_file"
     fi
-    grep -Fq 'BEGIN PUBLIC KEY' "$key_tmp" || {
-        rm -f "$key_tmp"
-        echo "The downloaded Forkop mirror APK key is invalid" >&2
-        exit 1
-    }
-    mv "$key_tmp" "$keys_dir/forkop-mirror.pem"
-    chmod 0644 "$keys_dir/forkop-mirror.pem"
 
     printf '%s\n' "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" \
         > "$repositories_dir/forkop.list"
