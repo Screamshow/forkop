@@ -922,6 +922,8 @@ function validate_dns_settings(settings, sections, context) {
         validate_required_duration_option(option(settings, "dns_check_interval", "10s"), "settings.dns_check_interval");
         validate_required_duration_option(option(settings, "dns_recovery_check_interval", "60s"), "settings.dns_recovery_check_interval");
         validate_required_duration_option(option(settings, "dns_check_timeout", "2s"), "settings.dns_check_timeout");
+        if (match(option(settings, "dns_failover_failure_threshold", "3"), /^[1-9][0-9]*$/) == null)
+            fail_validation("DNS failover failure threshold must be a positive integer. Aborted.");
     }
 
     if (!bool_option(settings, "dns_detour_enabled", false))

@@ -105,6 +105,11 @@ function probe_timeout(settings_value) {
     return duration_seconds(settings_value, 2);
 }
 
+function failure_threshold(settings_value) {
+    let value = int(as_string(settings_value));
+    return value > 0 ? value : 3;
+}
+
 function probe_port(kind, index_value, timeout_seconds) {
     let args = [
         "dig", "-p", as_string(runtime_dns.health_port(kind, index_value)),
@@ -234,6 +239,16 @@ function apply_selections(state, selections) {
     return true;
 }
 
+function failover_confirmed(failures, kind, current_index, selected, threshold) {
+    if (selected.alive && int(selected.index) == int(current_index)) {
+        failures[kind] = 0;
+        return false;
+    }
+
+    failures[kind] = int(failures[kind] || 0) + 1;
+    return failures[kind] >= threshold;
+}
+
 function worker() {
     let cfg = settings();
     let state = runtime_dns.normalize_state(cfg, common.read_json_file(STATE_FILE));
@@ -245,9 +260,11 @@ function worker() {
     let active_interval = duration_seconds(common.option(cfg, "dns_check_interval", "10s"), 10);
     let recovery_interval = duration_seconds(common.option(cfg, "dns_recovery_check_interval", "60s"), 60);
     let timeout_seconds = probe_timeout(common.option(cfg, "dns_check_timeout", "2s"));
+    let threshold = failure_threshold(common.option(cfg, "dns_failover_failure_threshold", "3"));
     let next_active = now_seconds();
     let next_recovery = now_seconds() + recovery_interval;
     let all_down = { main: false, bootstrap: false };
+    let active_failures = { main: 0, bootstrap: 0 };
 
     while (true) {
         let now = now_seconds();
@@ -260,23 +277,24 @@ function worker() {
             if (!bootstrap.alive && !all_down.bootstrap)
                 log_message("all configured bootstrap DNS servers are unavailable", "warn");
             all_down.bootstrap = !bootstrap.alive;
+            let main = choose_index("main", state, int(state.main_index), timeout_seconds, false);
+            if (!main.alive && !all_down.main)
+                log_message("all configured main DNS servers are unavailable", "warn");
+            all_down.main = !main.alive;
 
-            if (bootstrap.index != int(state.bootstrap_index)) {
-                let main = choose_index("main", state, int(state.main_index), timeout_seconds, false);
-                let selections = { bootstrap };
-                if (main.alive)
-                    selections.main = main;
-                let applied = apply_selections(state, selections);
-                next_active = now_seconds() + (applied && !main.alive ? 1 : active_interval);
-            }
-            else {
-                let main = choose_index("main", state, int(state.main_index), timeout_seconds, false);
-                if (!main.alive && !all_down.main)
-                    log_message("all configured main DNS servers are unavailable", "warn");
-                all_down.main = !main.alive;
-                apply_selections(state, { main });
-                next_active = now_seconds() + active_interval;
-            }
+            let selections = {};
+            let bootstrap_ready = failover_confirmed(
+                active_failures, "bootstrap", state.bootstrap_index, bootstrap, threshold
+            );
+            if (bootstrap.index != int(state.bootstrap_index) && bootstrap_ready)
+                selections.bootstrap = bootstrap;
+            let main_ready = failover_confirmed(
+                active_failures, "main", state.main_index, main, threshold
+            );
+            if (main.index != int(state.main_index) && main_ready)
+                selections.main = main;
+            apply_selections(state, selections);
+            next_active = now_seconds() + active_interval;
         }
 
         if (now >= next_recovery) {
@@ -285,8 +303,11 @@ function worker() {
             let has_changes = bootstrap.index != int(state.bootstrap_index) || main.index != int(state.main_index);
             let applied = apply_selections(state, { bootstrap, main });
             let completed = now_seconds();
-            if (has_changes && applied)
+            if (has_changes && applied) {
+                active_failures.bootstrap = 0;
+                active_failures.main = 0;
                 next_active = completed + active_interval;
+            }
             next_recovery = completed + recovery_interval;
         }
 
@@ -357,6 +378,15 @@ function select_fixture(state_path, alive_path, kind, recovery) {
     common.write_json(selected);
 }
 
+function confirmation_fixture(threshold, attempts) {
+    let failures = { main: 0 };
+    let result = [];
+    let selected = { index: 1, alive: true };
+    for (let i = 0; i < int(attempts); i++)
+        push(result, failover_confirmed(failures, "main", 0, selected, int(threshold)));
+    common.write_json(result);
+}
+
 let mode = ARGV[0] || "";
 
 if (mode == "start-runtime")
@@ -371,6 +401,8 @@ else if (mode == "commit-state")
     exit(commit_state(ARGV[1]) ? 0 : 1);
 else if (mode == "select-fixture")
     select_fixture(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
+else if (mode == "confirmation-fixture")
+    confirmation_fixture(ARGV[1], ARGV[2]);
 else if (mode == "verification-plan-fixture")
     common.write_json(verification_plan(common.read_json_file(ARGV[1]), common.read_json_file(ARGV[2])));
 else {
