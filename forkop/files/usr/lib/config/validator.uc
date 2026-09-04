@@ -1448,7 +1448,6 @@ function validate_rule(section, sections, context) {
     }
 
     if (connections.is_connections_action(action)) {
-        validate_dashboard_filter(section);
 
         for (let urltest_id in connections.urltests(section)) {
             validate_urltest_identifier_value(urltest_id, name);

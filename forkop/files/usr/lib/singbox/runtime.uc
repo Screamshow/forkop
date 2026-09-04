@@ -659,7 +659,7 @@ function sing_box_check(config_path, output_path) {
         command_from_args([ "sing-box", "-c", config_path, "check" ]) +
         " >" + shell_quote(output_path) + " 2>&1"
     );
-    let reason = status == 0 ? "" : first_nonblank_line(output_path);
+    let reason = status == 0 ? "" : trim(as_string(fs.readfile(output_path) || ""));
     if (status != 0 && reason == "")
         reason = "exit status " + status;
     return { status, reason };
@@ -835,7 +835,8 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
             service_listen_address_value(settings),
             mwan3_active ? "1" : "0",
             sing_box_is_extended(sing_box_version()) ? "1" : "0",
-            deferred_sections
+            deferred_sections,
+            sing_box_version()
         ]) + " >" + shell_quote(runtime_log) + " 2>&1"
     );
     if (generate_status != 0) {

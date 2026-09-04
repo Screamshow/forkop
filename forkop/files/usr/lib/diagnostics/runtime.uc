@@ -942,9 +942,16 @@ function provider_installed(runtime_uc) {
     return module_success(runtime_uc, [ "installed" ]);
 }
 
+function sing_box_binary_signature() {
+    let stat = fs.stat(SING_BOX_BIN_PATH);
+    return stat == null ? "" : join(":", [ stat.inode, stat.size, stat.mtime, stat.ctime ]);
+}
+
 function system_info_cache_is_valid() {
     let cache = read_json_file(SYSTEM_INFO_CACHE_FILE);
     if (type(cache) != "object")
+        return false;
+    if (cache.sing_box_binary_signature != sing_box_binary_signature())
         return false;
     let now = int(clock()[0]);
     let generated_at = arg_number(cache.generated_at || 0);
@@ -1106,6 +1113,7 @@ function build_system_info() {
         forkop_latest_version: forkop_latest_version || "unknown",
         luci_app_version,
         sing_box_version,
+        sing_box_binary_signature: sing_box_binary_signature(),
         sing_box_extended: flags.extended,
         sing_box_tiny: flags.tiny,
         sing_box_compressed,

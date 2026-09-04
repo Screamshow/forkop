@@ -2068,3 +2068,6 @@ msgstr "Удалить Forkop X и sing-box вместе с настройкам
 
 msgid "Remove Forkop X completely"
 msgstr "Полностью удалить Forkop X"
+
+msgid "Advanced settings"
+msgstr "Дополнительные настройки"

@@ -64,6 +64,7 @@ export const SECONDARY_RULESET_OPTIONS = {
 };
 
 export const DNS_SERVER_OPTIONS = {
+  '77.88.8.8': '77.88.8.8 (Yandex DNS)',
   '1.1.1.1': '1.1.1.1 (Cloudflare)',
   '8.8.8.8': '8.8.8.8 (Google)',
   '9.9.9.9': '9.9.9.9 (Quad9)',

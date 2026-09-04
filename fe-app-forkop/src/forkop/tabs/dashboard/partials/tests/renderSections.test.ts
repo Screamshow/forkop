@@ -30,6 +30,22 @@ describe('getOutboundFooterLabel', () => {
     ).toBe('edge-7.nl.cdn-store.cloud');
   });
 
+  it('shows the active Priority member instead of the group type', () => {
+    expect(
+      getOutboundFooterLabel(
+        outbound({
+          type: 'Priority',
+          priorityInfo: {
+            code: 'priority',
+            displayName: 'Priority',
+            selectedName: 'Latvia primary',
+            outbounds: [],
+          },
+        }),
+      ),
+    ).toBe('Latvia primary');
+  });
+
   it('shows Server Description for a regular host and falls back to protocol', () => {
     expect(
       getOutboundFooterLabel(outbound({ description: 'Upstream Tube' })),

@@ -1248,7 +1248,6 @@ function append_sing_box_rule_signature_body(body, section, sections) {
         body = signature_add_value(body, prefix + ".legacy_outbound_json", option(section, "outbound_json", ""));
         body = signature_add_value(body, prefix + ".urltests", urltests_signature(section));
         body = signature_add_value(body, prefix + ".priority_groups", priority_groups_signature(section));
-        body = signature_add_value(body, prefix + ".dashboard_filter", dashboard_filter_signature(section));
         body = signature_add_value(body, prefix + ".urltest_enabled", bool_option_value(section, "urltest_enabled", false));
         body = signature_add_value(body, prefix + ".detect_server_country", normalize_detect_server_country_method(option(section, "detect_server_country", "flag_emoji")));
         body = signature_add_value(body, prefix + ".urltest_check_interval", section_urltest_check_interval(section));
