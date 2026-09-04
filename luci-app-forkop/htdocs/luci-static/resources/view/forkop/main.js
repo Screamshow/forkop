@@ -7694,8 +7694,10 @@ function getMeta({ allGood, atLeastOneGood }) {
 function getDnsCheckPresentation(data) {
   const dhcpManagedManually = Boolean(data.dont_touch_dhcp);
   const dhcpCheckOk = dhcpManagedManually || Boolean(data.dhcp_config_status);
-  const allGood = Boolean(data.dns_on_router) && dhcpCheckOk && Boolean(data.bootstrap_dns_status) && Boolean(data.dns_status);
-  const atLeastOneGood = Boolean(data.dns_on_router) || dhcpCheckOk || Boolean(data.bootstrap_dns_status) || Boolean(data.dns_status);
+  const bootstrapCheckRequired = data.bootstrap_dns_required !== 0;
+  const bootstrapCheckOk = !bootstrapCheckRequired || Boolean(data.bootstrap_dns_status);
+  const allGood = Boolean(data.dns_on_router) && dhcpCheckOk && bootstrapCheckOk && Boolean(data.dns_status);
+  const atLeastOneGood = Boolean(data.dns_on_router) || dhcpCheckOk || bootstrapCheckOk || Boolean(data.dns_status);
   const meta = getMeta({ atLeastOneGood, allGood });
   const state = dhcpManagedManually && meta.state === "success" ? "warning" : meta.state;
   const description = dhcpManagedManually && meta.state === "success" ? _("Checks passed with manual DHCP") : meta.description;
@@ -7742,7 +7744,7 @@ async function runDnsCheck() {
     state,
     items: [
       ...insertIf(
-        data.dns_type === "doh" || data.dns_type === "dot" || data.bootstrap_dns_server_count > 1 || !data.bootstrap_dns_status,
+        data.bootstrap_dns_required !== 0 && (data.dns_type === "doh" || data.dns_type === "dot" || data.bootstrap_dns_server_count > 1 || !data.bootstrap_dns_status),
         [
           {
             state: data.bootstrap_dns_status ? "success" : "error",

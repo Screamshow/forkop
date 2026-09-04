@@ -376,6 +376,7 @@ export namespace Forkop {
     bootstrap_dns_server_index: number;
     bootstrap_dns_server_count: number;
     bootstrap_dns_status: 0 | 1;
+    bootstrap_dns_required: 0 | 1;
     dhcp_config_status: 0 | 1;
     dont_touch_dhcp: 0 | 1;
   }

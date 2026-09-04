@@ -12,6 +12,7 @@ const baseDnsResult = {
   bootstrap_dns_server_index: 0,
   bootstrap_dns_server_count: 1,
   bootstrap_dns_status: 1 as const,
+  bootstrap_dns_required: 1 as const,
   dhcp_config_status: 0 as const,
   dont_touch_dhcp: 0 as const,
 };
@@ -38,5 +39,16 @@ describe('getDnsCheckPresentation', () => {
       dhcpItemState: 'error',
       dhcpItemKey: 'DHCP has DNS server',
     });
+  });
+
+  it('does not require Bootstrap DNS when the main DNS uses an IP address', () => {
+    expect(
+      getDnsCheckPresentation({
+        ...baseDnsResult,
+        bootstrap_dns_status: 0,
+        bootstrap_dns_required: 0,
+        dhcp_config_status: 1,
+      }),
+    ).toMatchObject({ state: 'success' });
   });
 });

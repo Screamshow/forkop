@@ -1394,7 +1394,8 @@ function check_dns_available() {
     let dns_server_host = url_host(dns_server);
     if (dns_server_host == "")
         dns_server_host = dns_server;
-    if (bootstrap_dns_server != "") {
+    let bootstrap_dns_required = !core_ip.valid_ip(dns_server_host);
+    if (bootstrap_dns_required && bootstrap_dns_server != "") {
         if (length(active.state.bootstrap_servers) > 1) {
             for (let line in split(command_output_from_args([
                 "dig", "-p", as_string(runtime_dns.health_port("bootstrap", active.state.bootstrap_index)),
@@ -1430,6 +1431,7 @@ function check_dns_available() {
         bootstrap_dns_server_index: active.state.bootstrap_index,
         bootstrap_dns_server_count: length(active.state.bootstrap_servers),
         bootstrap_dns_status,
+        bootstrap_dns_required: bootstrap_dns_required ? 1 : 0,
         dhcp_config_status,
         dont_touch_dhcp
     });

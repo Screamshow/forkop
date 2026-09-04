@@ -44,10 +44,11 @@ export async function runDnsCheck() {
     state,
     items: [
       ...insertIf<IDiagnosticsChecksItem>(
-        data.dns_type === 'doh' ||
-          data.dns_type === 'dot' ||
-          data.bootstrap_dns_server_count > 1 ||
-          !data.bootstrap_dns_status,
+        data.bootstrap_dns_required !== 0 &&
+          (data.dns_type === 'doh' ||
+            data.dns_type === 'dot' ||
+            data.bootstrap_dns_server_count > 1 ||
+            !data.bootstrap_dns_status),
         [
           {
             state: data.bootstrap_dns_status ? 'success' : 'error',
