@@ -336,7 +336,7 @@ function canonical_runtime_value(value) {
         });
 
         for (let name in names) {
-            if (name == "share_link")
+            if (name == "share_link" || name == "__forkop_filter_names")
                 continue;
             result[name] = canonical_runtime_value(value[name]);
         }

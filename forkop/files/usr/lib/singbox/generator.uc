@@ -610,7 +610,7 @@ function copy_subscription_outbound(outbound, new_tag) {
     for (let key, value in outbound) {
         if (key != "tag" && key != "remark" && key != "share_link" &&
             key != "__forkop_hidden" && key != "__forkop_allow_group" &&
-            key != "__forkop_description")
+            key != "__forkop_description" && key != "__forkop_filter_names")
             copy[key] = value;
     }
     if (as_string(copy.type || "") == "hysteria2" &&
@@ -775,6 +775,7 @@ function add_subscription_source_with_state(config, section, source_index, sourc
     let group_flags = [];
     let hidden_flags = [];
     let outbound_descriptions = [];
+    let outbound_filter_names = [];
     let tag_map = {};
     for (let i = 0; i < length(outbounds); i++) {
         let outbound = outbounds[i];
@@ -804,6 +805,8 @@ function add_subscription_source_with_state(config, section, source_index, sourc
         push(group_flags, subscription_group_outbound(outbound));
         push(hidden_flags, subscription_hidden_outbound(outbound, visibility_refs, hide_urltest_group_outbounds, hide_detour_outbounds));
         push(outbound_descriptions, as_string(outbound.__forkop_description || ""));
+        push(outbound_filter_names, map(array_or_empty(outbound.__forkop_filter_names),
+            name => node_prefix != "" ? node_prefix + " " + name : name));
     }
 
     if (length(keys(skipped)) > 0)
@@ -834,6 +837,7 @@ function add_subscription_source_with_state(config, section, source_index, sourc
             source_links[i],
             outbound_descriptions[i]
         );
+        state.outboundMetadata.filterNames[outbound.tag] = outbound_filter_names[i];
         if (hidden_flags[i] !== true) {
             push(selector_tags, outbound.tag);
             runtime_subscription.remember_urltest_group(state, outbound.tag, display_names[i], outbound);
@@ -999,9 +1003,14 @@ function regex_match_set(tags, names, regexes) {
     return object_keys_set(runtime_urltest.regex_matching_tag_array(tags, names, regexes));
 }
 
-function tag_name_filter_matches(tag, names, name_filter, regex_set) {
+function tag_name_filter_matches(tag, names, name_filter, regex_set, metadata) {
     let name = tag_display_name(tag, names);
-    return array_contains(name_filter, name) || regex_set[tag];
+    if (array_contains(name_filter, name) || regex_set[tag])
+        return true;
+    for (let previous_name in array_or_empty(object_or_empty(object_or_empty(metadata).filterNames)[tag]))
+        if (array_contains(name_filter, previous_name))
+            return true;
+    return false;
 }
 
 function tag_country_filter_matches(tag, countries, country_filter) {
@@ -1062,7 +1071,7 @@ function urltest_matching_candidate_outbounds(urltest_candidate_tags, names, cou
     let result = [];
 
     for (let tag in array_or_empty(urltest_candidate_tags)) {
-        let base_matches = tag_name_filter_matches(tag, names, name_filter, regex_set) ||
+        let base_matches = tag_name_filter_matches(tag, names, name_filter, regex_set, metadata) ||
             tag_country_filter_matches(tag, countries, country_filter);
         let matches = additional_set[tag] || base_matches;
         if (proxy_parameters_enabled && proxy_parameters_operator == "or") {

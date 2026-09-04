@@ -49,7 +49,7 @@ export function renderAvailableActions({
         classNames: ['cbi-button-apply'],
         onClick: restart.onClick,
         icon: renderRotateCcwIcon24,
-        text: _('Restart Forkop'),
+        text: _('Restart Forkop X'),
         loading: restart.loading,
         disabled: restart.disabled,
       }),

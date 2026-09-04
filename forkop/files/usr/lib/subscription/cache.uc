@@ -5,6 +5,7 @@ let constants = require("core.constants");
 let uci_core = require("core.uci");
 let connections = require("config.connections");
 let subscription_share_link = require("subscription.share_link");
+let filter_identity = require("subscription.filter_identity");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
@@ -1664,6 +1665,16 @@ function download_subscription_into_cache(section_name_value, subscription_url, 
             unlink_path(normalized_tmpfile);
             unlink_path(metadata_tmpfile);
             return 4;
+        }
+
+        // Keep legacy name selections attached to the same connection across
+        // renames. This metadata is persisted together with the working feed.
+        if (!filter_identity.preserve_file(subscription_json_path, normalized_tmpfile)) {
+            unlink_path(raw_tmpfile);
+            unlink_path(headers_tmpfile);
+            unlink_path(normalized_tmpfile);
+            unlink_path(metadata_tmpfile);
+            return 1;
         }
 
         if (files_equal(normalized_tmpfile, subscription_json_path)) {

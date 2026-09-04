@@ -45,6 +45,7 @@ import {
   subscribeRuntimeUiState,
 } from '../../services/runtimeUiState.service';
 import { Forkop } from '../../types';
+import { renderFullUninstall } from './fullUninstall';
 
 type UpdateStatus = StoreType['updatesChecks'][Forkop.ComponentName]['status'];
 
@@ -1232,6 +1233,11 @@ function renderUpdatesComponents() {
   getComponentCards().forEach((card) => {
     columns[card.column].push(renderComponentCard(card));
   });
+  columns[2].push(
+    renderFullUninstall(
+      isAnyActionLoading() || isServiceRuntimeActionLoading(),
+    ),
+  );
 
   return preserveScrollForPage(() => {
     container.replaceChildren(

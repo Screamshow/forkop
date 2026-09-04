@@ -381,6 +381,7 @@ function new_section_state(section_name) {
         links: {},
         outboundMetadata: {
             names: {},
+            filterNames: {},
             countries: {},
             protocols: {},
             transports: {},

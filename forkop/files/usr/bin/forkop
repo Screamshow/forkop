@@ -60,6 +60,7 @@ function show_help() {
     print("    enable                  Enable Forkop autostart\n");
     print("    disable                 Disable Forkop autostart\n");
     print("    uninstall               Remove Forkop files installed outside opkg/apk\n");
+    print("    full_uninstall          Remove Forkop and sing-box and restore original repositories\n");
     print("    main                    Run main Forkop process\n");
     print("    list_update             Update remote lists\n");
     print("    list_update_if_due      Update remote lists only when the configured interval has elapsed\n");
@@ -129,6 +130,7 @@ function command_spec(command) {
         enable: [ "service/lifecycle.uc", "enable", 0 ],
         disable: [ "service/lifecycle.uc", "disable", 0 ],
         uninstall: [ "service/lifecycle.uc", "uninstall", 0 ],
+        full_uninstall: [ "components/uninstall.uc", "start", 0 ],
         dnsmasq_restore: [ "service/lifecycle.uc", "dnsmasq-restore", 0 ],
         restore_dnsmasq: [ "service/lifecycle.uc", "dnsmasq-restore", 0 ],
         main: [ "service/lifecycle.uc", "main", 0 ],
@@ -207,6 +209,13 @@ function run_spec(command, spec, user_args) {
 
 function main() {
     let command = ARGV[0] || "";
+    if (fs.stat("/tmp/forkop-full-uninstall.lock") != null &&
+        index([ "start", "main", "restart", "reload", "enable", "service_action_async",
+            "component_action", "component_action_async", "subscription_update",
+            "subscription_update_async", "subscription_update_if_due", "list_update", "list_update_if_due" ], command) >= 0) {
+        warn("Forkop full removal is in progress\n");
+        return 1;
+    }
     let spec = command_spec(command);
     if (spec == null) {
         show_help();

@@ -501,7 +501,8 @@
     "call": "Cancel",
     "key": "Cancel",
     "places": [
-      "src/forkop/tabs/dashboard/initController.ts:1119"
+      "src/forkop/tabs/dashboard/initController.ts:1119",
+      "src/forkop/tabs/updates/fullUninstall.ts:11"
     ]
   },
   {
@@ -552,7 +553,7 @@
     "call": "Check update",
     "key": "Check update",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:741"
+      "src/forkop/tabs/updates/initController.ts:742"
     ]
   },
   {
@@ -591,17 +592,17 @@
     "call": "Checks failed",
     "key": "Checks failed",
     "places": [
-      "src/forkop/tabs/diagnostic/helpers/getMeta.ts:26",
-      "src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:10"
+      "src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:10",
+      "src/forkop/tabs/diagnostic/helpers/getMeta.ts:26"
     ]
   },
   {
     "call": "Checks passed",
     "key": "Checks passed",
     "places": [
-      "src/forkop/tabs/diagnostic/helpers/getMeta.ts:13",
       "src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:23",
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:43"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:43",
+      "src/forkop/tabs/diagnostic/helpers/getMeta.ts:13"
     ]
   },
   {
@@ -624,10 +625,10 @@
     "places": [
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:3423",
       "src/partials/modal/renderModal.ts:263",
-      "src/forkop/tabs/dashboard/initController.ts:1000",
-      "src/forkop/tabs/dashboard/initController.ts:1378",
       "src/forkop/tabs/monitoring/initController.ts:832",
-      "src/forkop/tabs/monitoring/initController.ts:882"
+      "src/forkop/tabs/monitoring/initController.ts:882",
+      "src/forkop/tabs/dashboard/initController.ts:1000",
+      "src/forkop/tabs/dashboard/initController.ts:1378"
     ]
   },
   {
@@ -750,6 +751,20 @@
     "key": "Could not compare FakeIP and control public IPs",
     "places": [
       "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:89"
+    ]
+  },
+  {
+    "call": "Could not confirm completion. Check the removal log before retrying.",
+    "key": "Could not confirm completion. Check the removal log before retrying.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:78"
+    ]
+  },
+  {
+    "call": "Could not start removal. Another component action may be running.",
+    "key": "Could not start removal. Another component action may be running.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:38"
     ]
   },
   {
@@ -1322,7 +1337,7 @@
     "call": "Enable mode 2",
     "key": "Enable mode 2",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:984"
+      "src/forkop/tabs/updates/initController.ts:985"
     ]
   },
   {
@@ -1532,12 +1547,12 @@
     "call": "Failed to execute",
     "key": "Failed to execute",
     "places": [
-      "src/forkop/methods/shell/index.ts:170",
-      "src/forkop/methods/shell/index.ts:177",
-      "src/forkop/tabs/updates/initController.ts:509",
       "src/forkop/tabs/updates/initController.ts:510",
-      "src/forkop/tabs/updates/initController.ts:570",
-      "src/forkop/tabs/updates/initController.ts:720"
+      "src/forkop/tabs/updates/initController.ts:511",
+      "src/forkop/tabs/updates/initController.ts:571",
+      "src/forkop/tabs/updates/initController.ts:721",
+      "src/forkop/methods/shell/index.ts:170",
+      "src/forkop/methods/shell/index.ts:177"
     ]
   },
   {
@@ -1686,6 +1701,13 @@
     ]
   },
   {
+    "call": "Forkop X and sing-box have been removed. Original repositories have been restored.",
+    "key": "Forkop X and sing-box have been removed. Original repositories have been restored.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:57"
+    ]
+  },
+  {
     "call": "Forkop X Settings",
     "key": "Forkop X Settings",
     "places": [
@@ -1760,6 +1782,14 @@
     "key": "Forkop-managed nfqws2 runtime is ready",
     "places": [
       "src/forkop/tabs/diagnostic/checks/runZapret2Check.ts:89"
+    ]
+  },
+  {
+    "call": "Full removal",
+    "key": "Full removal",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:94",
+      "src/forkop/tabs/updates/fullUninstall.ts:122"
     ]
   },
   {
@@ -1981,30 +2011,30 @@
     "call": "Install",
     "key": "Install",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:755",
-      "src/forkop/tabs/updates/initController.ts:888"
+      "src/forkop/tabs/updates/initController.ts:756",
+      "src/forkop/tabs/updates/initController.ts:889"
     ]
   },
   {
     "call": "Install another build:",
     "key": "Install another build:",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:1189"
+      "src/forkop/tabs/updates/initController.ts:1190"
     ]
   },
   {
     "call": "Installed (Mirror edition)",
     "key": "Installed (Mirror edition)",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:962"
+      "src/forkop/tabs/updates/initController.ts:963"
     ]
   },
   {
     "call": "Installed version is newer than release",
     "key": "Installed version is newer than release",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:287",
-      "src/forkop/tabs/updates/initController.ts:1047"
+      "src/forkop/tabs/updates/initController.ts:288",
+      "src/forkop/tabs/updates/initController.ts:1048"
     ]
   },
   {
@@ -2457,8 +2487,8 @@
     "call": "Issues detected",
     "key": "Issues detected",
     "places": [
-      "src/forkop/tabs/diagnostic/helpers/getMeta.ts:20",
-      "src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:17"
+      "src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:17",
+      "src/forkop/tabs/diagnostic/helpers/getMeta.ts:20"
     ]
   },
   {
@@ -2546,15 +2576,15 @@
     "call": "Latest version is installed",
     "key": "Latest version is installed",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:290",
-      "src/forkop/tabs/updates/initController.ts:1045"
+      "src/forkop/tabs/updates/initController.ts:291",
+      "src/forkop/tabs/updates/initController.ts:1046"
     ]
   },
   {
     "call": "Latest version:",
     "key": "Latest version:",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:1047"
+      "src/forkop/tabs/updates/initController.ts:1048"
     ]
   },
   {
@@ -2604,11 +2634,11 @@
     "call": "Loading...",
     "key": "Loading...",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:901",
-      "src/forkop/tabs/updates/initController.ts:912",
-      "src/forkop/tabs/updates/initController.ts:923",
-      "src/forkop/tabs/updates/initController.ts:936",
-      "src/forkop/tabs/updates/initController.ts:949"
+      "src/forkop/tabs/updates/initController.ts:902",
+      "src/forkop/tabs/updates/initController.ts:913",
+      "src/forkop/tabs/updates/initController.ts:924",
+      "src/forkop/tabs/updates/initController.ts:937",
+      "src/forkop/tabs/updates/initController.ts:950"
     ]
   },
   {
@@ -2692,7 +2722,7 @@
     "call": "Mode 2 enabled",
     "key": "Mode 2 enabled",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:972"
+      "src/forkop/tabs/updates/initController.ts:973"
     ]
   },
   {
@@ -2898,7 +2928,7 @@
     "call": "Normal mode",
     "key": "Normal mode",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:972"
+      "src/forkop/tabs/updates/initController.ts:973"
     ]
   },
   {
@@ -2929,10 +2959,10 @@
     "places": [
       "src/forkop/helpers/singBoxVariant.ts:29",
       "src/forkop/helpers/singBoxVariant.ts:37",
-      "src/forkop/tabs/updates/initController.ts:926",
-      "src/forkop/tabs/updates/initController.ts:939",
-      "src/forkop/tabs/updates/initController.ts:952",
-      "src/forkop/tabs/updates/initController.ts:963"
+      "src/forkop/tabs/updates/initController.ts:927",
+      "src/forkop/tabs/updates/initController.ts:940",
+      "src/forkop/tabs/updates/initController.ts:953",
+      "src/forkop/tabs/updates/initController.ts:964"
     ]
   },
   {
@@ -3032,8 +3062,16 @@
     "call": "Open",
     "key": "Open",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:1038",
-      "src/forkop/tabs/updates/initController.ts:1060"
+      "src/forkop/tabs/updates/initController.ts:1039",
+      "src/forkop/tabs/updates/initController.ts:1061"
+    ]
+  },
+  {
+    "call": "Open LuCI",
+    "key": "Open LuCI",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:60",
+      "src/forkop/tabs/updates/fullUninstall.ts:88"
     ]
   },
   {
@@ -3079,6 +3117,13 @@
     "key": "Optional values must be attached with '=' here; a separate token would be ignored by nfqws2.",
     "places": [
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:6012"
+    ]
+  },
+  {
+    "call": "Original repositories could not be restored. Removal was cancelled before deleting packages.",
+    "key": "Original repositories could not be restored. Removal was cancelled before deleting packages.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:68"
     ]
   },
   {
@@ -3314,11 +3359,46 @@
     ]
   },
   {
+    "call": "Removal did not finish. See the removal log in /tmp/forkop-uninstall.*/output.log.",
+    "key": "Removal did not finish. See the removal log in /tmp/forkop-uninstall.*/output.log.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:71"
+    ]
+  },
+  {
     "call": "Remove",
     "key": "Remove",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:800",
-      "src/forkop/tabs/updates/initController.ts:879"
+      "src/forkop/tabs/updates/initController.ts:801",
+      "src/forkop/tabs/updates/initController.ts:880"
+    ]
+  },
+  {
+    "call": "Remove Forkop X and sing-box with their settings and restore the original device repositories.",
+    "key": "Remove Forkop X and sing-box with their settings and restore the original device repositories.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:128"
+    ]
+  },
+  {
+    "call": "Remove Forkop X completely",
+    "key": "Remove Forkop X completely",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:133"
+    ]
+  },
+  {
+    "call": "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?",
+    "key": "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:99"
+    ]
+  },
+  {
+    "call": "Remove permanently",
+    "key": "Remove permanently",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:15"
     ]
   },
   {
@@ -3340,6 +3420,13 @@
     "key": "Remove the specified servers from this level.",
     "places": [
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:2784"
+    ]
+  },
+  {
+    "call": "Removing Forkop X…",
+    "key": "Removing Forkop X…",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:21"
     ]
   },
   {
@@ -3399,8 +3486,8 @@
     ]
   },
   {
-    "call": "Restart Forkop",
-    "key": "Restart Forkop",
+    "call": "Restart Forkop X",
+    "key": "Restart Forkop X",
     "places": [
       "src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:52"
     ]
@@ -3409,7 +3496,7 @@
     "call": "Restore normal mode",
     "key": "Restore normal mode",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:977"
+      "src/forkop/tabs/updates/initController.ts:978"
     ]
   },
   {
@@ -3775,9 +3862,9 @@
     "call": "Service action failed",
     "key": "Service action failed",
     "places": [
+      "src/forkop/tabs/diagnostic/initController.ts:647",
       "src/forkop/methods/shell/index.ts:373",
-      "src/forkop/methods/shell/index.ts:423",
-      "src/forkop/tabs/diagnostic/initController.ts:647"
+      "src/forkop/methods/shell/index.ts:423"
     ]
   },
   {
@@ -4298,6 +4385,13 @@
     ]
   },
   {
+    "call": "This permanently deletes saved sections and subscriptions. Other components remain installed.",
+    "key": "This permanently deletes saved sections and subscriptions. Other components remain installed.",
+    "places": [
+      "src/forkop/tabs/updates/fullUninstall.ts:106"
+    ]
+  },
+  {
     "call": "This subscription provider is not supported",
     "key": "This subscription provider is not supported",
     "places": [
@@ -4504,7 +4598,7 @@
       "src/forkop/services/systemInfo.service.ts:22",
       "src/forkop/services/systemInfo.service.ts:27",
       "src/forkop/services/systemInfo.service.ts:28",
-      "src/forkop/tabs/updates/initController.ts:325",
+      "src/forkop/tabs/updates/initController.ts:326",
       "src/forkop/tabs/diagnostic/checks/runInboundsCheck.ts:25"
     ]
   },
@@ -4556,21 +4650,21 @@
     "call": "Update",
     "key": "Update",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:755"
+      "src/forkop/tabs/updates/initController.ts:756"
     ]
   },
   {
     "call": "Update is available",
     "key": "Update is available",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:283"
+      "src/forkop/tabs/updates/initController.ts:284"
     ]
   },
   {
     "call": "Update is available:",
     "key": "Update is available:",
     "places": [
-      "src/forkop/tabs/updates/initController.ts:1024"
+      "src/forkop/tabs/updates/initController.ts:1025"
     ]
   },
   {

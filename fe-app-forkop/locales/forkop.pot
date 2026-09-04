@@ -2030,7 +2030,7 @@ msgid "Resource selection by IP or CIDR inside nfqws2 is not supported here; sin
 msgstr ""
 
 #: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:52
-msgid "Restart Forkop"
+msgid "Restart Forkop X"
 msgstr ""
 
 #: src/forkop/tabs/updates/initController.ts:977
@@ -2945,4 +2945,43 @@ msgstr ""
 
 #: src/forkop/tabs/diagnostic/checks/runZapret2Check.ts:107
 msgid "Zapret2 sing-box outbound is not configured"
+msgstr ""
+
+msgid "Remove permanently"
+msgstr ""
+
+msgid "Removing Forkop X…"
+msgstr ""
+
+msgid "Could not start removal. Another component action may be running."
+msgstr ""
+
+msgid "Forkop X and sing-box have been removed. Original repositories have been restored."
+msgstr ""
+
+msgid "Open LuCI"
+msgstr ""
+
+msgid "Original repositories could not be restored. Removal was cancelled before deleting packages."
+msgstr ""
+
+msgid "Removal did not finish. See the removal log in /tmp/forkop-uninstall.*/output.log."
+msgstr ""
+
+msgid "Could not confirm completion. Check the removal log before retrying."
+msgstr ""
+
+msgid "Full removal"
+msgstr ""
+
+msgid "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?"
+msgstr ""
+
+msgid "This permanently deletes saved sections and subscriptions. Other components remain installed."
+msgstr ""
+
+msgid "Remove Forkop X and sing-box with their settings and restore the original device repositories."
+msgstr ""
+
+msgid "Remove Forkop X completely"
 msgstr ""

@@ -1403,8 +1403,8 @@ msgstr "Выбор ресурсов по IP или CIDR внутри nfqws зд�
 msgid "Resource selection by IP or CIDR inside nfqws2 is not supported here; sing-box selects resources before NFQUEUE."
 msgstr "Выбор ресурсов по IP или CIDR внутри nfqws2 здесь не поддерживается; sing-box выбирает ресурсы до NFQUEUE."
 
-msgid "Restart Forkop"
-msgstr "Перезапустить Forkop"
+msgid "Restart Forkop X"
+msgstr "Перезапустить Forkop X"
 
 msgid "Restore normal mode"
 msgstr "Вернуть обычный режим"
@@ -2029,3 +2029,42 @@ msgstr "sing-box outbound для Zapret2 настроен"
 
 msgid "Zapret2 sing-box outbound is not configured"
 msgstr "sing-box outbound для Zapret2 не настроен"
+
+msgid "Remove permanently"
+msgstr "Удалить безвозвратно"
+
+msgid "Removing Forkop X…"
+msgstr "Удаление Forkop X…"
+
+msgid "Could not start removal. Another component action may be running."
+msgstr "Не удалось начать удаление. Возможно, выполняется другая операция с компонентами."
+
+msgid "Forkop X and sing-box have been removed. Original repositories have been restored."
+msgstr "Forkop X и sing-box удалены. Исходные репозитории восстановлены."
+
+msgid "Open LuCI"
+msgstr "Открыть LuCI"
+
+msgid "Original repositories could not be restored. Removal was cancelled before deleting packages."
+msgstr "Не удалось восстановить исходные репозитории. Удаление отменено до удаления пакетов."
+
+msgid "Removal did not finish. See the removal log in /tmp/forkop-uninstall.*/output.log."
+msgstr "Удаление не завершено. Подробности в журнале /tmp/forkop-uninstall.*/output.log."
+
+msgid "Could not confirm completion. Check the removal log before retrying."
+msgstr "Не удалось подтвердить завершение. Перед повторной попыткой проверьте журнал удаления."
+
+msgid "Full removal"
+msgstr "Полное удаление"
+
+msgid "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?"
+msgstr "Удалить Forkop X, sing-box, их настройки и кэш и восстановить исходные репозитории устройства?"
+
+msgid "This permanently deletes saved sections and subscriptions. Other components remain installed."
+msgstr "Сохранённые секции и подписки будут удалены безвозвратно. Остальные компоненты останутся установленными."
+
+msgid "Remove Forkop X and sing-box with their settings and restore the original device repositories."
+msgstr "Удалить Forkop X и sing-box вместе с настройками и восстановить исходные репозитории устройства."
+
+msgid "Remove Forkop X completely"
+msgstr "Полностью удалить Forkop X"
