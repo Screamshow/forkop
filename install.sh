@@ -1987,6 +1987,33 @@ switch_sing_box_to_downloaded_tiny() {
     SING_BOX_TINY_SWITCHED=1
 }
 
+repair_legacy_orphaned_sing_box_to_tiny() {
+    # A legacy Forkop installation may leave its binary in the overlay after
+    # its old package has been removed. APK's world still requires tiny, but
+    # there is no package owner from which the normal low-space path can
+    # calculate reclaimable space. This recovery is deliberately restricted
+    # to a confirmed legacy migration and only runs after tiny is downloaded.
+    [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 1
+    [ "$PKG_IS_APK" -eq 1 ] || return 1
+    apk_world_requests_sing_box_tiny || return 1
+    [ -e /usr/bin/sing-box ] || return 1
+    [ -s "$SING_BOX_TINY_FILE" ] || return 1
+
+    warn "Removing the unowned legacy /usr/bin/sing-box binary before installing sing-box-tiny"
+    for package_name in sing-box-tiny sing-box sing-box-extended; do
+        if pkg_is_installed "$package_name" && ! pkg_remove_name "$package_name"; then
+            warn "Failed to remove inconsistent $package_name package state before sing-box-tiny repair"
+            return 1
+        fi
+    done
+    rm -f /usr/bin/sing-box || return 1
+    [ ! -e /usr/bin/sing-box ] || return 1
+    SING_BOX_CHANGE_STARTED=1
+    pkg_install_files "$SING_BOX_TINY_FILE" || return 1
+    validate_sing_box_tiny_install || return 1
+    SING_BOX_TINY_SWITCHED=1
+}
+
 validate_sing_box_tiny_install() {
     sing_box_tiny_is_active || return 1
     /usr/bin/sing-box version >/dev/null 2>&1 || return 1
@@ -2024,8 +2051,20 @@ ensure_flash_space() {
     fi
 
     previous_package="$(installed_sing_box_package 2>/dev/null || true)"
-    [ -n "$previous_package" ] ||
+    if [ -z "$previous_package" ]; then
+        download_sing_box_tiny_package ||
+            fail "Failed to download sing-box-tiny before repairing the unowned legacy binary"
+        if repair_legacy_orphaned_sing_box_to_tiny; then
+            SING_BOX_INSTALL_VARIANT=""
+            available_space="$(available_flash_space_kb 2>/dev/null || true)"
+            if [ -n "$available_space" ] && [ "$available_space" -ge "$required_space" ]; then
+                msg "Flash preflight passed after repairing the legacy sing-box state. Available: ${available_space} KB, installation plan: ${required_space} KB"
+                return 0
+            fi
+            fail "Free flash after repairing the legacy sing-box state is below the calculated Forkop plan. Available: ${available_space:-unknown} KB, installation plan: ${required_space} KB. sing-box-tiny remains installed."
+        fi
         fail "Not enough free flash space. Available: ${available_space} KB, installation plan: ${required_space} KB. /usr/bin/sing-box is not owned by one supported package."
+    fi
     if [ "$previous_package" = "sing-box-tiny" ] && [ "$pending_world_tiny" -eq 0 ]; then
         fail "Not enough free flash space after accounting for the already installed sing-box-tiny. Available: ${available_space} KB, installation plan: ${required_space} KB."
     fi

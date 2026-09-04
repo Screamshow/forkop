@@ -39,6 +39,17 @@ service_started() {
     return "${FORKOP_LAST_START_STATUS:-0}"
 }
 
+disable() {
+    # A failed start schedules a delayed retry.  Removing only the rc.d link
+    # leaves that worker alive, so an explicit disable must cancel it first.
+    [ -n "${IPKG_INSTROOT:-}" ] || initd_ucode cancel-scheduled-start-retry >/dev/null 2>&1 || true
+
+    local name
+    name="$(basename "$initscript")"
+    rm -f "$IPKG_INSTROOT"/etc/rc.d/S??"$name"
+    rm -f "$IPKG_INSTROOT"/etc/rc.d/K??"$name"
+}
+
 stop_service() {
     initd_ucode stop-service "$$"
 }

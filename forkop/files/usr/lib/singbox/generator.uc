@@ -21,6 +21,7 @@ let fixture_uci_data = null;
 let runtime_settings_cache = null;
 let runtime_ruleset_folder = runtime_constants.TMP_RULESET_FOLDER;
 let runtime_supports_xhttp = true;
+let runtime_supports_dns_response_matching = false;
 
 let as_string = common.as_string;
 let read_json_file = common.read_json_file;
@@ -2514,15 +2515,29 @@ function add_source_dns_matchers(rule, source_ip_cidr) {
 }
 
 function add_source_aware_bypass_dns_rules(config, matchers, rewrite_ttl) {
+    if (runtime_supports_dns_response_matching) {
+        // sing-box 1.14 requires response matching to follow a top-level
+        // evaluate action. Evaluate the normal resolver, then preserve the
+        // existing address-filter behavior when choosing dnsmasq.
+        let evaluate = copy_dns_matchers(matchers);
+        evaluate.action = "evaluate";
+        evaluate.server = runtime_constants.DNS_SERVER_TAG;
+        push_dns_matcher_rule(config, evaluate);
+    }
+
+    let fakeip_matcher = {
+        ip_cidr: [ runtime_constants.FAKEIP_INET4_RANGE, runtime_constants.FAKEIP_INET6_RANGE ],
+        invert: true
+    };
+    if (runtime_supports_dns_response_matching)
+        fakeip_matcher.match_response = true;
+
     push_dns_matcher_rule(config, {
         type: "logical",
         mode: "and",
         rules: [
             copy_dns_matchers(matchers),
-            {
-                ip_cidr: [ runtime_constants.FAKEIP_INET4_RANGE, runtime_constants.FAKEIP_INET6_RANGE ],
-                invert: true
-            }
+            fakeip_matcher
         ],
         action: "route",
         server: runtime_constants.DNSMASQ_DNS_SERVER_TAG,
@@ -2995,6 +3010,8 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
         source_aware_dns: length(source_aware_dns) > 0
     });
     let version_parts = match(as_string(sing_box_version), /^v?([0-9]+)\.([0-9]+)\./);
+    runtime_supports_dns_response_matching = version_parts != null &&
+        (int(version_parts[1]) > 1 || (int(version_parts[1]) == 1 && int(version_parts[2]) >= 14));
     if (version_parts != null && (int(version_parts[1]) > 1 ||
         (int(version_parts[1]) == 1 && int(version_parts[2]) >= 14)))
         delete config.dns.independent_cache;
