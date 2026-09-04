@@ -28,7 +28,8 @@ if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
   echo "Expected release version in the form x.y.z or x.y.z-suffix" >&2
   exit 2
 fi
-APK_INTERNAL_VERSION="$RELEASE_VERSION"
+# APK package revisions use -r, while public and IPK versions retain -<revision>.
+APK_INTERNAL_VERSION="${RELEASE_VERSION/-/\-r}"
 
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
 SDK_CACHE_BASE="${XDG_CACHE_HOME:-${HOME:-/var/cache}}"
