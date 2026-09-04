@@ -1989,13 +1989,15 @@ switch_sing_box_to_downloaded_tiny() {
 
 repair_legacy_orphaned_sing_box_to_tiny() {
     # A legacy Forkop installation may leave its binary in the overlay after
-    # its old package has been removed. APK's world still requires tiny, but
-    # there is no package owner from which the normal low-space path can
-    # calculate reclaimable space. This recovery is deliberately restricted
-    # to a confirmed legacy migration and only runs after tiny is downloaded.
+    # its old package has been removed. There is then no package owner from
+    # which the normal low-space path can calculate reclaimable space. This
+    # recovery is deliberately restricted to a confirmed legacy migration and
+    # only runs after tiny is downloaded. APK additionally needs a matching
+    # world request; opkg has no equivalent world state.
     [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] || return 1
-    [ "$PKG_IS_APK" -eq 1 ] || return 1
-    apk_world_requests_sing_box_tiny || return 1
+    if [ "$PKG_IS_APK" -eq 1 ] && ! apk_world_requests_sing_box_tiny; then
+        return 1
+    fi
     [ -e /usr/bin/sing-box ] || return 1
     [ -s "$SING_BOX_TINY_FILE" ] || return 1
 
