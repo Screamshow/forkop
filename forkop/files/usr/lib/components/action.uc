@@ -604,6 +604,18 @@ function forkop_release_url(value) {
     return value;
 }
 
+function forkop_release_page_url(version, fallback) {
+    let parts = split(FORKOP_RELEASE_REPO, "/");
+    version = as_string(version);
+    if (length(parts) == 2 &&
+        match(as_string(parts[0]), /^[A-Za-z0-9_.-]+$/) != null &&
+        match(as_string(parts[1]), /^[A-Za-z0-9_.-]+$/) != null &&
+        match(version, /^[0-9]+[.][0-9]+[.][0-9]+$/) != null)
+        return "https://github.com/" + parts[0] + "/" + parts[1] + "/releases/tag/" + version;
+
+    return forkop_release_url(fallback);
+}
+
 function latest_forkop_version() {
     let response = latest_forkop_release_json();
     if (response == "")
@@ -1769,7 +1781,8 @@ function check_forkop() {
     let metadata = fetch_forkop_latest_release_metadata();
     let fields = split(metadata, "\t");
     let latest_version = length(fields) > 0 && as_string(fields[0]) != "" ? as_string(fields[0]) : "unknown";
-    let release_url = length(fields) > 1 ? as_string(fields[1]) : "";
+    let release_url = forkop_release_page_url(latest_version,
+        length(fields) > 1 ? as_string(fields[1]) : "");
     if (latest_version == "unknown")
         action_fail("forkop", "check_update", "Failed to check Forkop updates", FORKOP_VERSION, latest_version);
 
@@ -1808,7 +1821,7 @@ function resolve_forkop_release(latest_version) {
     if (length(fields) < 7 || as_string(fields[1]) == "" || as_string(fields[2]) == "" || as_string(fields[3]) == "" || as_string(fields[4]) == "")
         return null;
     return {
-        release_url: forkop_release_url(fields[0]),
+        release_url: forkop_release_page_url(latest_version, fields[0]),
         backend_name: fields[1],
         backend_url: forkop_release_url(fields[2]),
         app_name: fields[3],
