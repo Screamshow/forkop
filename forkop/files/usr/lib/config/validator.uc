@@ -935,10 +935,6 @@ function validate_dns_settings(settings, sections, context) {
     if (!contains([ "prefer_ipv4", "ipv4_only", "prefer_ipv6", "ipv6_only" ], dns_strategy))
         fail_validation("Unsupported DNS strategy '" + dns_strategy + "'. Use prefer_ipv4, ipv4_only, prefer_ipv6, or ipv6_only. Aborted.");
 
-    let routing_lists_dns_provider = option(settings, "routing_lists_dns_provider", "cloudflare");
-    if (!contains([ "cloudflare", "google", "quad9" ], routing_lists_dns_provider))
-        fail_validation("Unsupported routing lists DNS provider '" + routing_lists_dns_provider + "'. Use cloudflare, google, or quad9. Aborted.");
-
     let main_servers = dns_setting_values(settings, "dns_server");
     let bootstrap_servers = dns_setting_values(settings, "bootstrap_dns_server");
     if (length(main_servers) == 0)

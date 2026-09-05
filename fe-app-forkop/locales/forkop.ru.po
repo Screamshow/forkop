@@ -2068,24 +2068,3 @@ msgstr "Удалить Forkop X и sing-box вместе с настройкам
 
 msgid "Remove Forkop X completely"
 msgstr "Полностью удалить Forkop X"
-
-msgid "Advanced settings"
-msgstr "Дополнительные настройки"
-
-msgid "DNS for routing lists"
-msgstr "DNS для списков маршрутизации"
-
-msgid "Resolve domains from routing lists with encrypted DNS through the matching proxy section. Manual DNS rules have priority."
-msgstr "Разрешать домены из списков маршрутизации через зашифрованный DNS внутри соответствующей прокси-секции. Ручные DNS-правила имеют приоритет."
-
-msgid "Routing lists DNS provider"
-msgstr "DNS-провайдер для списков маршрутизации"
-
-msgid "Cloudflare (1.1.1.1)"
-msgstr "Cloudflare (1.1.1.1)"
-
-msgid "Google (8.8.8.8)"
-msgstr "Google (8.8.8.8)"
-
-msgid "Quad9 (9.9.9.9)"
-msgstr "Quad9 (9.9.9.9)"

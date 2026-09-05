@@ -5036,47 +5036,5 @@
     "places": [
       "src/forkop/tabs/diagnostic/checks/runZapret2Check.ts:107"
     ]
-  },
-  {
-    "call": "DNS for routing lists",
-    "key": "DNS for routing lists",
-    "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:291"
-    ]
-  },
-  {
-    "call": "Resolve domains from routing lists with encrypted DNS through the matching proxy section. Manual DNS rules have priority.",
-    "key": "Resolve domains from routing lists with encrypted DNS through the matching proxy section. Manual DNS rules have priority.",
-    "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:293"
-    ]
-  },
-  {
-    "call": "Routing lists DNS provider",
-    "key": "Routing lists DNS provider",
-    "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:302"
-    ]
-  },
-  {
-    "call": "Cloudflare (1.1.1.1)",
-    "key": "Cloudflare (1.1.1.1)",
-    "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:304"
-    ]
-  },
-  {
-    "call": "Google (8.8.8.8)",
-    "key": "Google (8.8.8.8)",
-    "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:305"
-    ]
-  },
-  {
-    "call": "Quad9 (9.9.9.9)",
-    "key": "Quad9 (9.9.9.9)",
-    "places": [
-      "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:306"
-    ]
   }
 ]

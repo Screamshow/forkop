@@ -1397,8 +1397,6 @@ function sing_box_signature_body(settings, sections, servers, mwan3_active) {
     body = signature_add_value(body, "settings.dns_detour_enabled", dns_detour_enabled);
     if (dns_detour_enabled == "1")
         body = signature_add_value(body, "settings.dns_detour_section", option(settings, "dns_detour_section", ""));
-    body = signature_add_value(body, "settings.routing_lists_dns_enabled", bool_option_value(settings, "routing_lists_dns_enabled", true));
-    body = signature_add_value(body, "settings.routing_lists_dns_provider", option(settings, "routing_lists_dns_provider", "cloudflare"));
     body = signature_add_value(body, "settings.dns_rewrite_ttl", option(settings, "dns_rewrite_ttl", "60"));
     body = signature_add_value(body, "settings.output_network_interface", option(settings, "output_network_interface", ""));
     body = signature_add_value(body, "settings.disable_quic", bool_option_value(settings, "disable_quic", true));
