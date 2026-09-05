@@ -1811,12 +1811,22 @@ function clash_api(action, arg1, arg2, arg3) {
 
 function automatic_latency_test() {
     let owner_pid = trim(command_output_from_args([ "sh", "-c", "echo $$" ]));
-    if (owner_pid == "" || !module_success(SERVICE_STATE_UC, [
-        "acquire-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR, owner_pid
-    ])) {
+    let acquired = false;
+    for (let attempt = 0; owner_pid != "" && attempt < 20; attempt++) {
+        if (module_success(SERVICE_STATE_UC, [
+            "acquire-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR, owner_pid
+        ])) {
+            acquired = true;
+            break;
+        }
+        command_success_from_args([ "sleep", "1" ]);
+    }
+    if (!acquired) {
         command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test is already running; skipping" ]);
         return 0;
     }
+
+    let sing_box_pid_before = trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]));
 
     let proxy_types = clash_proxy_type_map(clash_api_url(), clash_auth_args());
     let proxy_tags = [];
@@ -1832,7 +1842,12 @@ function automatic_latency_test() {
 
     command_success_from_args([ "logger", "-t", "forkop", "[info] Starting automatic latency test for " + length(proxy_tags) + " proxy outbounds" ]);
     let status = clash_api("get_proxy_latencies", sprintf("%J", proxy_tags), "5000", "");
+    let sing_box_pid_after = trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]));
     module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+    if (status != 0 && sing_box_pid_before != sing_box_pid_after) {
+        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test cancelled because sing-box was reloaded" ]);
+        return 0;
+    }
     command_success_from_args([ "logger", "-t", "forkop", status == 0 ?
         "[info] Automatic latency test completed" :
         "[warn] Automatic latency test completed with errors" ]);

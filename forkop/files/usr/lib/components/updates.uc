@@ -32,6 +32,7 @@ const RELOAD_LOCK_DIR = getenv("FORKOP_RELOAD_LOCK_DIR") || "/var/run/forkop.rel
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
 const PRIORITY_UC = getenv("FORKOP_PRIORITY_UC") || LIB_DIR + "/singbox/priority.uc";
 const DNS_FAILOVER_UC = getenv("FORKOP_DNS_FAILOVER_UC") || LIB_DIR + "/singbox/dns_failover.uc";
+const DIAGNOSTICS_UC = getenv("FORKOP_DIAGNOSTICS_UC") || LIB_DIR + "/diagnostics/runtime.uc";
 const COMPONENT_JOB_DIR = getenv("UPDATES_JOB_DIR") || getenv("FORKOP_UI_COMPONENT_ACTION_DIR") || "/var/run/forkop/component-actions";
 const COMPONENT_UPDATE_CHECK_CACHE_DIR = getenv("FORKOP_COMPONENT_UPDATE_CHECK_CACHE_DIR") || RUNTIME_STATE_DIR + "/component-update-checks";
 const COMPONENT_UPDATE_CHECK_STATE_FILE = getenv("FORKOP_COMPONENT_UPDATE_CHECK_STATE_FILE") || RUNTIME_STATE_DIR + "/component-update-check.timestamp";
@@ -407,6 +408,11 @@ function module_success(args) {
 
 function module_output(args) {
     return command_output(module_command(args));
+}
+
+function module_background(args) {
+    let command = module_command(args) + " >/dev/null 2>&1 1000>&- &";
+    return command_success("sh -c " + shell_quote(command));
 }
 
 function validation_failure_message(result) {
@@ -2880,6 +2886,7 @@ function subscription_update_common_locked(force, target_section, target_source_
         log_message("Subscription update applied for changed rules; failed rules kept their previous cache", "info");
     else
         log_message("Subscription update completed", "info");
+    module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
     return true;
 }
 

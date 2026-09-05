@@ -779,20 +779,26 @@ function start_main() {
     return 0;
 }
 
-function refresh_rulesets_after_start() {
+/*
+ * On a cold start the reload state exists only after start_impl() completes.
+ * Refresh rule-sets first: if their cache changed, reload before automatic
+ * latency probes begin, so a large probe batch is never cancelled by reload.
+ */
+function refresh_rulesets_then_start_latency() {
     let proxy_address = setting_bool("download_lists_via_proxy", false)
         ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT)
         : "";
     let status = module_status(RULESET_CACHE_UC, [ "refresh", proxy_address ]);
 
     if (status == 0) {
-        log_message("Rule-set cache changed; reloading Forkop", "info");
+        log_message("Rule-set cache changed; reloading Forkop before automatic latency test", "info");
         command_status_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]);
         return;
     }
 
     if (status != 1)
-        log_message("Rule-set cache refresh failed", "warn");
+        log_message("Rule-set cache refresh failed; starting automatic latency test without a reload", "warn");
+    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
 }
 
 function start_impl() {
@@ -833,7 +839,7 @@ function start_impl() {
         return status;
     }
 
-    module_background(LIFECYCLE_UC, [ "refresh-rulesets-after-start" ]);
+    module_background(LIFECYCLE_UC, [ "refresh-rulesets-then-start-latency" ]);
     module_background(UPDATES_UC, [ "list-update" ]);
     module_background(DIAGNOSTICS_UC, [ "get-system-info" ]);
     return 0;
@@ -1356,6 +1362,9 @@ function reload(reason) {
     // files immediately. Start them only after the reload snapshot and config
     // fingerprint have been committed, otherwise Forkop mistakes its own
     // runtime updates for a concurrent user edit and queues another reload.
+    if (plan.needs_sing_box_reload == 1)
+        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
+
     if (plan.needs_list_update == 1)
         module_background(UPDATES_UC, [ "list-update" ]);
 
@@ -1489,8 +1498,8 @@ else if (mode == "dns-failover-apply")
     status = dns_failover_apply(ARGV[1] || "");
 else if (mode == "restart")
     status = restart();
-else if (mode == "refresh-rulesets-after-start") {
-    refresh_rulesets_after_start();
+else if (mode == "refresh-rulesets-then-start-latency") {
+    refresh_rulesets_then_start_latency();
     status = 0;
 }
 else if (mode == "enable")
