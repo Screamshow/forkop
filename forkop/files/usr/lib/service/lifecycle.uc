@@ -193,6 +193,10 @@ function command_success_from_args(args) {
     return command_status(command_from_args(args) + " >/dev/null 2>&1") == 0;
 }
 
+function command_start_without_procd_lock(args) {
+    return command_status(command_from_args(args) + " >/dev/null 2>&1 1000>&- &") == 0;
+}
+
 function external_config_fingerprint() {
     let data = fs.readfile(CONFIG_FILE);
     if (data == null)
@@ -687,7 +691,10 @@ function prepare_subscription_caches(mode) {
 }
 
 function start_sing_box_and_wait() {
-    if (!command_success_from_args([ "/etc/init.d/sing-box", "start" ]))
+    // During rcS startup Forkop inherits procd's service lock on fd 1000.
+    // A nested init.d start must not inherit it or procd waits for its own
+    // caller until the service-command timeout expires.
+    if (!command_start_without_procd_lock([ "/etc/init.d/sing-box", "start" ]))
         return 1;
 
     return module_status(STATE_UC, [
@@ -1306,7 +1313,6 @@ function reload(reason) {
             cleanup_failed_runtime();
             return status;
         }
-        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
     }
     else if (plan.needs_nft_rebuild == 1 && nft_populate_enabled == 1) {
         status = nft_populate_runtime_sets();
@@ -1340,15 +1346,7 @@ function reload(reason) {
             return abort_reload(status, false);
     }
 
-    if (plan.needs_list_update == 1)
-        module_background(UPDATES_UC, [ "list-update" ]);
-
-    module_background(RULESET_CACHE_UC, [
-        "refresh-and-reload",
-        setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
-    ]);
-
-    return finish_reload_status(module_status(STATE_UC, [
+    status = finish_reload_status(module_status(STATE_UC, [
         "write-captured-reload-state",
         RELOAD_STATE_FILE,
         RELOAD_STATE_SNAPSHOT_FILE,
@@ -1357,6 +1355,25 @@ function reload(reason) {
         "1",
         "1"
     ]), reload_config_fingerprint);
+    if (status != 0)
+        return status;
+
+    // Background workers may update UCI selector state or materialized list
+    // files immediately. Start them only after the reload snapshot and config
+    // fingerprint have been committed, otherwise Forkop mistakes its own
+    // runtime updates for a concurrent user edit and queues another reload.
+    if (plan.needs_sing_box_reload == 1)
+        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
+
+    if (plan.needs_list_update == 1)
+        module_background(UPDATES_UC, [ "list-update" ]);
+
+    module_background(RULESET_CACHE_UC, [
+        "refresh-and-reload",
+        setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
+    ]);
+
+    return 0;
 }
 
 function reload_tracked(reason) {

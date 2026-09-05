@@ -549,9 +549,6 @@ function start_plan_value(reason, owner_pid, settings, bin_ok) {
         restore_dnsmasq_failsafe();
         finish_external_service_action("start", job_id, 1);
     }
-    else if (initd_should_restore_dnsmasq_on_start_from_value(reason, option(settings, "shutdown_correctly", "1"))) {
-        restore_dnsmasq_failsafe();
-    }
 
     return {
         job_id,

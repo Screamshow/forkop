@@ -2490,9 +2490,11 @@ function push_dns_matcher_rule(config, rule) {
 }
 
 function section_dns_server(section) {
-    return option(section, "action", "") == "bypass"
-        ? runtime_constants.DNS_SERVER_TAG
-        : runtime_constants.FAKEIP_DNS_SERVER_TAG;
+    // Domain-only bypass still needs to enter sing-box so its direct route is
+    // visible in the connection monitor. Source-aware bypass is handled by
+    // add_source_aware_bypass_dns_rules() and fully-routed devices keep their
+    // real-address DNS path in add_fully_routed_ips_rules().
+    return runtime_constants.FAKEIP_DNS_SERVER_TAG;
 }
 
 function single_or_array(values) {
@@ -2620,6 +2622,70 @@ function add_source_aware_dns_fallback(config, source_ip_cidr) {
 
 function dns_action_server_tag(section_name) {
     return runtime_constants.tag(section_name, "dns-server");
+}
+
+function routing_lists_dns_server_tag(section_name) {
+    return runtime_constants.tag(section_name, "routing-lists-dns-server");
+}
+
+function routing_lists_dns_preset() {
+    let provider = option(runtime_settings(), "routing_lists_dns_provider", "cloudflare");
+    let presets = {
+        cloudflare: {
+            server: "1.1.1.1",
+            server_name: "cloudflare-dns.com"
+        },
+        google: {
+            server: "8.8.8.8",
+            server_name: "dns.google"
+        },
+        quad9: {
+            server: "9.9.9.9",
+            server_name: "dns.quad9.net"
+        }
+    };
+    return presets[provider] || presets.cloudflare;
+}
+
+function ensure_routing_lists_dns_server(config, section) {
+    let tag_name = routing_lists_dns_server_tag(section[".name"]);
+    for (let server in config.dns.servers)
+        if (as_string(server.tag || "") == tag_name)
+            return tag_name;
+
+    let preset = routing_lists_dns_preset();
+    push(config.dns.servers, {
+        type: "https",
+        tag: tag_name,
+        server: preset.server,
+        server_port: 443,
+        path: "/dns-query",
+        tls: {
+            enabled: true,
+            server_name: preset.server_name
+        },
+        detour: outbound_tag(section[".name"])
+    });
+    return tag_name;
+}
+
+function add_routing_lists_resolve_rule(config, section, route_rule) {
+    if (!bool_option(runtime_settings(), "routing_lists_dns_enabled", true))
+        return;
+    let action = option(section, "action", "");
+    if (action == "bypass" || action == "block" || action == "dns")
+        return;
+    let target = runtime_route.target(section, outbound_tag(section[".name"]));
+    if (target.unsupported || !target.outbound || !runtime_route.has_resolve_matchers(route_rule))
+        return;
+
+    let resolve_rule = {};
+    for (let key in [ "inbound", "source_ip_cidr", "domain", "domain_suffix", "domain_keyword", "domain_regex", "rule_set", "port", "port_range" ])
+        if (route_rule[key] != null)
+            resolve_rule[key] = route_rule[key];
+    resolve_rule.action = "resolve";
+    resolve_rule.server = ensure_routing_lists_dns_server(config, section);
+    push(config.route.rules, resolve_rule);
 }
 
 function dns_action_detour_tag(section) {
@@ -2781,6 +2847,7 @@ function add_fully_routed_ips_rules(config, section) {
 }
 
 function push_section_route_rule(config, section, route_rule) {
+    add_routing_lists_resolve_rule(config, section, route_rule);
     let resolve = runtime_route.resolve_rule_for_section(section, route_rule);
     if (type(resolve) == "object" && resolve.warning)
         warn(resolve.warning, "\n");
@@ -3040,8 +3107,14 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     for (let section in sections)
         add_outbound_for_section(config, section, taken, sections);
     add_service_route_rules(config, sections);
+    // Explicit DNS sections are user-authored overrides and must retain priority
+    // over automatic resolvers derived from routing lists, regardless of UCI order.
     for (let section in sections)
-        add_route_for_section(config, section);
+        if (option(section, "action", "") == "dns")
+            add_route_for_section(config, section);
+    for (let section in sections)
+        if (option(section, "action", "") != "dns")
+            add_route_for_section(config, section);
     add_source_aware_dns_fallback(config, source_aware_dns);
     add_service_mixed_proxy(config, settings, sections);
     for (let section in sections)

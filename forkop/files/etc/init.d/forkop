@@ -30,6 +30,17 @@ sync_service_triggers_payload() {
 }
 
 start_service() {
+    # rcS/procd keeps its service transaction on fd 1000. Forkop starts and
+    # verifies the separate sing-box procd service, so doing the full workflow
+    # inside that transaction deadlocks nested service control until procd's
+    # timeout. Detach the tracked worker and let rcS continue; LuCI reports the
+    # action as "starting" until service/initd.uc completes it.
+    if [ -e "/proc/$$/fd/1000" ]; then
+        initd_ucode start-service "$1" "$$" </dev/null >/dev/null 2>&1 1000>&- &
+        FORKOP_LAST_START_STATUS=0
+        return 0
+    fi
+
     initd_ucode start-service "$1" "$$"
     FORKOP_LAST_START_STATUS="$?"
     return "$FORKOP_LAST_START_STATUS"

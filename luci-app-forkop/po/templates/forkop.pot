@@ -2988,3 +2988,21 @@ msgstr ""
 
 msgid "Advanced settings"
 msgstr ""
+
+msgid "DNS for routing lists"
+msgstr ""
+
+msgid "Resolve domains from routing lists with encrypted DNS through the matching proxy section. Manual DNS rules have priority."
+msgstr ""
+
+msgid "Routing lists DNS provider"
+msgstr ""
+
+msgid "Cloudflare (1.1.1.1)"
+msgstr ""
+
+msgid "Google (8.8.8.8)"
+msgstr ""
+
+msgid "Quad9 (9.9.9.9)"
+msgstr ""

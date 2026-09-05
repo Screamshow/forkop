@@ -286,6 +286,29 @@ function createSettingsContent(section, capabilities) {
   configureDownloadSectionOption(o, "dns_detour_section", capabilities);
 
   o = section.option(
+    form.Flag,
+    "routing_lists_dns_enabled",
+    _("DNS for routing lists"),
+    _(
+      "Resolve domains from routing lists with encrypted DNS through the matching proxy section. Manual DNS rules have priority.",
+    ),
+  );
+  o.default = "1";
+  o.rmempty = false;
+
+  o = section.option(
+    form.ListValue,
+    "routing_lists_dns_provider",
+    _("Routing lists DNS provider"),
+  );
+  o.value("cloudflare", _("Cloudflare (1.1.1.1)"));
+  o.value("google", _("Google (8.8.8.8)"));
+  o.value("quad9", _("Quad9 (9.9.9.9)"));
+  o.default = "cloudflare";
+  o.rmempty = false;
+  o.depends("routing_lists_dns_enabled", "1");
+
+  o = section.option(
     widgets.DeviceSelect,
     "source_network_interfaces",
     _("Source Network Interface"),
