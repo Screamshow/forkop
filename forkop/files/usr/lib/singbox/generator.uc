@@ -2780,6 +2780,15 @@ function add_fully_routed_ips_rules(config, section) {
     push(config.route.rules, route_rule);
 }
 
+function push_section_route_rule(config, section, route_rule) {
+    let resolve = runtime_route.resolve_rule_for_section(section, route_rule);
+    if (type(resolve) == "object" && resolve.warning)
+        warn(resolve.warning, "\n");
+    else if (type(resolve) == "object" && resolve.rule)
+        push(config.route.rules, resolve.rule);
+    push(config.route.rules, route_rule);
+}
+
 function add_combined_route_for_section(config, section) {
     let domains = domain_conditions(section);
     let domain = domains.domain;
@@ -2838,20 +2847,30 @@ function add_combined_route_for_section(config, section) {
     if (length(source_ip_cidr) > 0)
         route_rule.source_ip_cidr = source_ip_cidr;
     add_port_matchers(route_rule, section);
-    if (length(rule_set_tags) > 0)
-        route_rule.rule_set = single_or_array(rule_set_tags);
-
     let has_route_matchers = route_rule.domain != null || route_rule.domain_suffix != null ||
         route_rule.domain_keyword != null || route_rule.domain_regex != null ||
-        route_rule.ip_cidr != null || route_rule.port != null || route_rule.port_range != null ||
-        route_rule.rule_set != null;
-    if (has_route_matchers) {
-        let resolve = runtime_route.resolve_rule_for_section(section, route_rule);
-        if (type(resolve) == "object" && resolve.warning)
-            warn(resolve.warning, "\n");
-        else if (type(resolve) == "object" && resolve.rule)
-            push(config.route.rules, resolve.rule);
-        push(config.route.rules, route_rule);
+        route_rule.ip_cidr != null || (length(rule_set_tags) == 0 &&
+        (route_rule.port != null || route_rule.port_range != null));
+    if (has_route_matchers)
+        push_section_route_rule(config, section, route_rule);
+
+    if (length(rule_set_tags) > 0) {
+        // Since sing-box 1.14 a rule-set containing more than one rule is an
+        // independent matcher.  Combining it with inline domain fields makes
+        // the two matchers an AND expression, while Forkop sections define
+        // inline domains and lists as alternatives.  Keep shared device and
+        // port filters, but emit the rule-set alternative as its own rule.
+        let rule_set_rule = {
+            action: target.action,
+            inbound: tproxy_inbound_matcher(),
+            rule_set: single_or_array(rule_set_tags)
+        };
+        if (target.outbound)
+            rule_set_rule.outbound = target.outbound;
+        if (length(source_ip_cidr) > 0)
+            rule_set_rule.source_ip_cidr = source_ip_cidr;
+        add_port_matchers(rule_set_rule, section);
+        push_section_route_rule(config, section, rule_set_rule);
     }
 
     let rewrite_ttl = int_option(runtime_settings(), "dns_rewrite_ttl", "60");
