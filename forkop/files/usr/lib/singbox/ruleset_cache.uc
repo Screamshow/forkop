@@ -84,11 +84,40 @@ function valid_source(path) {
     return type(value) == "object" && type(value.rules) == "array";
 }
 
+function binary_validation_path(path) {
+    return as_string(path) + ".validated";
+}
+
+function binary_stat_signature(path) {
+    let stat = fs.stat(path);
+    if (stat == null)
+        return "";
+    return join(":", [ stat.inode, stat.size, stat.mtime, stat.ctime ]);
+}
+
+function mark_binary_valid(path) {
+    let signature = binary_stat_signature(path);
+    return signature != "" && fs.writefile(binary_validation_path(path), signature + "\n") != null;
+}
+
 function valid_binary(path) {
+    let signature = binary_stat_signature(path);
+    let validation_path = binary_validation_path(path);
+    if (signature == "") {
+        fs.unlink(validation_path);
+        return false;
+    }
+    if (trim(as_string(fs.readfile(validation_path))) == signature)
+        return true;
+
     let output = CACHE_DIR + "/.validate-" + cache_key(path) + ".json";
     fs.unlink(output);
     let ok = command_success([ "sing-box", "rule-set", "decompile", path, "-o", output ]) && valid_source(output);
     fs.unlink(output);
+    if (ok)
+        mark_binary_valid(path);
+    else
+        fs.unlink(validation_path);
     return ok;
 }
 
@@ -112,27 +141,35 @@ function refresh_entry(entry, proxy_address) {
     let stamp = clock();
     let temporary = target + ".download." + as_string(stamp[0]) + "." + as_string(stamp[1]);
     fs.unlink(temporary);
+    fs.unlink(binary_validation_path(temporary));
 
     for (let candidate in candidate_urls(url)) {
         if (!download_candidate(candidate, temporary, proxy_address)) {
             fs.unlink(temporary);
+            fs.unlink(binary_validation_path(temporary));
             continue;
         }
         if (!valid_cache(temporary, format)) {
             fs.unlink(temporary);
+            fs.unlink(binary_validation_path(temporary));
             continue;
         }
         let old_data = fs.readfile(target);
         let new_data = fs.readfile(temporary);
         if (old_data != null && new_data != null && old_data == new_data) {
             fs.unlink(temporary);
+            fs.unlink(binary_validation_path(temporary));
+            mark_binary_valid(target);
             return false;
         }
         if (fs.rename(temporary, target)) {
+            fs.unlink(binary_validation_path(temporary));
+            mark_binary_valid(target);
             command_success([ "chmod", "0600", target ]);
             return true;
         }
         fs.unlink(temporary);
+        fs.unlink(binary_validation_path(temporary));
         return false;
     }
     return false;
