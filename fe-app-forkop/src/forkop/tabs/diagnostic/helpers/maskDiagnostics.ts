@@ -26,6 +26,7 @@ const SING_BOX_MASKED_KEYS = new Set([
   'domain_regex',
   'ip_cidr',
   'source_ip_cidr',
+  'excluded_source_ip_cidr',
 ]);
 
 const FORKOP_MASK_AFTER_TOKEN = [
@@ -56,6 +57,7 @@ const FORKOP_MASK_AFTER_TOKEN_SPACE = [
   'list domain_regex',
   'list ip_cidr',
   'list source_ip_cidr',
+  'list excluded_source_ip_cidr',
   'list fully_routed_ips',
   'option dns_server',
   'option bootstrap_dns_server',

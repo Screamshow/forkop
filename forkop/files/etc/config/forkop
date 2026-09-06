@@ -59,6 +59,7 @@ config settings 'settings'
 #        #option outbound_detour_section 'main'
 #        option sort_by_latency '0'
 #        #list fully_routed_ips '192.168.1.2'
+#        #list excluded_source_ip_cidr '192.168.1.3'
 
 #config section_interface
 #        option section 'subscription_example'

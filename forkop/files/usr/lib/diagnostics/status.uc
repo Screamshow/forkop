@@ -362,6 +362,7 @@ function forkop_config_masked_line(line) {
     line = mask_after_token_space(line, "list domain_regex");
     line = mask_after_token_space(line, "list ip_cidr");
     line = mask_after_token_space(line, "list source_ip_cidr");
+    line = mask_after_token_space(line, "list excluded_source_ip_cidr");
     line = mask_after_token_space(line, "list fully_routed_ips");
     line = mask_after_token(line, "list server_users");
     line = mask_after_token_space(line, "option dns_server");
@@ -1523,7 +1524,8 @@ let masked_sing_box_keys = {
     domain_keyword: true,
     domain_regex: true,
     ip_cidr: true,
-    source_ip_cidr: true
+    source_ip_cidr: true,
+    excluded_source_ip_cidr: true
 };
 
 function mask_sing_box_value(value) {

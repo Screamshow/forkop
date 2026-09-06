@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-06 14:41+0300\n"
-"PO-Revision-Date: 2026-09-06 14:41+0300\n"
+"POT-Creation-Date: 2026-09-06 17:10+0300\n"
+"PO-Revision-Date: 2026-09-06 17:10+0300\n"
 "Last-Translator: Screamshow\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -452,6 +452,9 @@ msgstr "DNS через секцию"
 msgid "DNS Unavailability Timeout"
 msgstr "Таймаут недоступности DNS"
 
+msgid "Do not apply this section to the specified local IP addresses; matching continues with the next section."
+msgstr "Не применять эту секцию к указанным локальным IP-адресам; поиск продолжится в следующей секции."
+
 msgid "Do not panic, everything can be fixed, just..."
 msgstr "Не паникуйте, всё можно исправить, просто..."
 
@@ -604,6 +607,9 @@ msgstr "Исключить по регулярному выражению"
 
 msgid "Exclude countries"
 msgstr "Исключить страны"
+
+msgid "Exclude devices"
+msgstr "Исключить устройства"
 
 msgid "Exclude NTP"
 msgstr "Исключить NTP"

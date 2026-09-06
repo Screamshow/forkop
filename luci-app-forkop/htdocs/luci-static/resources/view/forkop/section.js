@@ -2055,7 +2055,10 @@ function defaultSubscriptionUrlSettings() {
 
 function flintnetSubscriptionUrl(value) {
   try {
-    return new URL(`${value || ""}`.trim()).hostname.toLowerCase() === "sub.flintnet.pro";
+    return (
+      new URL(`${value || ""}`.trim()).hostname.toLowerCase() ===
+      "sub.flintnet.pro"
+    );
   } catch (_error) {
     return false;
   }
@@ -2338,7 +2341,6 @@ function addSubscriptionUrlItemOptions(itemSection, options = {}) {
   );
   o.default = "1";
   o.rmempty = false;
-
 }
 
 function addInterfaceItemOptions(itemSection) {
@@ -3842,12 +3844,11 @@ function writeListOption(section_id, key, values) {
   }
 }
 
-function makeDeviceOptionsExclusive(firstOption, secondOption) {
+function makeDeviceOptionsExclusive(...options) {
   let changing = false;
-  const firstWidgets = {};
-  const secondWidgets = {};
+  const widgets = options.map(() => ({}));
 
-  function removeMatches(section_id, value, otherWidgets) {
+  function removeMatches(section_id, value, optionIndex) {
     if (changing) {
       return;
     }
@@ -3857,37 +3858,35 @@ function makeDeviceOptionsExclusive(firstOption, secondOption) {
       return;
     }
 
-    const widget = otherWidgets[section_id];
-    if (!widget) {
-      return;
-    }
-
-    const current = normalizeOptionValues(widget.getValue());
-    const filtered = current.filter((item) => !selected.has(item));
-    if (stringArraysEqual(current, filtered)) {
-      return;
-    }
-
     changing = true;
     try {
-      widget.setValue(filtered);
+      widgets.forEach((optionWidgets, index) => {
+        if (index === optionIndex) {
+          return;
+        }
+        const widget = optionWidgets[section_id];
+        if (!widget) {
+          return;
+        }
+        const current = normalizeOptionValues(widget.getValue());
+        const filtered = current.filter((item) => !selected.has(item));
+        if (!stringArraysEqual(current, filtered)) {
+          widget.setValue(filtered);
+        }
+      });
     } finally {
       changing = false;
     }
   }
 
-  firstOption.onDeviceWidgetReady = function (section_id, widget) {
-    firstWidgets[section_id] = widget;
-  };
-  secondOption.onDeviceWidgetReady = function (section_id, widget) {
-    secondWidgets[section_id] = widget;
-  };
-  firstOption.onDeviceListChange = function (section_id, value) {
-    removeMatches(section_id, value, secondWidgets);
-  };
-  secondOption.onDeviceListChange = function (section_id, value) {
-    removeMatches(section_id, value, firstWidgets);
-  };
+  options.forEach((option, index) => {
+    option.onDeviceWidgetReady = function (section_id, widget) {
+      widgets[index][section_id] = widget;
+    };
+    option.onDeviceListChange = function (section_id, value) {
+      removeMatches(section_id, value, index);
+    };
+  });
 }
 
 function childOwnerOption(ownerOption) {
@@ -4234,7 +4233,10 @@ function validateSubscriptionUrlEntry(_section_id, value) {
       "sub.flintnet.pro",
       "sub.hat.onl",
     ]);
-    if (url.protocol !== "https:" || !supportedHosts.has(url.hostname.toLowerCase())) {
+    if (
+      url.protocol !== "https:" ||
+      !supportedHosts.has(url.hostname.toLowerCase())
+    ) {
       return _("This subscription provider is not supported");
     }
   } catch (_error) {
@@ -7645,7 +7647,21 @@ function createSectionContent(section) {
   });
   dependsOnRoutingAction(fullyRoutedOption);
   fullyRoutedOption.depends("action", "dns");
-  makeDeviceOptionsExclusive(sourceIpOption, fullyRoutedOption);
+
+  const excludedSourcesOption = addLocalDeviceSubnetDynamicField(section, {
+    key: "excluded_source_ip_cidr",
+    label: _("Exclude devices"),
+    description: _(
+      "Do not apply this section to the specified local IP addresses; matching continues with the next section.",
+    ),
+  });
+  dependsOnRoutingAction(excludedSourcesOption);
+  excludedSourcesOption.depends("action", "dns");
+  makeDeviceOptionsExclusive(
+    sourceIpOption,
+    fullyRoutedOption,
+    excludedSourcesOption,
+  );
 
   const portsOption = addDynamicConditionField(section, {
     key: "ports",
@@ -7654,7 +7670,6 @@ function createSectionContent(section) {
     dynamicValidate: validatePortCondition,
   });
   dependsOnRoutingAction(portsOption);
-
 }
 
 function loadSectionTableOptions(sectionRef) {

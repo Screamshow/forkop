@@ -2527,6 +2527,47 @@ function copy_dns_matchers(matchers) {
     return copy;
 }
 
+function excluded_source_ip_cidr(section) {
+    return legacy_condition_values(section, "excluded_source_ip_cidr");
+}
+
+function exclude_sources_from_matchers(matchers, section) {
+    let excluded = excluded_source_ip_cidr(section);
+    if (length(excluded) == 0)
+        return matchers;
+
+    return {
+        type: "logical",
+        mode: "and",
+        rules: [
+            matchers,
+            {
+                source_ip_cidr: single_or_array(excluded),
+                invert: true
+            }
+        ]
+    };
+}
+
+function exclude_sources_from_route_rule(rule, section) {
+    let excluded = excluded_source_ip_cidr(section);
+    if (length(excluded) == 0)
+        return rule;
+
+    let matchers = {};
+    let result = {};
+    for (let key, value in rule) {
+        if (key == "action" || key == "outbound")
+            result[key] = value;
+        else
+            matchers[key] = value;
+    }
+    let wrapped = exclude_sources_from_matchers(matchers, section);
+    for (let key, value in wrapped)
+        result[key] = value;
+    return result;
+}
+
 function add_source_dns_matchers(rule, source_ip_cidr) {
     if (length(source_ip_cidr) == 0)
         return;
@@ -2576,6 +2617,7 @@ function add_source_aware_bypass_dns_rules(config, matchers, rewrite_ttl) {
 function add_section_dns_matcher_rule(config, section, matchers, rewrite_ttl) {
     let source_ip_cidr = legacy_condition_values(section, "source_ip_cidr");
     add_source_dns_matchers(matchers, source_ip_cidr);
+    matchers = exclude_sources_from_matchers(matchers, section);
 
     if (option(section, "action", "") == "bypass" && length(source_ip_cidr) > 0) {
         add_source_aware_bypass_dns_rules(config, matchers, rewrite_ttl);
@@ -2597,6 +2639,9 @@ function source_aware_dns_sources(sections) {
         let candidates = [];
         if (connections.has_dns_matchers(section))
             for (let value in legacy_condition_values(section, "source_ip_cidr"))
+                push(candidates, value);
+        if (connections.has_dns_matchers(section) || length(list_option(section, "fully_routed_ips")) > 0)
+            for (let value in excluded_source_ip_cidr(section))
                 push(candidates, value);
         if (action == "bypass" || action == "dns")
             for (let value in list_option(section, "fully_routed_ips"))
@@ -2703,6 +2748,7 @@ function add_dns_action_rules_for_section(config, section) {
             rewrite_ttl
         };
         add_source_dns_matchers(dns_rule, fully_routed_ips);
+        dns_rule = exclude_sources_from_matchers(dns_rule, section);
         push_dns_matcher_rule(config, dns_rule);
     }
     if (has_inline_domains) {
@@ -2716,6 +2762,7 @@ function add_dns_action_rules_for_section(config, section) {
         add_domain_array(dns_rule, "domain_keyword", domain_keyword);
         add_domain_array(dns_rule, "domain_regex", domain_regex);
         add_source_dns_matchers(dns_rule, source_ip_cidr);
+        dns_rule = exclude_sources_from_matchers(dns_rule, section);
         push_dns_matcher_rule(config, dns_rule);
     }
     if (length(rule_set_tags) > 0) {
@@ -2726,6 +2773,7 @@ function add_dns_action_rules_for_section(config, section) {
             rule_set: single_or_array(rule_set_tags)
         };
         add_source_dns_matchers(dns_rule, source_ip_cidr);
+        dns_rule = exclude_sources_from_matchers(dns_rule, section);
         push_dns_matcher_rule(config, dns_rule);
     }
     if (!has_inline_domains && length(rule_set_tags) == 0 && length(fully_routed_ips) == 0)
@@ -2798,7 +2846,7 @@ function add_fully_routed_ips_rules(config, section) {
     if (target.outbound)
         route_rule.outbound = target.outbound;
     route_rule.source_ip_cidr = single_or_array(source_ip_cidr);
-    push(config.route.rules, route_rule);
+    push(config.route.rules, exclude_sources_from_route_rule(route_rule, section));
 }
 
 function push_section_route_rule(config, section, route_rule) {
@@ -2806,8 +2854,8 @@ function push_section_route_rule(config, section, route_rule) {
     if (type(resolve) == "object" && resolve.warning)
         warn(resolve.warning, "\n");
     else if (type(resolve) == "object" && resolve.rule)
-        push(config.route.rules, resolve.rule);
-    push(config.route.rules, route_rule);
+        push(config.route.rules, exclude_sources_from_route_rule(resolve.rule, section));
+    push(config.route.rules, exclude_sources_from_route_rule(route_rule, section));
 }
 
 function add_combined_route_for_section(config, section) {

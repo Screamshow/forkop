@@ -9475,7 +9475,8 @@ var SING_BOX_MASKED_KEYS = /* @__PURE__ */ new Set([
   "domain_keyword",
   "domain_regex",
   "ip_cidr",
-  "source_ip_cidr"
+  "source_ip_cidr",
+  "excluded_source_ip_cidr"
 ]);
 var FORKOP_MASK_AFTER_TOKEN = [
   "option proxy_string",
@@ -9504,6 +9505,7 @@ var FORKOP_MASK_AFTER_TOKEN_SPACE = [
   "list domain_regex",
   "list ip_cidr",
   "list source_ip_cidr",
+  "list excluded_source_ip_cidr",
   "list fully_routed_ips",
   "option dns_server",
   "option bootstrap_dns_server",

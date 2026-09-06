@@ -586,6 +586,8 @@ function section_priority_sets(section) {
         ip6_ports: prefix + "_ip6_ports",
         sources: prefix + "_sources",
         sources6: prefix + "_sources6",
+        excluded_sources: prefix + "_excluded_sources",
+        excluded_sources6: prefix + "_excluded_sources6",
         fully_sources: prefix + "_fully_sources",
         fully_sources6: prefix + "_fully_sources6"
     };
@@ -597,6 +599,14 @@ function section_source_ip_values(section) {
 
 function section_has_source_ip_matchers(section) {
     return section_source_ip_values(section) != "";
+}
+
+function section_excluded_source_ip_values(section) {
+    return section_rule_condition_csv(section, "excluded_source_ip_cidr", "subnets");
+}
+
+function section_has_excluded_source_ip_matchers(section) {
+    return section_excluded_source_ip_values(section) != "";
 }
 
 function section_has_fully_routed_ips(section) {
@@ -646,6 +656,8 @@ function nft_create_priority_sets(table, sets) {
         nft_create_ipv6_port_set(table, sets.ip6_ports) &&
         nft_create_ipv4_set(table, sets.sources) &&
         nft_create_ipv6_set(table, sets.sources6) &&
+        nft_create_ipv4_set(table, sets.excluded_sources) &&
+        nft_create_ipv6_set(table, sets.excluded_sources6) &&
         nft_create_ipv4_set(table, sets.fully_sources) &&
         nft_create_ipv6_set(table, sets.fully_sources6);
 }
@@ -663,11 +675,16 @@ function append_array(target, additions) {
 }
 
 function nft_source_match_args(section, family, sets) {
-    if (!section_has_source_ip_matchers(section))
-        return [];
-    return family == 6
-        ? [ "ip6", "saddr", "@" + as_string(sets.sources6) ]
-        : [ "ip", "saddr", "@" + as_string(sets.sources) ];
+    let args = [];
+    if (section_has_source_ip_matchers(section))
+        append_array(args, family == 6
+            ? [ "ip6", "saddr", "@" + as_string(sets.sources6) ]
+            : [ "ip", "saddr", "@" + as_string(sets.sources) ]);
+    if (section_has_excluded_source_ip_matchers(section))
+        append_array(args, family == 6
+            ? [ "ip6", "saddr", "!=", "@" + as_string(sets.excluded_sources6) ]
+            : [ "ip", "saddr", "!=", "@" + as_string(sets.excluded_sources) ]);
+    return args;
 }
 
 function nft_priority_rule_args(section, family, local_set, match_args, mark) {
@@ -708,6 +725,9 @@ function nft_fully_routed_priority_args(section, family, interface_set, local_se
         ip_key, "saddr", "@" + as_string(source_set),
         ip_key, "daddr", "!=", "@" + as_string(local_set)
     ];
+
+    if (section_has_excluded_source_ip_matchers(section))
+        append_array(args, [ ip_key, "saddr", "!=", "@" + as_string(family == 6 ? sets.excluded_sources6 : sets.excluded_sources) ]);
 
     if (section_priority_action(section) == "bypass")
         append_array(args, [ ip_key, "daddr", "!=", fakeip_range ]);
@@ -1429,12 +1449,18 @@ function nft_rule_signature_body(body, section) {
     body = signature_add_value(body, "rule." + section_name + ".action", action);
     if (action == "dns") {
         body = signature_add_value(body, "rule." + section_name + ".source_ip_cidr", section_rule_condition_csv(section, "source_ip_cidr", "subnets"));
+        let excluded_sources = section_rule_condition_csv(section, "excluded_source_ip_cidr", "subnets");
+        if (excluded_sources != "")
+            body = signature_add_value(body, "rule." + section_name + ".excluded_source_ip_cidr", excluded_sources);
         body = signature_add_value(body, "rule." + section_name + ".source_aware_dns", connections.has_dns_matchers(section) ? "1" : "0");
         body = signature_add_value(body, "rule." + section_name + ".fully_routed_ips", option(section, "fully_routed_ips", ""));
         return body;
     }
     body = signature_add_value(body, "rule." + section_name + ".ip_cidr", section_rule_condition_csv(section, "ip_cidr", "subnets"));
     body = signature_add_value(body, "rule." + section_name + ".source_ip_cidr", section_rule_condition_csv(section, "source_ip_cidr", "subnets"));
+    let excluded_sources = section_rule_condition_csv(section, "excluded_source_ip_cidr", "subnets");
+    if (excluded_sources != "")
+        body = signature_add_value(body, "rule." + section_name + ".excluded_source_ip_cidr", excluded_sources);
     body = signature_add_value(body, "rule." + section_name + ".source_aware_dns", connections.has_dns_matchers(section) ? "1" : "0");
     body = signature_add_value(body, "rule." + section_name + ".ports", section_rule_ports_csv(section));
     body = signature_add_value(body, "rule." + section_name + ".fully_routed_ips", option(section, "fully_routed_ips", ""));
@@ -1566,6 +1592,15 @@ function nft_add_section_source_matchers(section, table, chunk_size_text) {
     return nft_add_csv_chunks_to_family_sets(source_values, table, sets.sources, sets.sources6, "ips", "", chunk_size_text);
 }
 
+function nft_add_section_excluded_source_matchers(section, table, chunk_size_text) {
+    let source_values = section_excluded_source_ip_values(section);
+    if (source_values == "")
+        return true;
+
+    let sets = section_priority_sets(section);
+    return nft_add_csv_chunks_to_family_sets(source_values, table, sets.excluded_sources, sets.excluded_sources6, "ips", "", chunk_size_text);
+}
+
 function nft_add_section_fully_routed_sources(section, table, chunk_size_text) {
     let seen = {};
     let values = [];
@@ -1597,6 +1632,15 @@ function source_aware_dns_values(sections, deferred_sections) {
 
         if (connections.has_dns_matchers(section)) {
             for (let value in nft_csv_values(section_source_ip_values(section))) {
+                if (!seen[value]) {
+                    seen[value] = true;
+                    push(values, value);
+                }
+            }
+        }
+
+        if (connections.has_dns_matchers(section) || section_has_fully_routed_ips(section)) {
+            for (let value in nft_csv_values(section_excluded_source_ip_values(section))) {
                 if (!seen[value]) {
                     seen[value] = true;
                     push(values, value);
@@ -1645,6 +1689,8 @@ function nft_populate_runtime_set_for_section(section, deferred_sections, table,
     let sets = section_priority_sets(section);
 
     if (section_needs_priority_sets(section) && !nft_add_section_source_matchers(section, table, 5000))
+        return false;
+    if (section_needs_priority_sets(section) && !nft_add_section_excluded_source_matchers(section, table, 5000))
         return false;
 
     if (deferred_sections[as_string(section[".name"])])
