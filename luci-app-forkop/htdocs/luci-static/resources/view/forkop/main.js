@@ -2396,6 +2396,7 @@ var Forkop;
     AvailableMethods2["ENABLE"] = "enable";
     AvailableMethods2["DISABLE"] = "disable";
     AvailableMethods2["GLOBAL_CHECK"] = "global_check";
+    AvailableMethods2["SUPPORT_REPORT"] = "support_report";
     AvailableMethods2["SHOW_SING_BOX_CONFIG"] = "show_sing_box_config";
     AvailableMethods2["CHECK_LOGS"] = "check_logs";
     AvailableMethods2["CHECK_SING_BOX_LOGS"] = "check_sing_box_logs";
@@ -2458,6 +2459,7 @@ var COMPONENT_ACTION_SELF_UPDATE_SETTLE_MS = 3e4;
 var COMPONENT_ACTION_TRANSIENT_RPC_GRACE_MS = 3e4;
 var COMPONENT_ACTION_STATE_DIR = "/var/run/forkop/component-actions";
 var GET_UI_STATE_RPC_TIMEOUT_MS = 3e3;
+var SUPPORT_REPORT_RPC_TIMEOUT_MS = 6e4;
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -2671,6 +2673,12 @@ var ForkopShellMethods = {
   globalCheck: async (masked = true) => callBaseMethod(Forkop.AvailableMethods.GLOBAL_CHECK, [
     masked ? "masked" : "raw"
   ]),
+  supportReport: async () => callBaseMethod(
+    Forkop.AvailableMethods.SUPPORT_REPORT,
+    [],
+    "/usr/bin/forkop",
+    { timeout: SUPPORT_REPORT_RPC_TIMEOUT_MS }
+  ),
   showSingBoxConfig: async (masked = true) => callBaseMethod(Forkop.AvailableMethods.SHOW_SING_BOX_CONFIG, [
     masked ? "masked" : "raw"
   ]),
@@ -9639,15 +9647,6 @@ function maskGlobalCheckText(text = "") {
     return maskedLine;
   }).join("\n");
 }
-function maskSupportReportText(text = "") {
-  return maskGlobalCheckText(text).replace(
-    /\b(?:vless|vmess|trojan|ss|ssr|hysteria2|hy2|tuic|socks4a?|socks5):\/\/\S+/gi,
-    MASKED_VALUE
-  ).replace(
-    /(https?:\/\/\S*[?&](?:token|key|uuid|password|secret)=)\S+/gi,
-    "$1" + MASKED_VALUE
-  );
-}
 
 // src/forkop/tabs/diagnostic/initController.ts
 var SERVICE_STATUS_REFRESH_INTERVAL_MS = 2e3;
@@ -9721,25 +9720,11 @@ function downloadSupportReport(text) {
 async function handleDownloadSupportReport() {
   setDiagnosticActionLoading("supportReport", true);
   try {
-    const [globalCheck, logs] = await Promise.all([
-      ForkopShellMethods.globalCheck(),
-      ForkopShellMethods.checkLogs()
-    ]);
-    const globalText = globalCheck.success ? String(globalCheck.data ?? "") : _("Global check could not be collected.");
-    const logsText = logs.success ? String(logs.data ?? "") : _("Forkop logs could not be collected.");
-    downloadSupportReport(
-      [
-        "Forkop support report",
-        `Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`,
-        "",
-        "=== Global check (sensitive values masked) ===",
-        maskSupportReportText(globalText).trim(),
-        "",
-        "=== Recent Forkop logs ===",
-        maskSupportReportText(logsText).trim(),
-        ""
-      ].join("\n")
-    );
+    const report = await ForkopShellMethods.supportReport();
+    if (!report.success) {
+      throw new Error(report.error || "Support report collection failed");
+    }
+    downloadSupportReport(String(report.data ?? ""));
     showToast(_("Support report downloaded"), "success");
   } catch (error) {
     logger.error("[DIAGNOSTIC]", "handleDownloadSupportReport - e", error);

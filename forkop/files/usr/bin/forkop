@@ -112,6 +112,7 @@ function show_help() {
     print("    component_update_check_cache Get cached component update check results\n");
     print("    check_dns_available     Check DNS server availability\n");
     print("    global_check            Run global system check\n");
+    print("    support_report          Create a complete unmasked support report\n");
     print("    validate_nfqws_strategy_json\n");
     print("                            Validate an NFQWS strategy and print JSON result\n");
     print("    validate_nfqws2_strategy_json\n");
@@ -178,6 +179,7 @@ function command_spec(command) {
         component_update_check_cache: [ "components/updates.uc", "component-update-check-cache", 0 ],
         check_dns_available: [ "diagnostics/runtime.uc", "check-dns-available", 0 ],
         global_check: [ "diagnostics/runtime.uc", "global-check", 2 ],
+        support_report: [ "diagnostics/runtime.uc", "support-report", 0 ],
         validate_nfqws_strategy_json: [ "diagnostics/runtime.uc", "validate-nfqws-strategy-json", 1 ],
         validate_nfqws2_strategy_json: [ "diagnostics/runtime.uc", "validate-nfqws2-strategy-json", 1 ],
         validate_byedpi_strategy_json: [ "providers/byedpi/validator.uc", "validate-json", 1 ],

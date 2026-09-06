@@ -1880,6 +1880,75 @@ function global_check(arg1, arg2) {
     return 0;
 }
 
+function support_report_heading(title) {
+    print("\n=== ", as_string(title), " ===\n");
+}
+
+function support_report_command(title, args) {
+    support_report_heading(title);
+    let result = command_capture(command_from_args(args) + " 2>&1");
+    print(result.output != "" ? result.output : "(no output)\n");
+    if (result.status != 0)
+        print("[exit status: ", result.status, "]\n");
+}
+
+function support_report_file(title, path) {
+    support_report_heading(title);
+    let data = fs.readfile(path);
+    if (data == null) {
+        print("(file not found: ", path, ")\n");
+        return;
+    }
+
+    let text = as_string(data);
+    print(text);
+    if (length(text) == 0 || substr(text, length(text) - 1) != "\n")
+        print("\n");
+}
+
+function support_report() {
+    print("⚠️ CONFIDENTIAL SUPPORT REPORT / КОНФИДЕНЦИАЛЬНЫЙ ОТЧЁТ ДЛЯ ПОДДЕРЖКИ\n\n");
+    print("This file contains proxy and subscription URLs, UUIDs, passwords, keys, tokens, client domains and IP addresses, process command lines, and network configuration. Share it only with a trusted support specialist.\n\n");
+    print("Файл содержит ссылки прокси и подписок, UUID, пароли, ключи, токены, домены и IP-адреса клиентов, параметры процессов и сетевую конфигурацию. Передавайте его только доверенному специалисту.\n\n");
+    print("Generated: ", trim(command_output_from_args([ "date", "-Iseconds" ])), "\n");
+    print("Forkop version: ", FORKOP_VERSION, "\n");
+
+    support_report_heading("Global check (raw)");
+    global_check("raw", "raw");
+
+    support_report_heading("Generated sing-box configuration (raw)");
+    show_sing_box_config("raw");
+    let sing_box_config_path = option(settings(), "config_path", "");
+    if (sing_box_config_path != "")
+        support_report_command("sing-box check", [ SING_BOX_BIN_PATH, "check", "-c", sing_box_config_path ]);
+
+    support_report_command("System uptime", [ "uptime" ]);
+    support_report_command("Memory", [ "free" ]);
+    support_report_command("Filesystems", [ "df", "-h" ]);
+    support_report_command("Processes and full arguments", [ "ps", "w" ]);
+    support_report_command("Listening sockets", [ "netstat", "-lnp" ]);
+    support_report_command("IPv4 addresses", [ "ip", "-4", "-details", "address", "show" ]);
+    support_report_command("IPv6 addresses", [ "ip", "-6", "-details", "address", "show" ]);
+    support_report_command("IPv4 rules", [ "ip", "-4", "rule", "show" ]);
+    support_report_command("IPv6 rules", [ "ip", "-6", "rule", "show" ]);
+    support_report_command("IPv4 routes (all tables)", [ "ip", "-4", "route", "show", "table", "all" ]);
+    support_report_command("IPv6 routes (all tables)", [ "ip", "-6", "route", "show", "table", "all" ]);
+
+    support_report_heading("Forkop nftables summary and set sizes");
+    check_nft();
+    support_report_command("nftables ruleset with handles (set contents omitted)", [ "nft", "-a", "-t", "list", "ruleset" ]);
+
+    support_report_file("/etc/config/forkop", FORKOP_CONFIG);
+    support_report_file("/etc/config/dhcp", "/etc/config/dhcp");
+    support_report_file("/etc/config/network", "/etc/config/network");
+    support_report_file("/etc/config/firewall", "/etc/config/firewall");
+    support_report_command("Forkop runtime files", [ "ls", "-laR", RUNTIME_STATE_DIR ]);
+    support_report_command("Sing-box runtime files", [ "ls", "-laR", TMP_SING_BOX_FOLDER ]);
+    support_report_command("Recent system log", [ "logread", "-l", "500" ]);
+    support_report_command("Kernel log", [ "dmesg" ]);
+    return 0;
+}
+
 let mode = ARGV[0] || "";
 
 if (mode == "check-proxy")
@@ -1940,6 +2009,8 @@ else if (mode == "check-dns-available")
     exit(check_dns_available());
 else if (mode == "global-check")
     exit(global_check(ARGV[1] || "", ARGV[2] || ""));
+else if (mode == "support-report")
+    exit(support_report());
 else if (mode == "validate-nfqws-strategy-json")
     exit(validate_nfqws_strategy_json(ARGV[1] || ""));
 else if (mode == "validate-nfqws2-strategy-json")

@@ -3848,6 +3848,22 @@ function makeDeviceOptionsExclusive(...options) {
   let changing = false;
   const widgets = options.map(() => ({}));
 
+  options.forEach((option, index) => {
+    const originalWrite = option.write;
+    if (typeof originalWrite !== "function") {
+      return;
+    }
+
+    option.write = function (section_id, value) {
+      const widget = widgets[index][section_id];
+      const liveValue =
+        widget && typeof widget.getValue === "function"
+          ? widget.getValue()
+          : value;
+      return originalWrite.call(this, section_id, liveValue);
+    };
+  });
+
   function removeMatches(section_id, value, optionIndex) {
     if (changing) {
       return;

@@ -67,7 +67,6 @@ import {
 import {
   formatMaskedSingBoxConfig,
   maskGlobalCheckText,
-  maskSupportReportText,
   stringifySingBoxConfig,
 } from './helpers/maskDiagnostics';
 
@@ -175,30 +174,12 @@ async function handleDownloadSupportReport() {
   setDiagnosticActionLoading('supportReport', true);
 
   try {
-    const [globalCheck, logs] = await Promise.all([
-      ForkopShellMethods.globalCheck(),
-      ForkopShellMethods.checkLogs(),
-    ]);
-    const globalText = globalCheck.success
-      ? String(globalCheck.data ?? '')
-      : _('Global check could not be collected.');
-    const logsText = logs.success
-      ? String(logs.data ?? '')
-      : _('Forkop logs could not be collected.');
+    const report = await ForkopShellMethods.supportReport();
+    if (!report.success) {
+      throw new Error(report.error || 'Support report collection failed');
+    }
 
-    downloadSupportReport(
-      [
-        'Forkop support report',
-        `Generated: ${new Date().toISOString()}`,
-        '',
-        '=== Global check (sensitive values masked) ===',
-        maskSupportReportText(globalText).trim(),
-        '',
-        '=== Recent Forkop logs ===',
-        maskSupportReportText(logsText).trim(),
-        '',
-      ].join('\n'),
-    );
+    downloadSupportReport(String(report.data ?? ''));
     showToast(_('Support report downloaded'), 'success');
   } catch (error) {
     logger.error('[DIAGNOSTIC]', 'handleDownloadSupportReport - e', error);

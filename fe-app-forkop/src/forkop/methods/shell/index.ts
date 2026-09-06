@@ -18,6 +18,7 @@ const COMPONENT_ACTION_SELF_UPDATE_SETTLE_MS = 30000;
 const COMPONENT_ACTION_TRANSIENT_RPC_GRACE_MS = 30000;
 const COMPONENT_ACTION_STATE_DIR = '/var/run/forkop/component-actions';
 const GET_UI_STATE_RPC_TIMEOUT_MS = 3000;
+const SUPPORT_REPORT_RPC_TIMEOUT_MS = 60000;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -319,6 +320,13 @@ export const ForkopShellMethods = {
     callBaseMethod<unknown>(Forkop.AvailableMethods.GLOBAL_CHECK, [
       masked ? 'masked' : 'raw',
     ]),
+  supportReport: async () =>
+    callBaseMethod<unknown>(
+      Forkop.AvailableMethods.SUPPORT_REPORT,
+      [],
+      '/usr/bin/forkop',
+      { timeout: SUPPORT_REPORT_RPC_TIMEOUT_MS },
+    ),
   showSingBoxConfig: async (masked = true) =>
     callBaseMethod<unknown>(Forkop.AvailableMethods.SHOW_SING_BOX_CONFIG, [
       masked ? 'masked' : 'raw',
