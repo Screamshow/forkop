@@ -105,7 +105,6 @@ const EntryPoint = {
       zapretInstalled: false,
       zapret2Installed: false,
       byedpiInstalled: false,
-      serverInboundsEnabledCount: 0,
     };
     let uiCapabilitiesPromise = null;
 
@@ -134,8 +133,6 @@ const EntryPoint = {
             zapret_installed: uiCapabilities.zapretInstalled ? 1 : 0,
             zapret2_installed: uiCapabilities.zapret2Installed ? 1 : 0,
             byedpi_installed: uiCapabilities.byedpiInstalled ? 1 : 0,
-            server_inbounds_enabled_count:
-              uiCapabilities.serverInboundsEnabledCount,
             zapret_version: uiCapabilities.zapretInstalled
               ? currentSystemInfo.zapret_version
               : "not installed",
@@ -169,8 +166,6 @@ const EntryPoint = {
       uiCapabilities.byedpiInstalled = Boolean(
         Number(data?.byedpi_installed) === 1,
       );
-      uiCapabilities.serverInboundsEnabledCount = 0;
-
       applyUiCapabilities();
 
       return uiCapabilities;
@@ -242,7 +237,6 @@ const EntryPoint = {
               Number(byedpiRuntime.data?.byedpi_installed) === 1
                 ? 1
                 : 0,
-            server_inbounds_enabled_count: 0,
           });
         },
       );

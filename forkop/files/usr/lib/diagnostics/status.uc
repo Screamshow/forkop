@@ -989,170 +989,7 @@ function render_proxy_response_ip_mask() {
     exit(1);
 }
 
-function render_inbound_item(item, wan_ip) {
-    let label = object_value(item, "label");
-    let protocol = object_value(item, "protocol");
-    let listen = object_value(item, "listen");
-    let listen_port = object_value(item, "listen_port");
-    let public_host = object_value(item, "public_host");
-    let tag = object_value(item, "tag");
-    let required_proto = object_value(item, "required_proto");
-    let runtime_ok = object_value(item, "runtime_ok");
-    let listening = object_value(item, "listening");
-    let firewall_required = object_value(item, "firewall_required");
-    let firewall_open = object_value(item, "firewall_open");
-    let port_conflict = object_value(item, "port_conflict");
-    let port_conflict_owners = object_value(item, "port_conflict_owners");
-    let routes_configured = object_value(item, "routes_configured");
-    let public_host_resolved = object_value(item, "public_host_resolved");
-    let public_host_public = object_value(item, "public_host_public");
-    let public_host_matches_wan = object_value(item, "public_host_matches_wan");
-    let public_host_ips = object_value(item, "public_host_ips");
-
-    if (flag_is_one(runtime_ok))
-        print_line("[OK] " + label + ": runtime " + tag + " [" + protocol + "]");
-    else
-        print_line("[FAIL] " + label + ": generated inbound is missing or differs from UCI");
-
-    if (protocol == "json_inbound") {
-        print_line("[OK] " + label + ": JSON inbound uses custom listen settings");
-    }
-    else if (protocol != "tailscale") {
-        if (flag_is_one(listening))
-            print_line("[OK] " + label + ": listening on " + listen + ":" + listen_port + " [" + required_proto + "]");
-        else
-            print_line("[FAIL] " + label + ": not listening on " + listen + ":" + listen_port + " [" + required_proto + "]");
-
-        if (flag_is_one(port_conflict))
-            print_line("[FAIL] " + label + ": " + listen + ":" + listen_port + " [" + required_proto + "] is already used by " + port_conflict_owners);
-        else
-            print_line("[OK] " + label + ": no local port conflict detected");
-
-        if (flag_is_one(firewall_required)) {
-            if (flag_is_one(firewall_open))
-                print_line("[OK] " + label + ": firewall accepts " + required_proto + "/" + listen_port + " from WAN");
-            else
-                print_line("[FAIL] " + label + ": firewall does not accept " + required_proto + "/" + listen_port + " from WAN");
-        }
-        else {
-            print_line("[WARN] " + label + ": firewall WAN check skipped for listen address " + listen);
-        }
-    }
-    else {
-        print_line("[OK] " + label + ": Tailscale endpoint does not need a public firewall port");
-    }
-
-    if (flag_is_one(routes_configured))
-        print_line("[OK] " + label + ": route rules for inbound exist");
-    else
-        print_line("[WARN] " + label + ": route rules for inbound were not found");
-
-    if (protocol != "tailscale" && protocol != "json_inbound") {
-        if (public_host != "") {
-            if (public_host_resolved == "0")
-                print_line("[WARN] " + label + ": public host does not resolve: " + public_host);
-            else if (public_host_public == "0")
-                print_line("[WARN] " + label + ": public host is not public: " + public_host);
-            else if (public_host_matches_wan == "0")
-                print_line("[WARN] " + label + ": public host resolves to " + public_host_ips + ", WAN is " + wan_ip);
-            else
-                print_line("[OK] " + label + ": public host " + public_host);
-        }
-        else {
-            print_line("[WARN] " + label + ": public host is empty");
-        }
-    }
-}
-
-function inbound_runtime_ok(protocol, runtime_exists, runtime_type, runtime_listen, runtime_port_text, expected_type, listen, listen_port) {
-    if (!flag_is_one(runtime_exists))
-        return 0;
-
-    if (protocol == "json_inbound")
-        return 1;
-
-    if (runtime_type != expected_type)
-        return 0;
-
-    if (protocol == "tailscale")
-        return 1;
-
-    return runtime_listen == listen && runtime_port_text == listen_port ? 1 : 0;
-}
-
-function write_inbound_item_json(args) {
-    let runtime = parse_json_object(args[0]);
-    let section = as_string(args[1]);
-    let label = as_string(args[2]);
-    let protocol = as_string(args[3]);
-    let routing_mode = as_string(args[4]);
-    let tag = as_string(args[5]);
-    let listen = as_string(args[6]);
-    let listen_port = as_string(args[7]);
-    let public_host = as_string(args[8]);
-    let public_host_ips = as_string(args[9]);
-    let expected_type = as_string(args[10]);
-    let required_proto = as_string(args[11]);
-    let runtime_exists = object_value(runtime, "exists") || "0";
-    let runtime_type = object_value(runtime, "type");
-    let runtime_listen = object_value(runtime, "listen");
-    let runtime_port_text = object_value(runtime, "listen_port") || "0";
-
-    write_json({
-        section,
-        label,
-        protocol,
-        routing_mode,
-        tag,
-        listen,
-        listen_port: number_value(listen_port),
-        public_host,
-        public_host_ips,
-        expected_type,
-        required_proto,
-        runtime_exists: number_value(runtime_exists),
-        runtime_type,
-        runtime_listen,
-        runtime_port: number_value(runtime_port_text),
-        runtime_ok: inbound_runtime_ok(protocol, runtime_exists, runtime_type, runtime_listen, runtime_port_text, expected_type, listen, listen_port),
-        listening: number_value(args[12]),
-        firewall_required: number_value(args[13]),
-        firewall_open: number_value(args[14]),
-        port_conflict: number_value(args[15]),
-        port_conflict_owners: as_string(args[16]),
-        routes_configured: number_value(args[17]),
-        public_host_resolved: number_value(args[18]),
-        public_host_public: number_value(args[19]),
-        public_host_matches_wan: number_value(args[20])
-    });
-}
-
-function write_inbounds_config_json(enabled_count) {
-    write_json({
-        enabled_count: number_value(enabled_count)
-    });
-}
-
-function write_inbounds_check_json(enabled_count, config_path, wan_ip, wan_public, items_json) {
-    let items = parse_json_or_null(items_json);
-    write_json({
-        enabled_count: number_value(enabled_count),
-        config_path: as_string(config_path),
-        wan_ip: as_string(wan_ip),
-        wan_public: number_value(wan_public),
-        items: items != null ? items : null
-    });
-}
-
-function write_server_capabilities_json(sing_box_extended, sing_box_tiny, sing_box_tailscale) {
-    write_json({
-        sing_box_extended: arg_number(sing_box_extended),
-        sing_box_tiny: arg_number(sing_box_tiny),
-        sing_box_tailscale: arg_number(sing_box_tailscale)
-    });
-}
-
-function write_ui_capabilities_json(sing_box_extended, sing_box_tiny, sing_box_compressed, sing_box_tailscale, zapret_installed, zapret2_installed, byedpi_installed, server_inbounds_enabled_count) {
+function write_ui_capabilities_json(sing_box_extended, sing_box_tiny, sing_box_compressed, sing_box_tailscale, zapret_installed, zapret2_installed, byedpi_installed) {
     write_json({
         sing_box_extended: arg_number(sing_box_extended),
         sing_box_tiny: arg_number(sing_box_tiny),
@@ -1160,8 +997,7 @@ function write_ui_capabilities_json(sing_box_extended, sing_box_tiny, sing_box_c
         sing_box_tailscale: arg_number(sing_box_tailscale),
         zapret_installed: arg_number(zapret_installed),
         zapret2_installed: arg_number(zapret2_installed),
-        byedpi_installed: arg_number(byedpi_installed),
-        server_inbounds_enabled_count: arg_number(server_inbounds_enabled_count)
+        byedpi_installed: arg_number(byedpi_installed)
     });
 }
 
@@ -1285,32 +1121,6 @@ function mask_dns_server(value) {
     }
 
     print_line(value);
-}
-
-function render_global_inbounds_check() {
-    let value = read_stdin_json();
-    if (type(value) != "object")
-        exit(1);
-
-    let enabled_count = number_value(value.enabled_count);
-    let wan_ip = as_string(value.wan_ip || "");
-    let wan_public = number_value(value.wan_public);
-
-    if (enabled_count == 0) {
-        print_line("[OK] No enabled server inbounds");
-        return;
-    }
-
-    if (wan_public == 1)
-        print_line("[OK] WAN public IP: " + wan_ip);
-    else if (wan_ip != "")
-        print_line("[WARN] WAN IP is not public: " + wan_ip);
-    else
-        print_line("[WARN] WAN IP was not detected");
-
-    let items = type(value.items) == "array" ? value.items : [];
-    for (let i = 0; i < enabled_count; i++)
-        render_inbound_item(type(items[i]) == "object" ? items[i] : {}, wan_ip);
 }
 
 function render_flag_line(value, key, ok_message, fail_message) {
@@ -1941,16 +1751,8 @@ else if (mode == "server-required-port-conflict-owners")
     server_required_port_conflict_owners(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "json-error")
     json_error(ARGV[1]);
-else if (mode == "inbound-item-json")
-    write_inbound_item_json(slice(ARGV, 1));
-else if (mode == "inbounds-config-json")
-    write_inbounds_config_json(ARGV[1]);
-else if (mode == "inbounds-check-json")
-    write_inbounds_check_json(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5]);
-else if (mode == "server-capabilities-json")
-    write_server_capabilities_json(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "ui-capabilities-json")
-    write_ui_capabilities_json(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8]);
+    write_ui_capabilities_json(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7]);
 else if (mode == "service-status-json")
     write_service_status_json(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
 else if (mode == "service-status-running")
@@ -1969,8 +1771,6 @@ else if (mode == "fakeip-address-status")
     fakeip_address_status(ARGV[1]);
 else if (mode == "mask-dns-server")
     mask_dns_server(ARGV[1]);
-else if (mode == "global-inbounds-check")
-    render_global_inbounds_check();
 else if (mode == "global-sing-box-check")
     render_global_sing_box_check();
 else if (mode == "global-system-info")

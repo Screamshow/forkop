@@ -9,7 +9,6 @@ export enum DIAGNOSTICS_CHECKS {
   BYEDPI = 'BYEDPI',
   FAKEIP = 'FAKEIP',
   OUTBOUNDS = 'OUTBOUNDS',
-  INBOUNDS = 'INBOUNDS',
 }
 
 export const DIAGNOSTICS_CHECKS_MAP: Record<
@@ -55,10 +54,5 @@ export const DIAGNOSTICS_CHECKS_MAP: Record<
     order: 9,
     title: getCheckTitle('FakeIP'),
     code: DIAGNOSTICS_CHECKS.FAKEIP,
-  },
-  [DIAGNOSTICS_CHECKS.INBOUNDS]: {
-    order: 3,
-    title: getCheckTitle('Inbounds'),
-    code: DIAGNOSTICS_CHECKS.INBOUNDS,
   },
 };

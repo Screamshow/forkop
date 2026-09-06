@@ -326,8 +326,7 @@ function ui_state_json() {
             sing_box_tailscale: arg_number(ARGV[11]),
             zapret_installed: arg_number(ARGV[12]),
             zapret2_installed: arg_number(ARGV[13]),
-            byedpi_installed: arg_number(ARGV[14]),
-            server_inbounds_enabled_count: arg_number(ARGV[15])
+            byedpi_installed: arg_number(ARGV[14])
         },
         actions: action_state
     });
@@ -1020,8 +1019,7 @@ function capability_flags() {
         sing_box_tailscale: 0,
         zapret_installed: file_executable(ZAPRET_PROVIDER_NFQWS_BIN) ? 1 : 0,
         zapret2_installed: file_executable(ZAPRET2_PROVIDER_NFQWS2_BIN) ? 1 : 0,
-        byedpi_installed: file_executable(BYEDPI_BIN) ? 1 : 0,
-        server_inbounds_enabled_count: 0
+        byedpi_installed: file_executable(BYEDPI_BIN) ? 1 : 0
     };
 
     if (file_executable(SING_BOX_BIN_PATH)) {
@@ -1055,7 +1053,6 @@ function capability_flags() {
         }
     }
 
-    result.server_inbounds_enabled_count = 0;
     return result;
 }
 

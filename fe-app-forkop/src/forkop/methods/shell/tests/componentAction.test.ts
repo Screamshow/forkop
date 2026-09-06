@@ -221,7 +221,6 @@ describe('ForkopShellMethods.componentAction', () => {
               zapret_installed: 1,
               zapret2_installed: 1,
               byedpi_installed: 0,
-              server_inbounds_enabled_count: 0,
             },
             actions: {
               service: [],

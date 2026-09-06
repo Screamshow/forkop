@@ -2,7 +2,6 @@ import { onMount, preserveScrollForPage } from '../../../helpers';
 import { showToast } from '../../../helpers/showToast';
 import { runDnsCheck } from './checks/runDnsCheck';
 import { runSingBoxCheck } from './checks/runSingBoxCheck';
-import { runInboundsCheck } from './checks/runInboundsCheck';
 import { runNftCheck } from './checks/runNftCheck';
 import { runFakeIPCheck } from './checks/runFakeIPCheck';
 import { runZapretCheck } from './checks/runZapretCheck';
@@ -99,17 +98,13 @@ function sleep(ms: number) {
 function getDiagnosticsProviderOptions(
   systemInfo: Pick<
     StoreType['diagnosticsSystemInfo'],
-    | 'zapret_installed'
-    | 'zapret2_installed'
-    | 'byedpi_installed'
-    | 'server_inbounds_enabled_count'
+    'zapret_installed' | 'zapret2_installed' | 'byedpi_installed'
   > = store.get().diagnosticsSystemInfo,
 ): DiagnosticsProviderOptions {
   return {
     includeZapret: Boolean(systemInfo.zapret_installed),
     includeZapret2: Boolean(systemInfo.zapret2_installed),
     includeByedpi: Boolean(systemInfo.byedpi_installed),
-    includeInbounds: systemInfo.server_inbounds_enabled_count > 0,
   };
 }
 
@@ -426,8 +421,6 @@ async function fetchDiagnosticsProviderInfo({
         zapret_installed: uiState.capabilities.zapret_installed,
         zapret2_installed: uiState.capabilities.zapret2_installed,
         byedpi_installed: uiState.capabilities.byedpi_installed,
-        server_inbounds_enabled_count:
-          uiState.capabilities.server_inbounds_enabled_count,
       });
 
       if (!nextSystemInfo.zapret_installed) {
@@ -462,13 +455,11 @@ async function fetchDiagnosticsProviderInfo({
       return;
     }
 
-    const [zapretRuntime, zapret2Runtime, byedpiRuntime, inboundsConfig] =
-      await Promise.all([
-        ForkopShellMethods.checkZapretRuntime(),
-        ForkopShellMethods.checkZapret2Runtime(),
-        ForkopShellMethods.checkByedpiRuntime(),
-        ForkopShellMethods.checkInboundsConfig(),
-      ]);
+    const [zapretRuntime, zapret2Runtime, byedpiRuntime] = await Promise.all([
+      ForkopShellMethods.checkZapretRuntime(),
+      ForkopShellMethods.checkZapret2Runtime(),
+      ForkopShellMethods.checkByedpiRuntime(),
+    ]);
 
     if (requestId !== latestProviderInfoRequestId) {
       return;
@@ -487,9 +478,6 @@ async function fetchDiagnosticsProviderInfo({
       byedpi_installed: byedpiRuntime.success
         ? byedpiRuntime.data.byedpi_installed
         : currentSystemInfo.byedpi_installed,
-      server_inbounds_enabled_count: inboundsConfig.success
-        ? inboundsConfig.data.enabled_count
-        : -1,
     };
 
     if (!zapretRuntime.success) {
@@ -506,14 +494,6 @@ async function fetchDiagnosticsProviderInfo({
 
     if (!byedpiRuntime.success) {
       logger.error('[DIAGNOSTIC]', 'fetchByedpiRuntime failed', byedpiRuntime);
-    }
-
-    if (!inboundsConfig.success) {
-      logger.error(
-        '[DIAGNOSTIC]',
-        'fetchInboundsConfig failed',
-        inboundsConfig,
-      );
     }
 
     if (!nextSystemInfo.zapret_installed) {
@@ -555,7 +535,6 @@ async function fetchDiagnosticsProviderInfo({
         diagnosticsSystemInfo: {
           ...currentSystemInfo,
           providerInfoLoaded: true,
-          server_inbounds_enabled_count: -1,
         },
       });
     }
@@ -1092,9 +1071,6 @@ function getDiagnosticRunners(
   return [
     { code: DIAGNOSTICS_CHECKS.DNS, run: runDnsCheck },
     { code: DIAGNOSTICS_CHECKS.SINGBOX, run: runSingBoxCheck },
-    ...(providerOptions.includeInbounds
-      ? [{ code: DIAGNOSTICS_CHECKS.INBOUNDS, run: runInboundsCheck }]
-      : []),
     { code: DIAGNOSTICS_CHECKS.NFT, run: runNftCheck },
     ...(providerOptions.includeZapret
       ? [{ code: DIAGNOSTICS_CHECKS.ZAPRET, run: runZapretCheck }]

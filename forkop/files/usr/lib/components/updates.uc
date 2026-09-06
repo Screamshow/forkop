@@ -1401,7 +1401,8 @@ function normalize_component_name(component) {
 function valid_component_name(component) {
     component = normalize_component_name(component);
     return component == "forkop" || component == "sing_box" || component == "zapret" ||
-        component == "zapret2" || component == "byedpi" || component == "zapret_manager";
+        component == "zapret2" || component == "byedpi" || component == "zapret_manager" ||
+        component == "packet_steering" || component == "direct_proxy" || component == "torrserver_direct";
 }
 
 function component_update_check_cache_path(component) {

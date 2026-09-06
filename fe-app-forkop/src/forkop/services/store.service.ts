@@ -207,7 +207,13 @@ export interface StoreType {
     byedpi_installed: number;
     zapret_manager_installed: number;
     packet_steering_mode: string;
-    server_inbounds_enabled_count: number;
+    direct_proxy_enabled: number;
+    direct_proxy_address: string;
+    direct_proxy_port: string;
+    torrserver_running: number;
+    torrserver_direct_available: number;
+    torrserver_direct_enabled: number;
+    torrserver_direct_active: number;
     openwrt_version: string;
     device_model: string;
   };
@@ -233,6 +239,10 @@ export interface StoreType {
     zapretManagerRemove: { loading: boolean };
     packetSteeringEnable: { loading: boolean };
     packetSteeringRestore: { loading: boolean };
+    directProxyEnable: { loading: boolean };
+    directProxyDisable: { loading: boolean };
+    torrserverDirectEnable: { loading: boolean };
+    torrserverDirectDisable: { loading: boolean };
   };
   updatesChecks: Record<
     Forkop.ComponentName,

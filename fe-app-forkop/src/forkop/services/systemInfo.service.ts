@@ -23,7 +23,13 @@ const UNKNOWN_SYSTEM_INFO: StoreType['diagnosticsSystemInfo'] = {
   byedpi_installed: 0,
   zapret_manager_installed: 0,
   packet_steering_mode: '',
-  server_inbounds_enabled_count: -1,
+  direct_proxy_enabled: 0,
+  direct_proxy_address: '',
+  direct_proxy_port: '2080',
+  torrserver_running: 0,
+  torrserver_direct_available: 0,
+  torrserver_direct_enabled: 0,
+  torrserver_direct_active: 0,
   openwrt_version: _('unknown'),
   device_model: _('unknown'),
 };
@@ -80,8 +86,6 @@ export async function ensureSystemInfo({
             loading: false,
             loaded: true,
             providerInfoLoaded: true,
-            server_inbounds_enabled_count:
-              currentSystemInfo.server_inbounds_enabled_count,
             ...systemInfo.data,
           });
 
@@ -105,8 +109,6 @@ export async function ensureSystemInfo({
         zapret_installed: latestSystemInfo.zapret_installed,
         zapret2_installed: latestSystemInfo.zapret2_installed,
         byedpi_installed: latestSystemInfo.byedpi_installed,
-        server_inbounds_enabled_count:
-          latestSystemInfo.server_inbounds_enabled_count,
       };
 
       store.set({

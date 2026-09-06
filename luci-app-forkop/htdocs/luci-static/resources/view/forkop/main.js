@@ -1648,6 +1648,38 @@ function renderBookOpenTextIcon24() {
   );
 }
 
+// src/icons/renderCopyIcon24.ts
+function renderCopyIcon24() {
+  return svgEl(
+    "svg",
+    {
+      xmlns: "http://www.w3.org/2000/svg",
+      width: "24",
+      height: "24",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      class: "lucide lucide-copy-icon lucide-copy"
+    },
+    [
+      svgEl("rect", {
+        width: "14",
+        height: "14",
+        x: "8",
+        y: "8",
+        rx: "2",
+        ry: "2"
+      }),
+      svgEl("path", {
+        d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+      })
+    ]
+  );
+}
+
 // src/icons/renderDownloadIcon24.ts
 function renderDownloadIcon24() {
   const NS = "http://www.w3.org/2000/svg";
@@ -2352,12 +2384,10 @@ var Forkop;
     AvailableMethods2["CHECK_ZAPRET_RUNTIME"] = "check_zapret_runtime";
     AvailableMethods2["CHECK_ZAPRET2_RUNTIME"] = "check_zapret2_runtime";
     AvailableMethods2["CHECK_BYEDPI_RUNTIME"] = "check_byedpi_runtime";
-    AvailableMethods2["CHECK_INBOUNDS_CONFIG"] = "check_inbounds_config";
     AvailableMethods2["GET_STATUS"] = "get_status";
     AvailableMethods2["GET_OUTBOUND_METADATA"] = "get_outbound_metadata";
     AvailableMethods2["GET_SUBSCRIPTION_METADATA"] = "get_subscription_metadata";
     AvailableMethods2["CHECK_SING_BOX"] = "check_sing_box";
-    AvailableMethods2["CHECK_INBOUNDS"] = "check_inbounds";
     AvailableMethods2["GET_SING_BOX_STATUS"] = "get_sing_box_status";
     AvailableMethods2["GET_ZAPRET_STATUS"] = "get_zapret_status";
     AvailableMethods2["GET_ZAPRET2_STATUS"] = "get_zapret2_status";
@@ -2370,7 +2400,6 @@ var Forkop;
     AvailableMethods2["CHECK_LOGS"] = "check_logs";
     AvailableMethods2["CHECK_SING_BOX_LOGS"] = "check_sing_box_logs";
     AvailableMethods2["GET_SYSTEM_INFO"] = "get_system_info";
-    AvailableMethods2["GET_SERVER_CAPABILITIES"] = "get_server_capabilities";
     AvailableMethods2["GET_UI_CAPABILITIES"] = "get_ui_capabilities";
     AvailableMethods2["GET_UI_STATE"] = "get_ui_state";
     AvailableMethods2["SERVICE_ACTION_ASYNC"] = "service_action_async";
@@ -2571,9 +2600,6 @@ var ForkopShellMethods = {
   checkByedpiRuntime: async () => callBaseMethod(
     Forkop.AvailableMethods.CHECK_BYEDPI_RUNTIME
   ),
-  checkInboundsConfig: async () => callBaseMethod(
-    Forkop.AvailableMethods.CHECK_INBOUNDS_CONFIG
-  ),
   getStatus: async () => callBaseMethod(Forkop.AvailableMethods.GET_STATUS),
   getOutboundMetadata: async (section) => callBaseMethod(
     Forkop.AvailableMethods.GET_OUTBOUND_METADATA,
@@ -2585,9 +2611,6 @@ var ForkopShellMethods = {
   ),
   checkSingBox: async () => callBaseMethod(
     Forkop.AvailableMethods.CHECK_SING_BOX
-  ),
-  checkInbounds: async () => callBaseMethod(
-    Forkop.AvailableMethods.CHECK_INBOUNDS
   ),
   getSingBoxStatus: async () => callBaseMethod(
     Forkop.AvailableMethods.GET_SING_BOX_STATUS
@@ -2655,9 +2678,6 @@ var ForkopShellMethods = {
   checkSingBoxLogs: async () => callBaseMethod(Forkop.AvailableMethods.CHECK_SING_BOX_LOGS),
   getSystemInfo: async () => callBaseMethod(
     Forkop.AvailableMethods.GET_SYSTEM_INFO
-  ),
-  getServerCapabilities: async () => callBaseMethod(
-    Forkop.AvailableMethods.GET_SERVER_CAPABILITIES
   ),
   getUiCapabilities: async () => callBaseMethod(
     Forkop.AvailableMethods.GET_UI_CAPABILITIES
@@ -4159,7 +4179,6 @@ var DIAGNOSTICS_CHECKS = /* @__PURE__ */ ((DIAGNOSTICS_CHECKS2) => {
   DIAGNOSTICS_CHECKS2["BYEDPI"] = "BYEDPI";
   DIAGNOSTICS_CHECKS2["FAKEIP"] = "FAKEIP";
   DIAGNOSTICS_CHECKS2["OUTBOUNDS"] = "OUTBOUNDS";
-  DIAGNOSTICS_CHECKS2["INBOUNDS"] = "INBOUNDS";
   return DIAGNOSTICS_CHECKS2;
 })(DIAGNOSTICS_CHECKS || {});
 var DIAGNOSTICS_CHECKS_MAP = {
@@ -4202,11 +4221,6 @@ var DIAGNOSTICS_CHECKS_MAP = {
     order: 9,
     title: getCheckTitle("FakeIP"),
     code: "FAKEIP" /* FAKEIP */
-  },
-  ["INBOUNDS" /* INBOUNDS */]: {
-    order: 3,
-    title: getCheckTitle("Inbounds"),
-    code: "INBOUNDS" /* INBOUNDS */
   }
 };
 
@@ -4224,9 +4238,6 @@ function createDiagnosticCheck(code, description) {
 }
 function getDiagnosticsChecks(description, options = {}) {
   const checks = ["DNS" /* DNS */, "SINGBOX" /* SINGBOX */];
-  if (options.includeInbounds === true) {
-    checks.push("INBOUNDS" /* INBOUNDS */);
-  }
   checks.push("NFT" /* NFT */);
   if (options.includeZapret) {
     checks.push("ZAPRET" /* ZAPRET */);
@@ -4266,7 +4277,13 @@ var initialDiagnosticStore = {
     byedpi_installed: 0,
     zapret_manager_installed: 0,
     packet_steering_mode: "",
-    server_inbounds_enabled_count: -1,
+    direct_proxy_enabled: 0,
+    direct_proxy_address: "",
+    direct_proxy_port: "2080",
+    torrserver_running: 0,
+    torrserver_direct_available: 0,
+    torrserver_direct_enabled: 0,
+    torrserver_direct_active: 0,
     openwrt_version: "loading",
     device_model: "loading"
   },
@@ -4322,7 +4339,11 @@ var initialDiagnosticStore = {
     zapretManagerInstall: { loading: false },
     zapretManagerRemove: { loading: false },
     packetSteeringEnable: { loading: false },
-    packetSteeringRestore: { loading: false }
+    packetSteeringRestore: { loading: false },
+    directProxyEnable: { loading: false },
+    directProxyDisable: { loading: false },
+    torrserverDirectEnable: { loading: false },
+    torrserverDirectDisable: { loading: false }
   },
   updatesChecks: {
     forkop: { status: null, latest_version: "", release_url: "" },
@@ -4331,7 +4352,9 @@ var initialDiagnosticStore = {
     zapret2: { status: null, latest_version: "", release_url: "" },
     byedpi: { status: null, latest_version: "", release_url: "" },
     zapret_manager: { status: null, latest_version: "", release_url: "" },
-    packet_steering: { status: null, latest_version: "", release_url: "" }
+    packet_steering: { status: null, latest_version: "", release_url: "" },
+    direct_proxy: { status: null, latest_version: "", release_url: "" },
+    torrserver_direct: { status: null, latest_version: "", release_url: "" }
   }
 };
 
@@ -4681,7 +4704,11 @@ var componentActionKeyMap = {
   "zapret_manager:install": "zapretManagerInstall",
   "zapret_manager:remove": "zapretManagerRemove",
   "packet_steering:enable": "packetSteeringEnable",
-  "packet_steering:restore": "packetSteeringRestore"
+  "packet_steering:restore": "packetSteeringRestore",
+  "direct_proxy:enable": "directProxyEnable",
+  "direct_proxy:disable": "directProxyDisable",
+  "torrserver_direct:enable": "torrserverDirectEnable",
+  "torrserver_direct:disable": "torrserverDirectDisable"
 };
 function getComponentActionKey(component, action) {
   return componentActionKeyMap[`${component}:${action}`];
@@ -4792,7 +4819,11 @@ function getEmptyUpdatesActions() {
     zapretManagerInstall: { loading: false },
     zapretManagerRemove: { loading: false },
     packetSteeringEnable: { loading: false },
-    packetSteeringRestore: { loading: false }
+    packetSteeringRestore: { loading: false },
+    directProxyEnable: { loading: false },
+    directProxyDisable: { loading: false },
+    torrserverDirectEnable: { loading: false },
+    torrserverDirectDisable: { loading: false }
   };
 }
 function getEmptyDiagnosticsActions() {
@@ -4825,8 +4856,7 @@ function applyServiceState(uiState) {
     providerInfoLoaded: true,
     zapret_installed: uiState.capabilities.zapret_installed,
     zapret2_installed: uiState.capabilities.zapret2_installed,
-    byedpi_installed: uiState.capabilities.byedpi_installed,
-    server_inbounds_enabled_count: uiState.capabilities.server_inbounds_enabled_count
+    byedpi_installed: uiState.capabilities.byedpi_installed
   };
   nextSystemInfo.sing_box_extended = uiState.capabilities.sing_box_extended;
   nextSystemInfo.sing_box_tiny = uiState.capabilities.sing_box_tiny;
@@ -7846,177 +7876,6 @@ async function runSingBoxCheck() {
   }
 }
 
-// src/forkop/tabs/diagnostic/checks/runInboundsCheck.ts
-function serverPrefix(item) {
-  return `${item.label}:`;
-}
-function formatListen(item) {
-  return `${item.listen}:${Number(item.listen_port || 0)} [${item.required_proto}]`;
-}
-function getPortConflictItem(item) {
-  const key = `${serverPrefix(item)} ${_("Port conflict")}`;
-  if (item.port_conflict === 1) {
-    return {
-      state: "error",
-      key,
-      value: `${_("Used by")}: ${item.port_conflict_owners || _("unknown")}`
-    };
-  }
-  return {
-    state: "success",
-    key,
-    value: _("No conflict detected")
-  };
-}
-function getPublicHostItem(item, wanIp) {
-  const key = `${serverPrefix(item)} ${_("Public host")}`;
-  if (!item.public_host) {
-    return {
-      state: "warning",
-      key,
-      value: _("Not configured")
-    };
-  }
-  if (item.public_host_resolved === 0) {
-    return {
-      state: "warning",
-      key,
-      value: `${item.public_host} (${_("Does not resolve")})`
-    };
-  }
-  if (item.public_host_public === 0) {
-    return {
-      state: "warning",
-      key,
-      value: `${item.public_host} (${_("Not public")})`
-    };
-  }
-  if (item.public_host_matches_wan === 0) {
-    return {
-      state: "warning",
-      key,
-      value: `${item.public_host_ips || item.public_host} / ${_("WAN")}: ${wanIp || _("Not detected")}`
-    };
-  }
-  return {
-    state: "success",
-    key,
-    value: item.public_host
-  };
-}
-function getServerItems(item, wanIp) {
-  const prefix = serverPrefix(item);
-  const items = [
-    {
-      state: item.runtime_ok ? "success" : "error",
-      key: `${prefix} ${_("Generated inbound")}`,
-      value: `${item.tag} [${item.protocol}]`
-    }
-  ];
-  if (item.protocol === "tailscale") {
-    items.push(
-      {
-        state: "success",
-        key: `${prefix} ${_("Tailscale endpoint")}`,
-        value: _("No public firewall port required")
-      },
-      {
-        state: item.routes_configured ? "success" : "warning",
-        key: `${prefix} ${_("Routing rules")}`,
-        value: item.routing_mode
-      }
-    );
-    return items;
-  }
-  if (item.protocol === "json_inbound") {
-    items.push({
-      state: item.routes_configured ? "success" : "warning",
-      key: `${prefix} ${_("Routing rules")}`,
-      value: item.routing_mode
-    });
-    return items;
-  }
-  items.push(
-    {
-      state: item.listening === 1 && item.port_conflict !== 1 ? "success" : "error",
-      key: `${prefix} ${_("Listening port")}`,
-      value: formatListen(item)
-    },
-    getPortConflictItem(item),
-    {
-      state: item.firewall_required === 0 ? "warning" : item.firewall_open === 1 ? "success" : "error",
-      key: `${prefix} ${_("Firewall WAN port")}`,
-      value: item.firewall_required === 0 ? _("Not required for this listen address") : `${item.required_proto}/${Number(item.listen_port || 0)}`
-    },
-    {
-      state: item.routes_configured ? "success" : "warning",
-      key: `${prefix} ${_("Routing rules")}`,
-      value: item.routing_mode
-    },
-    getPublicHostItem(item, wanIp)
-  );
-  return items;
-}
-async function runInboundsCheck() {
-  const { order, title, code } = DIAGNOSTICS_CHECKS_MAP.INBOUNDS;
-  updateCheckStore({
-    order,
-    code,
-    title,
-    description: _("Checking, please wait"),
-    state: "loading",
-    items: []
-  });
-  const inboundsChecks = await ForkopShellMethods.checkInbounds();
-  if (!inboundsChecks.success) {
-    updateCheckStore({
-      order,
-      code,
-      title,
-      description: _("Cannot receive checks result"),
-      state: "error",
-      items: []
-    });
-    throw new Error("Inbounds checks failed");
-  }
-  const data = inboundsChecks.data;
-  if (!data.enabled_count) {
-    updateCheckStore({
-      order,
-      code,
-      title,
-      description: _("No enabled server inbounds configured"),
-      state: "skipped",
-      items: []
-    });
-    return;
-  }
-  const items = [
-    {
-      state: data.wan_public ? "success" : "warning",
-      key: _("WAN public IP"),
-      value: data.wan_ip || _("Not detected")
-    }
-  ];
-  data.items.forEach((item) => {
-    items.push(...getServerItems(item, data.wan_ip));
-  });
-  const allGood = items.every((item) => item.state === "success");
-  const atLeastOneGood = items.some((item) => item.state !== "error");
-  const { state, description } = getMeta({ atLeastOneGood, allGood });
-  updateCheckStore({
-    order,
-    code,
-    title,
-    description,
-    state,
-    items
-  });
-  if (!atLeastOneGood) {
-    throw new Error("Inbounds checks failed");
-  }
-}
-
 // src/forkop/tabs/diagnostic/checks/runNftCheck.ts
 async function runNftCheck() {
   const { order, title, code } = DIAGNOSTICS_CHECKS_MAP.NFT;
@@ -8454,7 +8313,13 @@ var UNKNOWN_SYSTEM_INFO = {
   byedpi_installed: 0,
   zapret_manager_installed: 0,
   packet_steering_mode: "",
-  server_inbounds_enabled_count: -1,
+  direct_proxy_enabled: 0,
+  direct_proxy_address: "",
+  direct_proxy_port: "2080",
+  torrserver_running: 0,
+  torrserver_direct_available: 0,
+  torrserver_direct_enabled: 0,
+  torrserver_direct_active: 0,
   openwrt_version: _("unknown"),
   device_model: _("unknown")
 };
@@ -8496,7 +8361,6 @@ async function ensureSystemInfo({
           loading: false,
           loaded: true,
           providerInfoLoaded: true,
-          server_inbounds_enabled_count: currentSystemInfo.server_inbounds_enabled_count,
           ...systemInfo.data
         });
         store.set({
@@ -8516,8 +8380,7 @@ async function ensureSystemInfo({
         providerInfoLoaded: latestSystemInfo.providerInfoLoaded,
         zapret_installed: latestSystemInfo.zapret_installed,
         zapret2_installed: latestSystemInfo.zapret2_installed,
-        byedpi_installed: latestSystemInfo.byedpi_installed,
-        server_inbounds_enabled_count: latestSystemInfo.server_inbounds_enabled_count
+        byedpi_installed: latestSystemInfo.byedpi_installed
       };
       store.set({
         diagnosticsSystemInfo: nextSystemInfo
@@ -9523,7 +9386,7 @@ function isDiagnosticsProviderOptions(value) {
   if (!isRecord(value)) {
     return false;
   }
-  return isOptionalBoolean(value.includeZapret) && isOptionalBoolean(value.includeZapret2) && isOptionalBoolean(value.includeByedpi) && isOptionalBoolean(value.includeInbounds);
+  return isOptionalBoolean(value.includeZapret) && isOptionalBoolean(value.includeZapret2) && isOptionalBoolean(value.includeByedpi);
 }
 function isDiagnosticCheckItem(value) {
   return isRecord(value) && CHECK_ITEM_STATES.includes(String(value.state)) && typeof value.key === "string" && typeof value.value === "string";
@@ -9804,8 +9667,7 @@ function getDiagnosticsProviderOptions(systemInfo = store.get().diagnosticsSyste
   return {
     includeZapret: Boolean(systemInfo.zapret_installed),
     includeZapret2: Boolean(systemInfo.zapret2_installed),
-    includeByedpi: Boolean(systemInfo.byedpi_installed),
-    includeInbounds: systemInfo.server_inbounds_enabled_count > 0
+    includeByedpi: Boolean(systemInfo.byedpi_installed)
   };
 }
 function getNotRunningDiagnosticsChecks() {
@@ -10047,8 +9909,7 @@ async function fetchDiagnosticsProviderInfo({
         sing_box_tailscale: uiState.capabilities.sing_box_tailscale,
         zapret_installed: uiState.capabilities.zapret_installed,
         zapret2_installed: uiState.capabilities.zapret2_installed,
-        byedpi_installed: uiState.capabilities.byedpi_installed,
-        server_inbounds_enabled_count: uiState.capabilities.server_inbounds_enabled_count
+        byedpi_installed: uiState.capabilities.byedpi_installed
       });
       if (!nextSystemInfo2.zapret_installed) {
         nextSystemInfo2.zapret_version = "not installed";
@@ -10074,11 +9935,10 @@ async function fetchDiagnosticsProviderInfo({
       store.set(nextState2);
       return;
     }
-    const [zapretRuntime, zapret2Runtime, byedpiRuntime, inboundsConfig] = await Promise.all([
+    const [zapretRuntime, zapret2Runtime, byedpiRuntime] = await Promise.all([
       ForkopShellMethods.checkZapretRuntime(),
       ForkopShellMethods.checkZapret2Runtime(),
-      ForkopShellMethods.checkByedpiRuntime(),
-      ForkopShellMethods.checkInboundsConfig()
+      ForkopShellMethods.checkByedpiRuntime()
     ]);
     if (requestId !== latestProviderInfoRequestId) {
       return;
@@ -10089,8 +9949,7 @@ async function fetchDiagnosticsProviderInfo({
       providerInfoLoaded: true,
       zapret_installed: zapretRuntime.success ? zapretRuntime.data.zapret_installed : currentSystemInfo.zapret_installed,
       zapret2_installed: zapret2Runtime.success ? zapret2Runtime.data.zapret2_installed : currentSystemInfo.zapret2_installed,
-      byedpi_installed: byedpiRuntime.success ? byedpiRuntime.data.byedpi_installed : currentSystemInfo.byedpi_installed,
-      server_inbounds_enabled_count: inboundsConfig.success ? inboundsConfig.data.enabled_count : -1
+      byedpi_installed: byedpiRuntime.success ? byedpiRuntime.data.byedpi_installed : currentSystemInfo.byedpi_installed
     };
     if (!zapretRuntime.success) {
       logger.error("[DIAGNOSTIC]", "fetchZapretRuntime failed", zapretRuntime);
@@ -10104,13 +9963,6 @@ async function fetchDiagnosticsProviderInfo({
     }
     if (!byedpiRuntime.success) {
       logger.error("[DIAGNOSTIC]", "fetchByedpiRuntime failed", byedpiRuntime);
-    }
-    if (!inboundsConfig.success) {
-      logger.error(
-        "[DIAGNOSTIC]",
-        "fetchInboundsConfig failed",
-        inboundsConfig
-      );
     }
     if (!nextSystemInfo.zapret_installed) {
       nextSystemInfo.zapret_version = "not installed";
@@ -10141,8 +9993,7 @@ async function fetchDiagnosticsProviderInfo({
       store.set({
         diagnosticsSystemInfo: {
           ...currentSystemInfo,
-          providerInfoLoaded: true,
-          server_inbounds_enabled_count: -1
+          providerInfoLoaded: true
         }
       });
     }
@@ -10584,7 +10435,6 @@ function getDiagnosticRunners(providerOptions) {
   return [
     { code: "DNS" /* DNS */, run: runDnsCheck },
     { code: "SINGBOX" /* SINGBOX */, run: runSingBoxCheck },
-    ...providerOptions.includeInbounds ? [{ code: "INBOUNDS" /* INBOUNDS */, run: runInboundsCheck }] : [],
     { code: "NFT" /* NFT */, run: runNftCheck },
     ...providerOptions.includeZapret ? [{ code: "ZAPRET" /* ZAPRET */, run: runZapretCheck }] : [],
     ...providerOptions.includeZapret2 ? [{ code: "ZAPRET2" /* ZAPRET2 */, run: runZapret2Check }] : [],
@@ -11112,7 +10962,6 @@ var searchQuery = "";
 var localDeviceChoices = {};
 var routeDisplayNames = {};
 var routeSections = [];
-var serverDisplayNames = {};
 var lastDeviceFilterSignature = "";
 var loading = true;
 var failed = false;
@@ -11169,7 +11018,6 @@ function buildRouteDisplayNames(sections) {
     "bypass-out": "Bypass",
     "direct-out": "direct"
   };
-  const serverMap = {};
   const routeSectionItems = [];
   const urltestsBySection = /* @__PURE__ */ new Map();
   sections.filter((section) => section[".type"] === "urltest").forEach((section) => {
@@ -11196,16 +11044,7 @@ function buildRouteDisplayNames(sections) {
       map[getUrlTestTag2(sectionName, id)] = displayName;
     });
   });
-  sections.filter((section) => section[".type"] === "server").filter((section) => section.enabled !== "0").forEach((section) => {
-    const sectionName = section[".name"];
-    const displayName = getDisplayName2(section);
-    if (!sectionName || !displayName) {
-      return;
-    }
-    serverMap[`server-${sectionName}-in`] = displayName;
-  });
   routeDisplayNames = map;
-  serverDisplayNames = serverMap;
   routeSections = routeSectionItems.sort(
     (a, b) => b.sectionName.length - a.sectionName.length
   );
@@ -11256,67 +11095,15 @@ function formatBytes2(value) {
 function getConnectionSourceIp(connection) {
   return normalizeString(connection.metadata?.sourceIP);
 }
-function getConnectionInboundTag(connection) {
-  const metadataType = normalizeString(connection.metadata?.type);
-  const metadataTypeParts = metadataType.split("/");
-  const metadataTag = normalizeString(
-    metadataTypeParts.length > 1 ? metadataTypeParts[metadataTypeParts.length - 1] : metadataType
-  );
-  if (metadataTag) {
-    return metadataTag;
-  }
-  const ruleInbound = normalizeString(connection.rule).match(
-    /(?:^|\s)inbound=([^\s]+)/
-  );
-  return normalizeString(ruleInbound?.[1]);
-}
-function getServerDisplayNameByInboundTag(tag) {
-  return normalizeString(serverDisplayNames[tag]);
-}
 function getDeviceName(ip) {
   return normalizeString(localDeviceChoices[ip]);
 }
-function getServerSourceNameByIp(ip) {
-  if (!ip) {
-    return "";
-  }
-  const connections = [
-    ...Array.from(activeConnections.values()),
-    ...Array.from(closedConnections.values())
-  ];
-  for (const connection of connections) {
-    if (getConnectionSourceIp(connection) !== ip) {
-      continue;
-    }
-    const serverName = getServerDisplayNameByInboundTag(
-      getConnectionInboundTag(connection)
-    );
-    if (serverName) {
-      return serverName;
-    }
-  }
-  return "";
-}
 function getDeviceFilterLabel(ip) {
-  const serverName = getServerSourceNameByIp(ip);
-  if (serverName) {
-    return serverName;
-  }
   const deviceName = getDeviceName(ip);
   return deviceName || ip;
 }
 function getSourceCellParts(connection) {
   const ip = getConnectionSourceIp(connection);
-  const inboundTag = getConnectionInboundTag(connection);
-  const serverName = getServerDisplayNameByInboundTag(inboundTag);
-  if (serverName) {
-    return {
-      primary: serverName,
-      ip: "",
-      copyValue: serverName,
-      searchValue: [serverName, ip, inboundTag].filter(Boolean).join(" ")
-    };
-  }
   const deviceName = getDeviceName(ip);
   if (deviceName) {
     return {
@@ -13366,6 +13153,13 @@ function patchSystemInfoAfterMutation(result) {
   if (result.component === "zapret_manager") {
     nextSystemInfo.zapret_manager_installed = result.action === "remove" ? 0 : 1;
   }
+  if (result.component === "direct_proxy") {
+    nextSystemInfo.direct_proxy_enabled = result.action === "enable" ? 1 : 0;
+  }
+  if (result.component === "torrserver_direct") {
+    nextSystemInfo.torrserver_direct_enabled = result.action === "enable" ? 1 : 0;
+    nextSystemInfo.torrserver_direct_active = result.action === "enable" ? 1 : 0;
+  }
   const normalizedSystemInfo = normalizeSingBoxVariantFields(nextSystemInfo);
   store.set({
     diagnosticsSystemInfo: normalizedSystemInfo
@@ -13675,6 +13469,14 @@ function getComponentCards() {
   const byedpiInstalled = Boolean(systemInfo.byedpi_installed);
   const zapretManagerInstalled = Boolean(systemInfo.zapret_manager_installed);
   const packetSteeringEnabled = systemInfo.packet_steering_mode === "2";
+  const directProxyEnabled = Boolean(systemInfo.direct_proxy_enabled);
+  const directProxyEndpoint = systemInfo.direct_proxy_address ? `${systemInfo.direct_proxy_address}:${systemInfo.direct_proxy_port || "2080"}` : "";
+  const torrserverRunning = Boolean(systemInfo.torrserver_running);
+  const torrserverDirectAvailable = Boolean(
+    systemInfo.torrserver_direct_available
+  );
+  const torrserverDirectEnabled = Boolean(systemInfo.torrserver_direct_enabled);
+  const torrserverDirectActive = Boolean(systemInfo.torrserver_direct_active);
   const singBoxExtended = Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
   const forkopActions = getInstalledUpdateActions(
@@ -13819,6 +13621,50 @@ function getComponentCards() {
           action: "enable"
         }
       ]
+    },
+    {
+      component: "direct_proxy",
+      column: 2,
+      title: _("Direct Proxy"),
+      version: directProxyEnabled ? `HTTP/SOCKS5 \xB7 ${directProxyEndpoint || _("Enabled")}` : _("Disabled"),
+      copyValue: directProxyEnabled ? directProxyEndpoint : void 0,
+      actions: [
+        directProxyEnabled ? {
+          key: "directProxyDisable",
+          text: _("Disable"),
+          icon: renderXIcon24,
+          component: "direct_proxy",
+          action: "disable"
+        } : {
+          key: "directProxyEnable",
+          text: _("Enable"),
+          icon: renderRotateCcwIcon24,
+          component: "direct_proxy",
+          action: "enable"
+        }
+      ]
+    },
+    {
+      component: "torrserver_direct",
+      column: 2,
+      title: _("TorrServer Direct"),
+      version: !torrserverRunning ? _("TorrServer not found") : !torrserverDirectAvailable ? _("Dedicated cgroup unavailable") : torrserverDirectEnabled && torrserverDirectActive ? _("Enabled") : torrserverDirectEnabled ? _("Waiting for TorrServer") : _("Disabled"),
+      actions: [
+        torrserverDirectEnabled ? {
+          key: "torrserverDirectDisable",
+          text: _("Disable"),
+          icon: renderXIcon24,
+          component: "torrserver_direct",
+          action: "disable"
+        } : {
+          key: "torrserverDirectEnable",
+          text: _("Enable"),
+          icon: renderRotateCcwIcon24,
+          component: "torrserver_direct",
+          action: "enable",
+          disabled: !torrserverDirectAvailable
+        }
+      ]
     }
   ];
 }
@@ -13940,7 +13786,7 @@ function renderComponentCard(card) {
       text: action.text,
       icon: action.icon,
       loading: loading2,
-      disabled: systemInfoLoading || serviceRuntimeActionLoading || anyActionLoading && !loading2,
+      disabled: action.disabled || systemInfoLoading || serviceRuntimeActionLoading || anyActionLoading && !loading2,
       onClick: () => void handleComponentAction(action)
     });
   });
@@ -13960,6 +13806,18 @@ function renderComponentCard(card) {
       E("div", { class: "fkp_updates-page__component__actions-main" }, [
         ...primaryButtons,
         ...dangerButtons
+      ])
+    );
+  }
+  if (card.copyValue) {
+    actionElements.push(
+      E("div", { class: "fkp_updates-page__component__actions-main" }, [
+        renderButton({
+          text: _("Copy address"),
+          icon: renderCopyIcon24,
+          disabled: anyActionLoading || serviceRuntimeActionLoading,
+          onClick: () => copyToClipboard(card.copyValue || "")
+        })
       ])
     );
   }

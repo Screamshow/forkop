@@ -23,6 +23,9 @@ const SOURCE_DNS_INBOUND_PORT = 1603;
 const SERVICE_MIXED_INBOUND_TAG = "service-mixed-in";
 const SERVICE_MIXED_INBOUND_ADDRESS = "127.0.0.1";
 const SERVICE_MIXED_INBOUND_PORT = 4534;
+const DIRECT_PROXY_INBOUND_TAG = "direct-proxy-in";
+const DIRECT_PROXY_OUTBOUND_TAG = "direct-proxy-out";
+const DIRECT_PROXY_DEFAULT_PORT = 2080;
 const DIRECT_OUTBOUND_TAG = "direct-out";
 const BYPASS_OUTBOUND_TAG = "bypass-out";
 const OUTBOUND_MARK = 134217728;
@@ -53,6 +56,8 @@ const RESERVED_TAGS = {
     [DNS_INBOUND_TAG]: true,
     [SOURCE_DNS_INBOUND_TAG]: true,
     [SERVICE_MIXED_INBOUND_TAG]: true,
+    [DIRECT_PROXY_INBOUND_TAG]: true,
+    [DIRECT_PROXY_OUTBOUND_TAG]: true,
     [DIRECT_OUTBOUND_TAG]: true,
     [BYPASS_OUTBOUND_TAG]: true
 };
@@ -78,14 +83,6 @@ function domain_resolver_tag(section_name) {
     return tag(section_name, "domain-resolver");
 }
 
-function server_inbound_tag(section_name) {
-    return tag("server-" + as_string(section_name), "in");
-}
-
-function tailscale_dns_server_tag(section_name) {
-    return tag("server-" + as_string(section_name), "tailscale-dns");
-}
-
 return {
     DNS_SERVER_TAG,
     FAKEIP_DNS_SERVER_TAG,
@@ -108,6 +105,9 @@ return {
     SERVICE_MIXED_INBOUND_TAG,
     SERVICE_MIXED_INBOUND_ADDRESS,
     SERVICE_MIXED_INBOUND_PORT,
+    DIRECT_PROXY_INBOUND_TAG,
+    DIRECT_PROXY_OUTBOUND_TAG,
+    DIRECT_PROXY_DEFAULT_PORT,
     DIRECT_OUTBOUND_TAG,
     BYPASS_OUTBOUND_TAG,
     OUTBOUND_MARK,
@@ -127,7 +127,5 @@ return {
     tag,
     inbound_tag,
     outbound_tag,
-    domain_resolver_tag,
-    server_inbound_tag,
-    tailscale_dns_server_tag
+    domain_resolver_tag
 };

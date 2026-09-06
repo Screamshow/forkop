@@ -229,10 +229,6 @@ export const ForkopShellMethods = {
     callBaseMethod<Forkop.ByedpiCheckResult>(
       Forkop.AvailableMethods.CHECK_BYEDPI_RUNTIME,
     ),
-  checkInboundsConfig: async () =>
-    callBaseMethod<Forkop.InboundsConfigCheckResult>(
-      Forkop.AvailableMethods.CHECK_INBOUNDS_CONFIG,
-    ),
   getStatus: async () =>
     callBaseMethod<Forkop.GetStatus>(Forkop.AvailableMethods.GET_STATUS),
   getOutboundMetadata: async (section: string) =>
@@ -248,10 +244,6 @@ export const ForkopShellMethods = {
   checkSingBox: async () =>
     callBaseMethod<Forkop.SingBoxCheckResult>(
       Forkop.AvailableMethods.CHECK_SING_BOX,
-    ),
-  checkInbounds: async () =>
-    callBaseMethod<Forkop.InboundsCheckResult>(
-      Forkop.AvailableMethods.CHECK_INBOUNDS,
     ),
   getSingBoxStatus: async () =>
     callBaseMethod<Forkop.GetSingBoxStatus>(
@@ -338,10 +330,6 @@ export const ForkopShellMethods = {
   getSystemInfo: async () =>
     callBaseMethod<Forkop.GetSystemInfo>(
       Forkop.AvailableMethods.GET_SYSTEM_INFO,
-    ),
-  getServerCapabilities: async () =>
-    callBaseMethod<Forkop.GetServerCapabilities>(
-      Forkop.AvailableMethods.GET_SERVER_CAPABILITIES,
     ),
   getUiCapabilities: async () =>
     callBaseMethod<Forkop.GetUiCapabilities>(

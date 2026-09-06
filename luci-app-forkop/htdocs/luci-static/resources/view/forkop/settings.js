@@ -110,6 +110,7 @@ function configureDnsList(option, choices, defaultValue) {
     option.value(key, _(label));
   });
   option.default = [defaultValue];
+  option.placeholder = _("-- Select --");
   option.rmempty = false;
   option.validate = function (_section_id, value) {
     const normalized = `${value || ""}`.trim();
@@ -156,27 +157,46 @@ function configureDnsDuration(
 function createSettingsContent(section, capabilities) {
   const renderSettings = section.render;
   section.render = function () {
-    return Promise.resolve(renderSettings.apply(this, arguments)).then((node) => {
-      const first = node.querySelector('[id$="-source_network_interfaces"]');
-      if (!first) return node;
+    return Promise.resolve(renderSettings.apply(this, arguments)).then(
+      (node) => {
+        const first = node.querySelector('[id$="-dns_rewrite_ttl"]');
+        if (!first) return node;
 
-      const details = E("details", {
-        class: "forkop-advanced-settings",
-        style: "border: 1px solid var(--border-color, #555); border-radius: 4px; margin: 1em 0; padding: 0.75em;",
-      }, [
-        E("summary", {
-          style: "cursor: pointer; font-weight: bold; padding: 0.25em;",
-        }, _("Advanced settings")),
-      ]);
-      first.parentNode.insertBefore(details, first);
-      while (details.nextElementSibling) {
-        details.appendChild(details.nextElementSibling);
-      }
-      // Keep invalid fields reachable even when the group was collapsed.
-      details.addEventListener("validation-failure", () => { details.open = true; });
-      details.addEventListener("invalid", () => { details.open = true; }, true);
-      return node;
-    });
+        const details = E(
+          "details",
+          {
+            class: "forkop-advanced-settings",
+            style:
+              "border: 1px solid var(--border-color, #555); border-radius: 4px; margin: 1em 0; padding: 0.75em;",
+          },
+          [
+            E(
+              "summary",
+              {
+                style: "cursor: pointer; font-weight: bold; padding: 0.25em;",
+              },
+              _("Advanced settings"),
+            ),
+          ],
+        );
+        first.parentNode.insertBefore(details, first);
+        while (details.nextElementSibling) {
+          details.appendChild(details.nextElementSibling);
+        }
+        // Keep invalid fields reachable even when the group was collapsed.
+        details.addEventListener("validation-failure", () => {
+          details.open = true;
+        });
+        details.addEventListener(
+          "invalid",
+          () => {
+            details.open = true;
+          },
+          true,
+        );
+        return node;
+      },
+    );
   };
   let o = section.option(
     form.ListValue,

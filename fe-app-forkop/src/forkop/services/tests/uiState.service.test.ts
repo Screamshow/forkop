@@ -36,7 +36,6 @@ function createUiState(
       zapret_installed: 1,
       zapret2_installed: 0,
       byedpi_installed: 1,
-      server_inbounds_enabled_count: 0,
       ...capabilities,
     },
     actions: {
@@ -125,7 +124,6 @@ describe('applyUiStateToStore', () => {
       zapret_installed: 1,
       zapret2_installed: 0,
       byedpi_installed: 1,
-      server_inbounds_enabled_count: 0,
     });
     expect(state.diagnosticsActions.start.loading).toBe(true);
     expect(state.sectionsWidget.subscriptionUpdatingSections).toEqual({
@@ -338,7 +336,6 @@ describe('applyUiStateToStore', () => {
         zapret_installed: 0,
         zapret2_installed: 0,
         byedpi_installed: 1,
-        server_inbounds_enabled_count: 0,
       },
     });
 
@@ -367,7 +364,6 @@ describe('applyUiStateToStore', () => {
           zapret_installed: 1,
           zapret2_installed: 1,
           byedpi_installed: 0,
-          server_inbounds_enabled_count: 2,
         },
       ),
     );
@@ -382,7 +378,6 @@ describe('applyUiStateToStore', () => {
       zapret_installed: 1,
       zapret2_installed: 1,
       byedpi_installed: 0,
-      server_inbounds_enabled_count: 2,
     });
     expect(
       store.get().updatesActions.singBoxInstallExtendedCompressed.loading,

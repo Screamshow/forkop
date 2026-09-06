@@ -34,6 +34,10 @@ function getEmptyUpdatesActions(): StoreType['updatesActions'] {
     zapretManagerRemove: { loading: false },
     packetSteeringEnable: { loading: false },
     packetSteeringRestore: { loading: false },
+    directProxyEnable: { loading: false },
+    directProxyDisable: { loading: false },
+    torrserverDirectEnable: { loading: false },
+    torrserverDirectDisable: { loading: false },
   };
 }
 
@@ -77,8 +81,6 @@ function applyServiceState(uiState: Forkop.UiState) {
     zapret_installed: uiState.capabilities.zapret_installed,
     zapret2_installed: uiState.capabilities.zapret2_installed,
     byedpi_installed: uiState.capabilities.byedpi_installed,
-    server_inbounds_enabled_count:
-      uiState.capabilities.server_inbounds_enabled_count,
   };
 
   nextSystemInfo.sing_box_extended = uiState.capabilities.sing_box_extended;

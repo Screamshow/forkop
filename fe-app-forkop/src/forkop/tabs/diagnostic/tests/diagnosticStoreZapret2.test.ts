@@ -8,7 +8,6 @@ describe('diagnostic store provider checks', () => {
       includeZapret: true,
       includeZapret2: true,
       includeByedpi: true,
-      includeInbounds: false,
     });
 
     expect(checks.map((check) => check.code)).toEqual([
@@ -28,29 +27,10 @@ describe('diagnostic store provider checks', () => {
       includeZapret: true,
       includeZapret2: false,
       includeByedpi: true,
-      includeInbounds: false,
     });
 
     expect(checks.map((check) => check.code)).not.toContain(
       DIAGNOSTICS_CHECKS.ZAPRET2,
-    );
-  });
-
-  it('keeps Inbounds hidden until enabled inbounds are confirmed', () => {
-    const checks = getDiagnosticsChecks('Pending');
-
-    expect(checks.map((check) => check.code)).not.toContain(
-      DIAGNOSTICS_CHECKS.INBOUNDS,
-    );
-  });
-
-  it('shows Inbounds when enabled inbounds are confirmed', () => {
-    const checks = getDiagnosticsChecks('Pending', {
-      includeInbounds: true,
-    });
-
-    expect(checks.map((check) => check.code)).toContain(
-      DIAGNOSTICS_CHECKS.INBOUNDS,
     );
   });
 });

@@ -35,8 +35,6 @@ export namespace Forkop {
   // check_nft               Check NFT rules
   // check_nft_rules         Check NFT rules status
   // check_sing_box          Check sing-box installation and status
-  // check_inbounds_config   Check whether enabled server inbounds are configured
-  // check_inbounds          Check server inbounds from the Servers tab
   // check_logs              Show forkop logs from system journal
   // check_sing_box_logs     Show sing-box logs
   // check_fakeip            Test sing-box FakeIP DNS
@@ -58,12 +56,10 @@ export namespace Forkop {
     CHECK_ZAPRET_RUNTIME = 'check_zapret_runtime',
     CHECK_ZAPRET2_RUNTIME = 'check_zapret2_runtime',
     CHECK_BYEDPI_RUNTIME = 'check_byedpi_runtime',
-    CHECK_INBOUNDS_CONFIG = 'check_inbounds_config',
     GET_STATUS = 'get_status',
     GET_OUTBOUND_METADATA = 'get_outbound_metadata',
     GET_SUBSCRIPTION_METADATA = 'get_subscription_metadata',
     CHECK_SING_BOX = 'check_sing_box',
-    CHECK_INBOUNDS = 'check_inbounds',
     GET_SING_BOX_STATUS = 'get_sing_box_status',
     GET_ZAPRET_STATUS = 'get_zapret_status',
     GET_ZAPRET2_STATUS = 'get_zapret2_status',
@@ -76,7 +72,6 @@ export namespace Forkop {
     CHECK_LOGS = 'check_logs',
     CHECK_SING_BOX_LOGS = 'check_sing_box_logs',
     GET_SYSTEM_INFO = 'get_system_info',
-    GET_SERVER_CAPABILITIES = 'get_server_capabilities',
     GET_UI_CAPABILITIES = 'get_ui_capabilities',
     GET_UI_STATE = 'get_ui_state',
     SERVICE_ACTION_ASYNC = 'service_action_async',
@@ -264,24 +259,6 @@ export namespace Forkop {
     urltest_settings?: string;
     priority_groups?: string[];
     priority_group_settings?: string;
-    dashboard_filter_mode?: 'disabled' | 'exclude' | 'include' | 'mixed';
-    dashboard_detect_server_country?: 'flag_emoji' | 'country_is';
-    dashboard_include_countries?: string[];
-    dashboard_include_outbounds?: string[];
-    dashboard_include_regex?: string[];
-    dashboard_include_proxy_parameters?: '0' | '1';
-    dashboard_include_protocols?: string[];
-    dashboard_include_transports?: string[];
-    dashboard_include_securities?: string[];
-    dashboard_include_groups?: string[];
-    dashboard_exclude_countries?: string[];
-    dashboard_exclude_outbounds?: string[];
-    dashboard_exclude_regex?: string[];
-    dashboard_exclude_proxy_parameters?: '0' | '1';
-    dashboard_exclude_protocols?: string[];
-    dashboard_exclude_transports?: string[];
-    dashboard_exclude_securities?: string[];
-    dashboard_exclude_groups?: string[];
     urltest_proxy_links?: string[];
     subscription_url?: string;
     subscription_user_agent?: string;
@@ -401,46 +378,6 @@ export namespace Forkop {
     sing_box_ports_listening: 0 | 1;
   }
 
-  export interface InboundCheckItem {
-    section: string;
-    label: string;
-    protocol: string;
-    routing_mode: string;
-    tag: string;
-    listen: string;
-    listen_port: number;
-    public_host: string;
-    public_host_ips: string;
-    expected_type: string;
-    required_proto: string;
-    runtime_exists: 0 | 1;
-    runtime_type: string;
-    runtime_listen: string;
-    runtime_port: number;
-    runtime_ok: 0 | 1;
-    listening: -1 | 0 | 1;
-    firewall_required: 0 | 1;
-    firewall_open: -1 | 0 | 1;
-    port_conflict: 0 | 1;
-    port_conflict_owners: string;
-    routes_configured: 0 | 1;
-    public_host_resolved: -1 | 0 | 1;
-    public_host_public: -1 | 0 | 1;
-    public_host_matches_wan: -1 | 0 | 1;
-  }
-
-  export interface InboundsCheckResult {
-    enabled_count: number;
-    config_path: string;
-    wan_ip: string;
-    wan_public: 0 | 1;
-    items: InboundCheckItem[];
-  }
-
-  export interface InboundsConfigCheckResult {
-    enabled_count: number;
-  }
-
   export interface FakeIPCheckResult {
     fakeip: boolean;
     IP: string;
@@ -482,15 +419,16 @@ export namespace Forkop {
     byedpi_installed: 0 | 1;
     zapret_manager_installed: 0 | 1;
     packet_steering_mode: string;
+    direct_proxy_enabled: 0 | 1;
+    direct_proxy_address: string;
+    direct_proxy_port: string;
+    torrserver_running: 0 | 1;
+    torrserver_direct_available: 0 | 1;
+    torrserver_direct_enabled: 0 | 1;
+    torrserver_direct_active: 0 | 1;
     openwrt_version: string;
     device_model: string;
     generated_at?: number;
-  }
-
-  export interface GetServerCapabilities {
-    sing_box_extended: 0 | 1;
-    sing_box_tiny: 0 | 1;
-    sing_box_tailscale: 0 | 1;
   }
 
   export interface GetUiCapabilities {
@@ -501,7 +439,6 @@ export namespace Forkop {
     zapret_installed: 0 | 1;
     zapret2_installed: 0 | 1;
     byedpi_installed: 0 | 1;
-    server_inbounds_enabled_count: number;
   }
 
   export type ServiceAction = 'start' | 'stop' | 'restart' | 'reload';
@@ -559,7 +496,9 @@ export namespace Forkop {
     | 'zapret2'
     | 'byedpi'
     | 'zapret_manager'
-    | 'packet_steering';
+    | 'packet_steering'
+    | 'direct_proxy'
+    | 'torrserver_direct';
 
   export type ComponentAction =
     | 'check_update'
@@ -570,6 +509,7 @@ export namespace Forkop {
     | 'install_tiny'
     | 'install_stable'
     | 'enable'
+    | 'disable'
     | 'restore';
 
   export interface ComponentActionResult {

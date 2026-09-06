@@ -8,7 +8,6 @@ export interface DiagnosticsProviderOptions {
   includeZapret?: boolean;
   includeZapret2?: boolean;
   includeByedpi?: boolean;
-  includeInbounds?: boolean;
 }
 
 function createDiagnosticCheck(
@@ -32,10 +31,6 @@ export function getDiagnosticsChecks(
   options: DiagnosticsProviderOptions = {},
 ): Array<IDiagnosticsChecksStoreItem> {
   const checks = [DIAGNOSTICS_CHECKS.DNS, DIAGNOSTICS_CHECKS.SINGBOX];
-
-  if (options.includeInbounds === true) {
-    checks.push(DIAGNOSTICS_CHECKS.INBOUNDS);
-  }
 
   checks.push(DIAGNOSTICS_CHECKS.NFT);
 
@@ -93,7 +88,13 @@ export const initialDiagnosticStore: Pick<
     byedpi_installed: 0,
     zapret_manager_installed: 0,
     packet_steering_mode: '',
-    server_inbounds_enabled_count: -1,
+    direct_proxy_enabled: 0,
+    direct_proxy_address: '',
+    direct_proxy_port: '2080',
+    torrserver_running: 0,
+    torrserver_direct_available: 0,
+    torrserver_direct_enabled: 0,
+    torrserver_direct_active: 0,
     openwrt_version: 'loading',
     device_model: 'loading',
   },
@@ -150,6 +151,10 @@ export const initialDiagnosticStore: Pick<
     zapretManagerRemove: { loading: false },
     packetSteeringEnable: { loading: false },
     packetSteeringRestore: { loading: false },
+    directProxyEnable: { loading: false },
+    directProxyDisable: { loading: false },
+    torrserverDirectEnable: { loading: false },
+    torrserverDirectDisable: { loading: false },
   },
   updatesChecks: {
     forkop: { status: null, latest_version: '', release_url: '' },
@@ -159,5 +164,7 @@ export const initialDiagnosticStore: Pick<
     byedpi: { status: null, latest_version: '', release_url: '' },
     zapret_manager: { status: null, latest_version: '', release_url: '' },
     packet_steering: { status: null, latest_version: '', release_url: '' },
+    direct_proxy: { status: null, latest_version: '', release_url: '' },
+    torrserver_direct: { status: null, latest_version: '', release_url: '' },
   },
 };

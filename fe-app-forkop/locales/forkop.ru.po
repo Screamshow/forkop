@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-03 08:41+0300\n"
-"PO-Revision-Date: 2026-09-03 08:41+0300\n"
+"POT-Creation-Date: 2026-09-06 14:41+0300\n"
+"PO-Revision-Date: 2026-09-06 14:41+0300\n"
 "Last-Translator: Screamshow\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -74,9 +74,6 @@ msgstr "Добавьте URL или локальные пути к списка�
 msgid "Add URLs or local paths to .srs / .json lists. Subnets are ignored by default."
 msgstr "Добавьте URL или локальные пути к спискам .srs / .json. Подсети по умолчанию игнорируются."
 
-msgid "Add URLTest / Priority group"
-msgstr "Добавить URLTest / Приоритет группу"
-
 msgid "Additional marking rules found"
 msgstr "Найдены дополнительные правила маркировки"
 
@@ -86,11 +83,8 @@ msgstr "Дополнительно исключать серверы по про
 msgid "Additionally filter servers by protocol, transport, and security. Add only servers matching the specified parameters."
 msgstr "Дополнительно отбирать серверы по протоколу, транспорту и защите. Добавлять только серверы, совпавшие по указанным параметрам."
 
-msgid "Additionally hide servers by protocol, transport, and security. Hide servers matching the specified parameters."
-msgstr "Дополнительно скрывать серверы по протоколу, транспорту и защите. Скрывать серверы, совпавшие по указанным параметрам."
-
-msgid "Additionally show servers by protocol, transport, and security. Add only servers matching the specified parameters."
-msgstr "Дополнительно показывать серверы по протоколу, транспорту и защите. Добавлять только серверы, совпавшие по указанным параметрам."
+msgid "Advanced settings"
+msgstr "Дополнительные настройки"
 
 msgid "All"
 msgstr "Все"
@@ -126,10 +120,10 @@ msgid "Apply section rules only to the specified local IP addresses"
 msgstr "Применять правила секции только к указанным локальным IP-адресам"
 
 msgid "Applying Forkop configuration…"
-msgstr ""
+msgstr "Применение конфигурации Forkop…"
 
 msgid "Applying…"
-msgstr ""
+msgstr "Применение…"
 
 msgid "At least one valid domain must be specified."
 msgstr "Нужно указать хотя бы один корректный домен."
@@ -222,7 +216,7 @@ msgid "Cache file path cannot be empty"
 msgstr "Путь к файлу кэша не может быть пустым"
 
 msgid "Cancel"
-msgstr ""
+msgstr "Отмена"
 
 msgid "Cannot receive checks result"
 msgstr "Не удалось получить результаты проверки"
@@ -314,8 +308,17 @@ msgstr "Скопировано"
 msgid "Copy"
 msgstr "Копировать"
 
+msgid "Copy address"
+msgstr "Копировать адрес"
+
 msgid "Could not compare FakeIP and control public IPs"
 msgstr "Не удалось сравнить публичные IP FakeIP и контрольной проверки"
+
+msgid "Could not confirm completion. Check the removal log before retrying."
+msgstr "Не удалось подтвердить завершение. Перед повторной попыткой проверьте журнал удаления."
+
+msgid "Could not start removal. Another component action may be running."
+msgstr "Не удалось начать удаление. Возможно, выполняется другая операция с компонентами."
 
 msgid "Current section cannot be used as its own transit section"
 msgstr "Текущую секцию нельзя использовать как транзит для самой себя"
@@ -334,6 +337,9 @@ msgstr "Дашборд"
 
 msgid "Dashboard currently unavailable"
 msgstr "Дашборд сейчас недоступен"
+
+msgid "Dedicated cgroup unavailable"
+msgstr "Отдельная cgroup недоступна"
 
 msgid "Default address for checking server availability and latency. URLTest uses its own address."
 msgstr "Адрес по умолчанию для проверки доступности и задержки серверов. Для URLTest используется собственный адрес."
@@ -368,6 +374,12 @@ msgstr "Диагностика"
 msgid "Direct connection"
 msgstr "Прямое подключение"
 
+msgid "Direct Proxy"
+msgstr "Прямой прокси"
+
+msgid "Disable"
+msgstr "Отключить"
+
 msgid "Disable autostart"
 msgstr "Отключить автостарт"
 
@@ -376,6 +388,9 @@ msgstr "Отключить QUIC"
 
 msgid "Disable the QUIC protocol to improve compatibility or fix issues with video streaming"
 msgstr "Отключить QUIC протокол для улучшения совместимости или исправления видео стриминга"
+
+msgid "Disabled"
+msgstr "Выключен"
 
 msgid "Disabling interception is incompatible with action=zapret2 because Forkop sends matched traffic through NFQUEUE."
 msgstr "Отключение перехвата несовместимо с action=zapret2, потому что Forkop отправляет совпавший трафик через NFQUEUE."
@@ -458,9 +473,6 @@ msgstr "Не тестировать серверы с одним из выбра
 msgid "Do not test specified servers."
 msgstr "Не тестировать указанные серверы."
 
-msgid "Does not resolve"
-msgstr "Не резолвится"
-
 msgid "Domain and IP lists"
 msgstr "Списки доменов и IP"
 
@@ -525,13 +537,13 @@ msgid "Duplicate value"
 msgstr "Дублирующееся значение"
 
 msgid "Edit"
-msgstr ""
+msgstr "Изменить"
 
 msgid "Edit rule action"
 msgstr "Изменить"
 
 msgid "Edit URLTest"
-msgstr ""
+msgstr "Изменить URLTest"
 
 msgid "Enable"
 msgstr "Включить"
@@ -565,6 +577,9 @@ msgstr "Включить YACD"
 
 msgid "Enable YACD WAN Access"
 msgstr "Включить доступ YACD WAN"
+
+msgid "Enabled"
+msgstr "Включен"
 
 msgid "Enter a complete sing-box outbound object"
 msgstr "Введите полный объект outbound sing-box"
@@ -608,9 +623,6 @@ msgstr "Исключить из этого уровня серверы с одн
 msgid "Exclude servers with one of the selected transports from this level."
 msgstr "Исключить из этого уровня серверы с одним из выбранных транспортов."
 
-msgid "Exclude URLTest / Priority group"
-msgstr "Исключить URLTest / Приоритет группу"
-
 msgid "Expecting: %s"
 msgstr "Ожидается: %s"
 
@@ -642,7 +654,7 @@ msgid "Failed to execute"
 msgstr "Не удалось выполнить"
 
 msgid "Failed to save URLTest settings"
-msgstr ""
+msgstr "Не удалось сохранить настройки URLTest"
 
 msgid "Failed to update subscriptions"
 msgstr "Не удалось обновить подписки"
@@ -661,12 +673,6 @@ msgstr "Интервал поиска более быстрого сервера
 
 msgid "Fastest"
 msgstr "Самый быстрый"
-
-msgid "Filter the servers that will be displayed on the dashboard."
-msgstr "Отфильтровать серверы, которые будут отображаться в дашборде."
-
-msgid "Firewall WAN port"
-msgstr "Порт в firewall для WAN"
 
 msgid "Fix the highlighted fields and save again."
 msgstr "Исправьте подсвеченные поля и сохраните снова."
@@ -701,6 +707,9 @@ msgstr "Служба Forkop остановлена. Запустите серв�
 msgid "Forkop will not modify your DHCP configuration"
 msgstr "Forkop не будет изменять вашу конфигурацию DHCP"
 
+msgid "Forkop X and sing-box have been removed. Original repositories have been restored."
+msgstr "Forkop X и sing-box удалены. Исходные репозитории восстановлены."
+
 msgid "Forkop X Settings"
 msgstr "Настройки Forkop X"
 
@@ -734,11 +743,11 @@ msgstr "NFQWS2 Forkop не запущен"
 msgid "Forkop-managed nfqws2 runtime is ready"
 msgstr "NFQWS2 Forkop готов"
 
+msgid "Full removal"
+msgstr "Полное удаление"
+
 msgid "Fuzzing is not supported here because Forkop needs deterministic runtime validation."
 msgstr "Fuzzing здесь не поддерживается, потому что Forkop нужна предсказуемая runtime-валидация."
-
-msgid "Generated inbound"
-msgstr "Созданный inbound"
 
 msgid "Get global check"
 msgstr "Получить глобальную проверку"
@@ -748,27 +757,6 @@ msgstr "Глобальная проверка"
 
 msgid "Global check could not be collected."
 msgstr "Не удалось собрать общую проверку."
-
-msgid "Hide selected servers."
-msgstr "Скрывать выбранные серверы."
-
-msgid "Hide servers from selected groups without repeating their filtering criteria."
-msgstr "Скрывать серверы из выбранных групп без повторения их параметров фильтрации."
-
-msgid "Hide servers from the specified countries."
-msgstr "Скрывать серверы из указанных стран."
-
-msgid "Hide servers whose names match the expression."
-msgstr "Скрывать серверы, имена которых совпадают с выражением."
-
-msgid "Hide servers with one of the selected protocols."
-msgstr "Скрывать серверы с одним из выбранных протоколов."
-
-msgid "Hide servers with one of the selected security types."
-msgstr "Скрывать серверы с одним из выбранных типов защиты."
-
-msgid "Hide servers with one of the selected transports."
-msgstr "Скрывать серверы с одним из выбранных транспортов."
 
 msgid "Hide values"
 msgstr "Скрывать значения"
@@ -864,7 +852,7 @@ msgid "Invalid DNS server format. Examples: 8.8.8.8 or dns.example.com or dns.ex
 msgstr "Неверный формат DNS-сервера. Примеры: 8.8.8.8, dns.example.com или dns.example.com/nicedns для DoH"
 
 msgid "Invalid DNS server port"
-msgstr ""
+msgstr "Некорректный порт DNS-сервера"
 
 msgid "Invalid domain address"
 msgstr "Неверный домен"
@@ -1073,9 +1061,6 @@ msgstr "Список должен быть HTTP(S) URL или локальным
 msgid "List Update Frequency"
 msgstr "Частота обновления списков"
 
-msgid "Listening port"
-msgstr "Слушающий порт"
-
 msgid "Loading connections"
 msgstr "Загрузка подключений"
 
@@ -1172,17 +1157,8 @@ msgstr "Нет активных подключений"
 msgid "No closed connections"
 msgstr "Нет закрытых подключений"
 
-msgid "No conflict detected"
-msgstr "Конфликт не обнаружен"
-
-msgid "No enabled server inbounds configured"
-msgstr "Включённые серверные inbounds не настроены"
-
 msgid "No other marking rules found"
 msgstr "Другие правила маркировки не найдены"
-
-msgid "No public firewall port required"
-msgstr "Публичный порт в firewall не требуется"
 
 msgid "No rules use ByeDPI"
 msgstr "Нет правил, использующих ByeDPI"
@@ -1202,23 +1178,11 @@ msgstr "Узлы"
 msgid "Normal mode"
 msgstr "Обычный режим"
 
-msgid "Not configured"
-msgstr "Не настроено"
-
-msgid "Not detected"
-msgstr "Не обнаружено"
-
 msgid "Not implement yet"
 msgstr "Ещё не реализовано"
 
 msgid "Not installed"
 msgstr "Не установлено"
-
-msgid "Not public"
-msgstr "Не публичный"
-
-msgid "Not required for this listen address"
-msgstr "Не требуется для этого адреса прослушивания"
 
 msgid "Not responding"
 msgstr "Не отвечает"
@@ -1251,7 +1215,10 @@ msgid "Only the specified servers."
 msgstr "Только указанные серверы."
 
 msgid "Open"
-msgstr ""
+msgstr "Открыть"
+
+msgid "Open LuCI"
+msgstr "Открыть LuCI"
 
 msgid "Open priority settings and enter a display name"
 msgstr "Откройте настройки приоритета и укажите отображаемое имя"
@@ -1270,6 +1237,9 @@ msgstr "Необязательное значение здесь нужно пе
 
 msgid "Optional values must be attached with '=' here; a separate token would be ignored by nfqws2."
 msgstr "Необязательные значения здесь должны задаваться через '='; отдельный токен будет проигнорирован nfqws2."
+
+msgid "Original repositories could not be restored. Removal was cancelled before deleting packages."
+msgstr "Не удалось восстановить исходные репозитории. Удаление отменено до удаления пакетов."
 
 msgid "outbounds must be a non-empty array of strings"
 msgstr "outbounds должен быть непустым массивом строк"
@@ -1306,9 +1276,6 @@ msgstr "Закрепить в дашборде"
 
 msgid "Port cannot be empty"
 msgstr "Порт не может быть пустым"
-
-msgid "Port conflict"
-msgstr "Конфликт порта"
 
 msgid "Port for the local mixed proxy of this section"
 msgstr "Порт локального смешанного прокси для этой секции"
@@ -1355,20 +1322,32 @@ msgstr "Профиль"
 msgid "Protocol"
 msgstr "Протокол"
 
-msgid "Public host"
-msgstr "Публичный хост"
-
 msgid "Refill"
 msgstr "Сброс"
 
 msgid "Refreshing Dashboard…"
-msgstr ""
+msgstr "Обновление дашборда…"
 
 msgid "Regular expression must not contain spaces or commas"
 msgstr "Регулярное выражение не должно содержать пробелы или запятые"
 
+msgid "Removal did not finish. See the removal log in /tmp/forkop-uninstall.*/output.log."
+msgstr "Удаление не завершено. Подробности в журнале /tmp/forkop-uninstall.*/output.log."
+
 msgid "Remove"
 msgstr "Удалить"
+
+msgid "Remove Forkop X and sing-box with their settings and restore the original device repositories."
+msgstr "Удалить Forkop X и sing-box вместе с настройками и восстановить исходные репозитории устройства."
+
+msgid "Remove Forkop X completely"
+msgstr "Полностью удалить Forkop X"
+
+msgid "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?"
+msgstr "Удалить Forkop X, sing-box, их настройки и кэш и восстановить исходные репозитории устройства?"
+
+msgid "Remove permanently"
+msgstr "Удалить безвозвратно"
 
 msgid "Remove servers from the specified countries from this level."
 msgstr "Исключить из уровня серверы из указанных стран."
@@ -1379,8 +1358,11 @@ msgstr "Исключить из уровня серверы, имена кото
 msgid "Remove the specified servers from this level."
 msgstr "Исключить из уровня указанные серверы."
 
+msgid "Removing Forkop X…"
+msgstr "Удаление Forkop X…"
+
 msgid "Removing user settings…"
-msgstr ""
+msgstr "Удаление пользовательских настроек…"
 
 msgid "Require a username and password for the local mixed proxy"
 msgstr "Требовать логин и пароль для локального смешанного прокси"
@@ -1421,9 +1403,6 @@ msgstr "Маршрутизировать основные DNS-запросы ч�
 msgid "Route requests to this DNS server through another section."
 msgstr "Направлять запросы к этому DNS-серверу через другую секцию."
 
-msgid "Routing rules"
-msgstr "Правила маршрутизации"
-
 msgid "Rule set must be an HTTP(S) URL or a local .srs / .json path"
 msgstr "Набор правил должен быть HTTP(S) URL или локальным путём .srs / .json"
 
@@ -1458,7 +1437,7 @@ msgid "Save"
 msgstr "Сохранить"
 
 msgid "Saving URLTest settings…"
-msgstr ""
+msgstr "Сохранение настроек URLTest…"
 
 msgid "Search"
 msgstr "Поиск"
@@ -1498,9 +1477,6 @@ msgstr "Выберите транзитную секцию"
 
 msgid "Select an existing network interface"
 msgstr "Выберите существующий сетевой интерфейс"
-
-msgid "Select an existing URLTest or Priority group"
-msgstr "Выберите существующую URLTest или Приоритет группу"
 
 msgid "Select an intermediate section"
 msgstr "Выберите промежуточную секцию"
@@ -1556,9 +1532,6 @@ msgstr "Серверный outbound должен содержать числов
 msgid "server_port must be a number from 1 to 65535"
 msgstr "server_port должен быть числом от 1 до 65535"
 
-msgid "Servers on dashboard"
-msgstr "Серверы в дашборде"
-
 msgid "Service action failed"
 msgstr "Действие сервиса не выполнено"
 
@@ -1570,27 +1543,6 @@ msgstr "Информация о сервисах"
 
 msgid "Settings"
 msgstr "Настройки"
-
-msgid "Show only selected servers."
-msgstr "Показывать только выбранные серверы."
-
-msgid "Show only servers with one of the selected protocols."
-msgstr "Показывать только серверы с одним из выбранных протоколов."
-
-msgid "Show only servers with one of the selected security types."
-msgstr "Показывать только серверы с одним из выбранных типов защиты."
-
-msgid "Show only servers with one of the selected transports."
-msgstr "Показывать только серверы с одним из выбранных транспортов."
-
-msgid "Show servers from selected groups without repeating their filtering criteria."
-msgstr "Показывать серверы из выбранных групп без повторения их параметров фильтрации."
-
-msgid "Show servers only from the specified countries."
-msgstr "Показывать серверы только из указанных стран."
-
-msgid "Show servers whose names match the expression."
-msgstr "Показывать серверы, имена которых совпадают с выражением."
 
 msgid "Show sing-box config"
 msgstr "Показать sing-box конфигурацию"
@@ -1712,9 +1664,6 @@ msgstr "Системная информация"
 msgid "Table exist"
 msgstr "Таблица существует"
 
-msgid "Tailscale endpoint"
-msgstr "Tailscale endpoint"
-
 msgid "Test latency"
 msgstr "Тестирование задержки"
 
@@ -1778,6 +1727,9 @@ msgstr "Этот флаг не принимает значение."
 msgid "This option requires a value."
 msgstr "Этой опции требуется значение."
 
+msgid "This permanently deletes saved sections and subscriptions. Other components remain installed."
+msgstr "Сохранённые секции и подписки будут удалены безвозвратно. Остальные компоненты останутся установленными."
+
 msgid "This subscription provider is not supported"
 msgstr "Этот провайдер подписок не поддерживается"
 
@@ -1795,6 +1747,12 @@ msgstr "Допуск"
 
 msgid "Top level has the highest priority; lower levels are used as fallback"
 msgstr "Верхний уровень имеет самый высокий приоритет; нижние уровни используются как резерв"
+
+msgid "TorrServer Direct"
+msgstr "Прямой TorrServer"
+
+msgid "TorrServer not found"
+msgstr "TorrServer не найден"
 
 msgid "Traffic"
 msgstr "Трафик"
@@ -1923,10 +1881,10 @@ msgid "URLTest settings"
 msgstr "Настройки URLTest"
 
 msgid "URLTest settings reset"
-msgstr ""
+msgstr "Настройки URLTest сброшены"
 
 msgid "URLTest settings saved"
-msgstr ""
+msgstr "Настройки URLTest сохранены"
 
 msgid "Use another section as an intermediate hop to connect to servers in this section. Does not apply to network interfaces or JSON outbounds."
 msgstr "Использовать другую секцию как промежуточный узел подключения к серверам этой секции. Не применяется к сетевым интерфейсам и JSON outbound."
@@ -1938,10 +1896,7 @@ msgid "Use sing-box duration format like 1d, 12h or 30m"
 msgstr "Используйте формат длительности sing-box, например 1d, 12h или 30m"
 
 msgid "Use source values"
-msgstr ""
-
-msgid "Used by"
-msgstr "Используется"
+msgstr "Использовать исходные значения"
 
 msgid "Username cannot be empty"
 msgstr "Логин не может быть пустым"
@@ -1967,11 +1922,8 @@ msgstr "Видимое имя этой секции"
 msgid "vless://, vmess://, ss://, trojan://, socks4/5://, hy2/hysteria2:// links"
 msgstr "ссылки vless://, vmess://, ss://, trojan://, socks4/5://, hy2/hysteria2://"
 
-msgid "WAN"
-msgstr "WAN"
-
-msgid "WAN public IP"
-msgstr "Публичный WAN IP"
+msgid "Waiting for TorrServer"
+msgstr "Ожидание TorrServer"
 
 msgid "What Forkop should do when this section matches"
 msgstr "Что Forkop должен делать при совпадении этой секции"
@@ -2029,42 +1981,3 @@ msgstr "sing-box outbound для Zapret2 настроен"
 
 msgid "Zapret2 sing-box outbound is not configured"
 msgstr "sing-box outbound для Zapret2 не настроен"
-
-msgid "Remove permanently"
-msgstr "Удалить безвозвратно"
-
-msgid "Removing Forkop X…"
-msgstr "Удаление Forkop X…"
-
-msgid "Could not start removal. Another component action may be running."
-msgstr "Не удалось начать удаление. Возможно, выполняется другая операция с компонентами."
-
-msgid "Forkop X and sing-box have been removed. Original repositories have been restored."
-msgstr "Forkop X и sing-box удалены. Исходные репозитории восстановлены."
-
-msgid "Open LuCI"
-msgstr "Открыть LuCI"
-
-msgid "Original repositories could not be restored. Removal was cancelled before deleting packages."
-msgstr "Не удалось восстановить исходные репозитории. Удаление отменено до удаления пакетов."
-
-msgid "Removal did not finish. See the removal log in /tmp/forkop-uninstall.*/output.log."
-msgstr "Удаление не завершено. Подробности в журнале /tmp/forkop-uninstall.*/output.log."
-
-msgid "Could not confirm completion. Check the removal log before retrying."
-msgstr "Не удалось подтвердить завершение. Перед повторной попыткой проверьте журнал удаления."
-
-msgid "Full removal"
-msgstr "Полное удаление"
-
-msgid "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?"
-msgstr "Удалить Forkop X, sing-box, их настройки и кэш и восстановить исходные репозитории устройства?"
-
-msgid "This permanently deletes saved sections and subscriptions. Other components remain installed."
-msgstr "Сохранённые секции и подписки будут удалены безвозвратно. Остальные компоненты останутся установленными."
-
-msgid "Remove Forkop X and sing-box with their settings and restore the original device repositories."
-msgstr "Удалить Forkop X и sing-box вместе с настройками и восстановить исходные репозитории устройства."
-
-msgid "Remove Forkop X completely"
-msgstr "Полностью удалить Forkop X"

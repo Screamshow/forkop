@@ -2,8 +2,10 @@ import { onMount, preserveScrollForPage } from '../../../helpers';
 import { FORKOP_ACTION_PROVIDERS_AVAILABILITY_EVENT } from '../../../constants';
 import { normalizeCompiledVersion } from '../../../helpers/normalizeCompiledVersion';
 import { showToast } from '../../../helpers/showToast';
+import { copyToClipboard } from '../../../helpers/copyToClipboard';
 import {
   renderDownloadIcon24,
+  renderCopyIcon24,
   renderRotateCcwIcon24,
   renderSearchIcon24,
   renderXIcon24,
@@ -55,6 +57,7 @@ interface ComponentActionButton {
   icon: () => SVGSVGElement;
   component: Forkop.ComponentName;
   action: Forkop.ComponentAction;
+  disabled?: boolean;
 }
 
 interface ComponentCard {
@@ -65,6 +68,7 @@ interface ComponentCard {
   latestVersion?: string;
   releaseUrl?: string;
   actions: ComponentActionButton[];
+  copyValue?: string;
 }
 
 let updatesLifecycleRegistered = false;
@@ -400,6 +404,16 @@ function patchSystemInfoAfterMutation(result: Forkop.ComponentActionResult) {
   if (result.component === 'zapret_manager') {
     nextSystemInfo.zapret_manager_installed =
       result.action === 'remove' ? 0 : 1;
+  }
+
+  if (result.component === 'direct_proxy') {
+    nextSystemInfo.direct_proxy_enabled = result.action === 'enable' ? 1 : 0;
+  }
+  if (result.component === 'torrserver_direct') {
+    nextSystemInfo.torrserver_direct_enabled =
+      result.action === 'enable' ? 1 : 0;
+    nextSystemInfo.torrserver_direct_active =
+      result.action === 'enable' ? 1 : 0;
   }
 
   const normalizedSystemInfo = normalizeSingBoxVariantFields(nextSystemInfo);
@@ -816,6 +830,16 @@ function getComponentCards(): ComponentCard[] {
   const byedpiInstalled = Boolean(systemInfo.byedpi_installed);
   const zapretManagerInstalled = Boolean(systemInfo.zapret_manager_installed);
   const packetSteeringEnabled = systemInfo.packet_steering_mode === '2';
+  const directProxyEnabled = Boolean(systemInfo.direct_proxy_enabled);
+  const directProxyEndpoint = systemInfo.direct_proxy_address
+    ? `${systemInfo.direct_proxy_address}:${systemInfo.direct_proxy_port || '2080'}`
+    : '';
+  const torrserverRunning = Boolean(systemInfo.torrserver_running);
+  const torrserverDirectAvailable = Boolean(
+    systemInfo.torrserver_direct_available,
+  );
+  const torrserverDirectEnabled = Boolean(systemInfo.torrserver_direct_enabled);
+  const torrserverDirectActive = Boolean(systemInfo.torrserver_direct_active);
   const singBoxExtended =
     Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
@@ -989,6 +1013,64 @@ function getComponentCards(): ComponentCard[] {
             },
       ],
     },
+    {
+      component: 'direct_proxy',
+      column: 2,
+      title: _('Direct Proxy'),
+      version: directProxyEnabled
+        ? `HTTP/SOCKS5 · ${directProxyEndpoint || _('Enabled')}`
+        : _('Disabled'),
+      copyValue: directProxyEnabled ? directProxyEndpoint : undefined,
+      actions: [
+        directProxyEnabled
+          ? {
+              key: 'directProxyDisable',
+              text: _('Disable'),
+              icon: renderXIcon24,
+              component: 'direct_proxy',
+              action: 'disable',
+            }
+          : {
+              key: 'directProxyEnable',
+              text: _('Enable'),
+              icon: renderRotateCcwIcon24,
+              component: 'direct_proxy',
+              action: 'enable',
+            },
+      ],
+    },
+    {
+      component: 'torrserver_direct',
+      column: 2,
+      title: _('TorrServer Direct'),
+      version: !torrserverRunning
+        ? _('TorrServer not found')
+        : !torrserverDirectAvailable
+          ? _('Dedicated cgroup unavailable')
+          : torrserverDirectEnabled && torrserverDirectActive
+            ? _('Enabled')
+            : torrserverDirectEnabled
+              ? _('Waiting for TorrServer')
+              : _('Disabled'),
+      actions: [
+        torrserverDirectEnabled
+          ? {
+              key: 'torrserverDirectDisable',
+              text: _('Disable'),
+              icon: renderXIcon24,
+              component: 'torrserver_direct',
+              action: 'disable',
+            }
+          : {
+              key: 'torrserverDirectEnable',
+              text: _('Enable'),
+              icon: renderRotateCcwIcon24,
+              component: 'torrserver_direct',
+              action: 'enable',
+              disabled: !torrserverDirectAvailable,
+            },
+      ],
+    },
   ];
 }
 
@@ -1134,6 +1216,7 @@ function renderComponentCard(card: ComponentCard) {
       icon: action.icon,
       loading,
       disabled:
+        action.disabled ||
         systemInfoLoading ||
         serviceRuntimeActionLoading ||
         (anyActionLoading && !loading),
@@ -1162,6 +1245,19 @@ function renderComponentCard(card: ComponentCard) {
       E('div', { class: 'fkp_updates-page__component__actions-main' }, [
         ...primaryButtons,
         ...dangerButtons,
+      ]),
+    );
+  }
+
+  if (card.copyValue) {
+    actionElements.push(
+      E('div', { class: 'fkp_updates-page__component__actions-main' }, [
+        renderButton({
+          text: _('Copy address'),
+          icon: renderCopyIcon24,
+          disabled: anyActionLoading || serviceRuntimeActionLoading,
+          onClick: () => copyToClipboard(card.copyValue || ''),
+        }),
       ]),
     );
   }

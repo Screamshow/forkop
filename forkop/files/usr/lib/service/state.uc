@@ -981,29 +981,6 @@ function interfaces_signature(section) {
     return sprintf("%J", result);
 }
 
-function dashboard_filter_signature(section) {
-    return sprintf("%J", {
-        filter_mode: connections.dashboard_filter_mode(section),
-        detect_server_country: connections.dashboard_detect_server_country(section),
-        include_countries: connections.dashboard_include_countries(section),
-        include_outbounds: connections.dashboard_include_outbounds(section),
-        include_regex: connections.dashboard_include_regex(section),
-        include_proxy_parameters: connections.dashboard_include_proxy_parameters(section) ? "1" : "0",
-        include_protocols: connections.dashboard_include_protocols(section),
-        include_transports: connections.dashboard_include_transports(section),
-        include_securities: connections.dashboard_include_securities(section),
-        include_groups: connections.dashboard_include_groups(section),
-        exclude_countries: connections.dashboard_exclude_countries(section),
-        exclude_outbounds: connections.dashboard_exclude_outbounds(section),
-        exclude_regex: connections.dashboard_exclude_regex(section),
-        exclude_proxy_parameters: connections.dashboard_exclude_proxy_parameters(section) ? "1" : "0",
-        exclude_protocols: connections.dashboard_exclude_protocols(section),
-        exclude_transports: connections.dashboard_exclude_transports(section),
-        exclude_securities: connections.dashboard_exclude_securities(section),
-        exclude_groups: connections.dashboard_exclude_groups(section)
-    });
-}
-
 function urltests_signature(section) {
     let result = [];
     for (let entry in connections.urltests(section)) {
@@ -1300,87 +1277,7 @@ function append_sing_box_rule_signature_body(body, section, sections) {
     return body;
 }
 
-function append_sing_box_server_signature_body(body, server) {
-    server = object_or_empty(server);
-    let name = section_name(server);
-    if (name == "")
-        return body;
-
-    let prefix = "server." + name;
-    let enabled = bool_option_value(server, "enabled", false);
-    body = signature_add_value(body, prefix + ".enabled", enabled);
-    if (enabled != "1")
-        return body;
-
-    if (option(server, "protocol", "vless") == "socks")
-        body = signature_add_value(body, prefix + ".socks_auth_enabled", bool_option_value(server, "socks_auth_enabled", true));
-
-    let fields = [
-        [ "label", name ],
-        [ "protocol", "vless" ],
-        [ "listen", "0.0.0.0" ],
-        [ "listen_port", "" ],
-        [ "public_host", "" ],
-        [ "inbound_json", "" ],
-        [ "routing_mode", "rules" ],
-        [ "routing_section", "" ],
-        [ "security", "reality" ],
-        [ "server_users", "" ],
-        [ "tls_server_name", "" ],
-        [ "tls_alpn", "" ],
-        [ "tls_certificate_path", "" ],
-        [ "tls_key_path", "" ],
-        [ "reality_handshake_server", "" ],
-        [ "reality_handshake_server_port", "" ],
-        [ "reality_private_key", "" ],
-        [ "reality_public_key", "" ],
-        [ "reality_short_id", "" ],
-        [ "reality_max_time_difference", "" ],
-        [ "transport", "tcp" ],
-        [ "transport_path", "" ],
-        [ "transport_host", "" ],
-        [ "transport_service_name", "" ],
-        [ "transport_hosts", "" ],
-        [ "transport_xhttp_mode", "" ],
-        [ "client_fingerprint", "" ],
-        [ "server_uuid", "" ],
-        [ "server_username", "" ],
-        [ "server_password", "" ],
-        [ "vless_flow", "" ],
-        [ "vmess_alter_id", "" ],
-        [ "shadowsocks_method", "" ],
-        [ "hysteria2_up_mbps", "" ],
-        [ "hysteria2_down_mbps", "" ],
-        [ "hysteria2_obfs_type", "" ],
-        [ "hysteria2_obfs_password", "" ],
-        [ "mtproto_secret", "" ],
-        [ "mtproto_faketls", "" ],
-        [ "mtproto_padding", "" ],
-        [ "mtproto_concurrency", "" ],
-        [ "mtproto_domain_fronting_port", "" ],
-        [ "mtproto_domain_fronting_ip", "" ],
-        [ "mtproto_domain_fronting_proxy_protocol", "" ],
-        [ "mtproto_prefer_ip", "" ],
-        [ "mtproto_auto_update", "" ],
-        [ "mtproto_allow_fallback_on_unknown_dc", "" ],
-        [ "mtproto_tolerate_time_skewness", "" ],
-        [ "mtproto_idle_timeout", "" ],
-        [ "mtproto_handshake_timeout", "" ],
-        [ "tailscale_auth_key", "" ],
-        [ "tailscale_control_url", "" ],
-        [ "tailscale_hostname", "" ],
-        [ "tailscale_accept_routes", "" ],
-        [ "tailscale_advertise_routes", "" ],
-        [ "tailscale_advertise_exit_node", "" ]
-    ];
-
-    for (let field in fields)
-        body = signature_add_value(body, prefix + "." + field[0], option(server, field[0], field[1]));
-
-    return body;
-}
-
-function sing_box_signature_body(settings, sections, servers, mwan3_active) {
+function sing_box_signature_body(settings, sections, mwan3_active) {
     settings = object_or_empty(settings);
     let body = "";
 
@@ -1406,6 +1303,8 @@ function sing_box_signature_body(settings, sections, servers, mwan3_active) {
     body = signature_add_value(body, "settings.config_path", option(settings, "config_path", ""));
     body = signature_add_value(body, "settings.log_level", option(settings, "log_level", "warn"));
     body = signature_add_value(body, "settings.service_listen_address", option(settings, "service_listen_address", ""));
+    body = signature_add_value(body, "settings.direct_proxy_enabled", bool_option_value(settings, "direct_proxy_enabled", false));
+    body = signature_add_value(body, "settings.direct_proxy_port", option(settings, "direct_proxy_port", "2080"));
     body = signature_add_value(body, "runtime.mwan3_active", bool_value(mwan3_active));
 
     let enable_yacd = bool_option_value(settings, "enable_yacd", false);
@@ -1424,9 +1323,6 @@ function sing_box_signature_body(settings, sections, servers, mwan3_active) {
 
     for (let section in sections)
         body = append_sing_box_rule_signature_body(body, object_or_empty(section), sections);
-
-    for (let server in servers)
-        body = append_sing_box_server_signature_body(body, object_or_empty(server));
 
     return body;
 }
@@ -1552,12 +1448,12 @@ function byedpi_runtime_signature_body(sections) {
     return body;
 }
 
-function reload_state_values_from_sources(format, settings, sections, servers, dnsmasq, legacy_dnsmasq_present, mwan3_active_value) {
+function reload_state_values_from_sources(format, settings, sections, dnsmasq, legacy_dnsmasq_present, mwan3_active_value) {
     return {
         format: as_string(format),
         service_trigger_signature: signature_hash(service_trigger_signature_body(settings)),
         dnsmasq_signature: signature_hash(dnsmasq_signature_body(settings, dnsmasq, legacy_dnsmasq_present)),
-        sing_box_signature: signature_hash(sing_box_signature_body(settings, sections, servers, mwan3_active_value)),
+        sing_box_signature: signature_hash(sing_box_signature_body(settings, sections, mwan3_active_value)),
         nft_signature: signature_hash(nft_runtime_signature_body(settings, sections)),
         zapret_queue_signature: signature_hash(action_queue_signature_body(sections, "zapret", "zapret_queue.section")),
         zapret_runtime_signature: signature_hash(zapret_runtime_signature_body(sections)),
@@ -1585,10 +1481,6 @@ function fixture_section_list(data, type_name) {
 
 function uci_sections(type_name) {
     return uci_core.section_objects(CONFIG_NAME, type_name);
-}
-
-function uci_servers() {
-    return uci_sections("server");
 }
 
 function mwan3_has_enabled_interface() {
@@ -1672,10 +1564,6 @@ function fixture_sections(path) {
     return fixture_section_list(data);
 }
 
-function fixture_servers(data) {
-    return fixture_section_list(data, "server");
-}
-
 function fixture_data(path) {
     let data = object_or_empty(read_json_file(path));
     connections.set_item_sections_from_data(data);
@@ -1725,7 +1613,6 @@ function current_reload_state_values(format) {
         format,
         settings,
         sections,
-        uci_servers(),
         uci_dnsmasq(),
         uci_exists("dhcp.forkop"),
         mwan3_active()
@@ -1773,7 +1660,6 @@ function fixture_reload_state_values(data, format) {
         format,
         settings,
         sections,
-        fixture_servers(data),
         fixture_dnsmasq(data),
         fixture_legacy_dnsmasq_present(data),
         fixture_mwan3_active(data)
@@ -1885,14 +1771,14 @@ else if (mode == "dnsmasq-signature-fixture") {
     exit(print_signature_hash(dnsmasq_signature_body(fixture_settings(data), fixture_dnsmasq(data), fixture_legacy_dnsmasq_present(data))) ? 0 : 1);
 }
 else if (mode == "sing-box-signature")
-    exit(print_signature_hash(sing_box_signature_body(uci_settings(), uci_sections("section"), uci_servers(), mwan3_active())) ? 0 : 1);
+    exit(print_signature_hash(sing_box_signature_body(uci_settings(), uci_sections("section"), mwan3_active())) ? 0 : 1);
 else if (mode == "sing-box-signature-fixture") {
     let data = fixture_data(ARGV[1]);
-    exit(print_signature_hash(sing_box_signature_body(fixture_settings(data), fixture_section_list(data), fixture_servers(data), fixture_mwan3_active(data))) ? 0 : 1);
+    exit(print_signature_hash(sing_box_signature_body(fixture_settings(data), fixture_section_list(data), fixture_mwan3_active(data))) ? 0 : 1);
 }
 else if (mode == "sing-box-signature-body-fixture") {
     let data = fixture_data(ARGV[1]);
-    print(sing_box_signature_body(fixture_settings(data), fixture_section_list(data), fixture_servers(data), fixture_mwan3_active(data)));
+    print(sing_box_signature_body(fixture_settings(data), fixture_section_list(data), fixture_mwan3_active(data)));
 }
 else if (mode == "nft-signature")
     exit(print_signature_hash(nft_runtime_signature_body(uci_settings(), uci_sections("section"))) ? 0 : 1);

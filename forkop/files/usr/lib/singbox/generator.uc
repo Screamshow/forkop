@@ -1222,34 +1222,14 @@ function priority_level_filtered_outbounds(group_id, level_id, urltest_candidate
     );
 }
 
-function dashboard_country_metadata(section, state) {
-    let metadata = object_or_empty(object_or_empty(state.outboundMetadata).countries);
-    if (connections.dashboard_detect_server_country(section) == "flag_emoji")
-        return runtime_urltest.countries_from_flag_names(object_or_empty(object_or_empty(state.outboundMetadata).names));
-    return metadata;
-}
-
-function selected_group_outbounds(group_names, group_outbounds) {
-    group_outbounds = object_or_empty(group_outbounds);
-    let result = [];
-    for (let group_name in array_or_empty(group_names))
-        for (let tag_name in array_or_empty(group_outbounds[group_name]))
-            push(result, tag_name);
-    return unique_string_array(result);
-}
-
-function remember_dashboard_group_outbounds(group_outbounds, group_name, outbounds) {
-    group_name = as_string(group_name);
-    if (group_name == "")
-        return;
-
+function remember_group_outbounds(group_outbounds, group_name, outbounds) {
     let combined = array_or_empty(group_outbounds[group_name]);
     for (let tag_name in array_or_empty(outbounds))
         push(combined, tag_name);
     group_outbounds[group_name] = unique_string_array(combined);
 }
 
-function dashboard_filtered_outbounds(section, selector_tags, state, group_outbounds) {
+function grouped_selector_outbounds(section, selector_tags, group_outbounds) {
     let configured_groups = [
         ...connections.urltests(section),
         ...connections.priority_groups(section)
@@ -1418,7 +1398,7 @@ function add_proxy_selector(config, section, selector_tags, urltest_candidate_ta
 
     for (let urltest_id in connections.urltests(section)) {
         let urltest = add_urltest_outbound(config, section, urltest_id, urltest_candidate_tags, state);
-        remember_dashboard_group_outbounds(
+        remember_group_outbounds(
             group_outbounds,
             connections.urltest_display_name(section, urltest_id),
             urltest.outbounds
@@ -1431,7 +1411,7 @@ function add_proxy_selector(config, section, selector_tags, urltest_candidate_ta
 
     for (let group_id in connections.priority_groups(section)) {
         let priority = add_priority_group_outbound(config, section, group_id, urltest_candidate_tags, state);
-        remember_dashboard_group_outbounds(
+        remember_group_outbounds(
             group_outbounds,
             connections.priority_group_display_name(section, group_id),
             priority.outbounds
@@ -1442,7 +1422,7 @@ function add_proxy_selector(config, section, selector_tags, urltest_candidate_ta
         push(priority_tags, priority.tag);
     }
 
-    selector_outbounds = dashboard_filtered_outbounds(section, selector_tags, state, group_outbounds);
+    selector_outbounds = grouped_selector_outbounds(section, selector_tags, group_outbounds);
     selector_default = selector_outbounds[0];
     if (length(urltest_tags) > 0 || length(priority_tags) > 0) {
         for (let tag in urltest_tags)
@@ -1453,7 +1433,7 @@ function add_proxy_selector(config, section, selector_tags, urltest_candidate_ta
     }
 
     if (length(selector_outbounds) == 0)
-        runtime_generate_unsupported("dashboard server filtering produced no usable outbounds");
+        runtime_generate_unsupported("configured URLTest and Priority groups produced no usable outbounds");
 
     push(config.outbounds, {
         type: "selector",
@@ -1606,6 +1586,45 @@ function add_service_mixed_proxy(config, settings, sections) {
         runtime_generate_unsupported("download lists via proxy section is not set");
     if (download_via_proxy_enabled(settings, "components") && download_detour_tag(settings, "components") == "")
         runtime_generate_unsupported("download components via proxy section is not set");
+}
+
+/*
+ * This proxy is intentionally routed only by its inbound tag. Destination
+ * domains, IP ranges and rule sets must never be able to move its traffic to a
+ * VPN outbound. Keep the compact 1.14-compatible route rule shape used by the
+ * other service inbounds.
+ */
+function add_direct_proxy(config, settings, service_address) {
+    if (!bool_option(settings, "direct_proxy_enabled", false))
+        return;
+
+    let listen = as_string(service_address || "");
+    if (listen == "")
+        runtime_generate_unsupported("direct proxy listen address is not set");
+
+    let port_value = option(settings, "direct_proxy_port", as_string(runtime_constants.DIRECT_PROXY_DEFAULT_PORT));
+    if (match(port_value, /^[0-9]+$/) == null)
+        runtime_generate_unsupported("direct proxy port is invalid");
+    let listen_port = int(port_value, 10);
+    if (listen_port < 1 || listen_port > 65535)
+        runtime_generate_unsupported("direct proxy port is invalid");
+
+    push(config.inbounds, {
+        type: "mixed",
+        tag: runtime_constants.DIRECT_PROXY_INBOUND_TAG,
+        listen,
+        listen_port
+    });
+    push(config.outbounds, {
+        type: "direct",
+        tag: runtime_constants.DIRECT_PROXY_OUTBOUND_TAG,
+        routing_mark: runtime_constants.OUTBOUND_MARK
+    });
+    push(config.route.rules, {
+        action: "route",
+        inbound: runtime_constants.DIRECT_PROXY_INBOUND_TAG,
+        outbound: runtime_constants.DIRECT_PROXY_OUTBOUND_TAG
+    });
 }
 
 function parse_port(value) {
@@ -3041,6 +3060,7 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     reserve_section_outbound_tags(sections, taken);
     for (let section in sections)
         add_outbound_for_section(config, section, taken, sections);
+    add_direct_proxy(config, settings, service_address);
     add_service_route_rules(config, sections);
     for (let section in sections)
         add_route_for_section(config, section);

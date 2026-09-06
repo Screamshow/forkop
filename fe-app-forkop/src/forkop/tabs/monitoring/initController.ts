@@ -95,7 +95,6 @@ let searchQuery = '';
 let localDeviceChoices: LocalDeviceChoices = {};
 let routeDisplayNames: Record<string, string> = {};
 let routeSections: Array<{ sectionName: string; displayName: string }> = [];
-let serverDisplayNames: Record<string, string> = {};
 let lastDeviceFilterSignature = '';
 let loading = true;
 let failed = false;
@@ -176,7 +175,6 @@ function buildRouteDisplayNames(sections: Forkop.ConfigSection[]) {
     'bypass-out': 'Bypass',
     'direct-out': 'direct',
   };
-  const serverMap: Record<string, string> = {};
   const routeSectionItems: Array<{ sectionName: string; displayName: string }> =
     [];
   const urltestsBySection = new Map<string, string[]>();
@@ -216,22 +214,7 @@ function buildRouteDisplayNames(sections: Forkop.ConfigSection[]) {
       });
     });
 
-  sections
-    .filter((section) => section['.type'] === 'server')
-    .filter((section) => section.enabled !== '0')
-    .forEach((section) => {
-      const sectionName = section['.name'];
-      const displayName = getDisplayName(section);
-
-      if (!sectionName || !displayName) {
-        return;
-      }
-
-      serverMap[`server-${sectionName}-in`] = displayName;
-    });
-
   routeDisplayNames = map;
-  serverDisplayNames = serverMap;
   routeSections = routeSectionItems.sort(
     (a, b) => b.sectionName.length - a.sectionName.length,
   );
@@ -297,85 +280,17 @@ function getConnectionSourceIp(connection: ClashConnection): string {
   return normalizeString(connection.metadata?.sourceIP);
 }
 
-function getConnectionInboundTag(connection: ClashConnection): string {
-  const metadataType = normalizeString(connection.metadata?.type);
-  const metadataTypeParts = metadataType.split('/');
-  const metadataTag = normalizeString(
-    metadataTypeParts.length > 1
-      ? metadataTypeParts[metadataTypeParts.length - 1]
-      : metadataType,
-  );
-
-  if (metadataTag) {
-    return metadataTag;
-  }
-
-  const ruleInbound = normalizeString(connection.rule).match(
-    /(?:^|\s)inbound=([^\s]+)/,
-  );
-
-  return normalizeString(ruleInbound?.[1]);
-}
-
-function getServerDisplayNameByInboundTag(tag: string): string {
-  return normalizeString(serverDisplayNames[tag]);
-}
-
 function getDeviceName(ip: string): string {
   return normalizeString(localDeviceChoices[ip]);
 }
 
-function getServerSourceNameByIp(ip: string): string {
-  if (!ip) {
-    return '';
-  }
-
-  const connections = [
-    ...Array.from(activeConnections.values()),
-    ...Array.from(closedConnections.values()),
-  ];
-
-  for (const connection of connections) {
-    if (getConnectionSourceIp(connection) !== ip) {
-      continue;
-    }
-
-    const serverName = getServerDisplayNameByInboundTag(
-      getConnectionInboundTag(connection),
-    );
-
-    if (serverName) {
-      return serverName;
-    }
-  }
-
-  return '';
-}
-
 function getDeviceFilterLabel(ip: string): string {
-  const serverName = getServerSourceNameByIp(ip);
-  if (serverName) {
-    return serverName;
-  }
-
   const deviceName = getDeviceName(ip);
   return deviceName || ip;
 }
 
 function getSourceCellParts(connection: MonitoredConnection) {
   const ip = getConnectionSourceIp(connection);
-  const inboundTag = getConnectionInboundTag(connection);
-  const serverName = getServerDisplayNameByInboundTag(inboundTag);
-
-  if (serverName) {
-    return {
-      primary: serverName,
-      ip: '',
-      copyValue: serverName,
-      searchValue: [serverName, ip, inboundTag].filter(Boolean).join(' '),
-    };
-  }
-
   const deviceName = getDeviceName(ip);
 
   if (deviceName) {

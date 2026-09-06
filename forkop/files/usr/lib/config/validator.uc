@@ -829,20 +829,12 @@ function section_enabled(section) {
     return bool_option(section, "enabled", true);
 }
 
-function server_enabled(section) {
-    return bool_option(section, "enabled", false);
-}
-
 function rule_action(section) {
     return option(section, "action", "");
 }
 
 function rule_action_supported(action) {
     return contains([ "connection", "proxy", "outbound", "vpn", "bypass", "block", "dns", "zapret", "zapret2", "byedpi" ], as_string(action));
-}
-
-function server_routing_section_action_supported(action) {
-    return contains([ "connection", "proxy", "outbound", "vpn", "zapret", "zapret2", "byedpi" ], as_string(action));
 }
 
 function duration_to_seconds_value(value) {
@@ -1059,13 +1051,6 @@ function validate_urltest_filter_mode_value(value, section) {
     fail_validation("Invalid URLTest filter mode '" + value + "' in rule '" + section + "'. Aborted.");
 }
 
-function validate_dashboard_filter_mode_value(value, section) {
-    if (as_string(value) == "" || contains([ "disabled", "exclude", "include", "mixed" ], value))
-        return;
-
-    fail_validation("Invalid dashboard filter mode '" + value + "' in rule '" + section + "'. Aborted.");
-}
-
 function validate_priority_filter_mode_value(value, section, group_id, level_id) {
     if (contains([ "disabled", "exclude", "include", "mixed" ], value))
         return;
@@ -1196,56 +1181,6 @@ function validate_priority_group(section, group_id) {
                     name
                 );
         }
-    }
-}
-
-function validate_dashboard_group_references(section, values) {
-    let available = {};
-    for (let group_id in connections.urltests(section))
-        available[connections.urltest_display_name(section, group_id)] = true;
-    for (let group_id in connections.priority_groups(section))
-        available[connections.priority_group_display_name(section, group_id)] = true;
-
-    for (let group_name in values)
-        if (!available[group_name])
-            fail_validation("Unknown dashboard URLTest/Priority group '" + group_name + "' in rule '" + section_name(section) + "'. Aborted.");
-}
-
-function validate_dashboard_filter(section) {
-    let name = section_name(section);
-    let filter_mode = connections.dashboard_filter_mode(section);
-    validate_dashboard_filter_mode_value(filter_mode, name);
-    if (filter_mode == "disabled")
-        return;
-
-    validate_detect_server_country_value(connections.dashboard_detect_server_country(section), name);
-    if (filter_mode == "include" || filter_mode == "mixed") {
-        for (let value in connections.dashboard_include_countries(section))
-            validate_country_code_value(value, name);
-        for (let value in connections.dashboard_include_regex(section))
-            validate_urltest_regex_value(value, name);
-        validate_dashboard_group_references(section, connections.dashboard_include_groups(section));
-        if (connections.dashboard_include_proxy_parameters(section))
-            validate_proxy_parameter_filters(
-                connections.dashboard_include_protocols(section),
-                connections.dashboard_include_transports(section),
-                connections.dashboard_include_securities(section),
-                name
-            );
-    }
-    if (filter_mode == "exclude" || filter_mode == "mixed") {
-        for (let value in connections.dashboard_exclude_countries(section))
-            validate_country_code_value(value, name);
-        for (let value in connections.dashboard_exclude_regex(section))
-            validate_urltest_regex_value(value, name);
-        validate_dashboard_group_references(section, connections.dashboard_exclude_groups(section));
-        if (connections.dashboard_exclude_proxy_parameters(section))
-            validate_proxy_parameter_filters(
-                connections.dashboard_exclude_protocols(section),
-                connections.dashboard_exclude_transports(section),
-                connections.dashboard_exclude_securities(section),
-                name
-            );
     }
 }
 
@@ -1641,44 +1576,6 @@ function validate_subscription_download_sections(sections, context) {
     }
 }
 
-function basic_rows_by_section(rows) {
-    let result = {};
-    for (let row in array_or_empty(rows))
-        if (type(row) == "object" && row.section != "")
-            result[row.section] = row;
-    return result;
-}
-
-function validate_server_routing_sections(sections) {
-    let by_section = basic_rows_by_section(basic_rows_from_sections(sections));
-
-    for (let server in sections_by_type("server")) {
-        server = object_or_empty(server);
-        if (!server_enabled(server))
-            continue;
-
-        let name = section_name(server);
-        let mode = option(server, "routing_mode", "rules");
-        if (!contains([ "rules", "direct", "section" ], mode))
-            fail_validation("Server '" + name + "' uses unsupported routing mode '" + mode + "'. Aborted.");
-
-        if (mode != "section")
-            continue;
-
-        let target_name = option(server, "routing_section", "");
-        if (target_name == "")
-            fail_validation("Server '" + name + "' uses selected-section routing, but no routing section is selected. Aborted.");
-
-        let target = by_section[target_name];
-        if (type(target) != "object")
-            fail_validation("Server '" + name + "' references missing routing section '" + target_name + "'. Aborted.");
-        if (!target.enabled)
-            fail_validation("Server '" + name + "' references disabled routing section '" + target_name + "'. Aborted.");
-        if (!server_routing_section_action_supported(target.action))
-            fail_validation("Server '" + name + "' references routing section '" + target_name + "' with unsupported action '" + target.action + "'. Select a Connection, proxy, JSON outbound, VPN, Zapret, Zapret2, or ByeDPI section. Aborted.");
-    }
-}
-
 function validate_list_update_settings(settings) {
     if (!bool_option(settings, "list_update_enabled", true))
         return;
@@ -1938,29 +1835,6 @@ function install_managed_sing_box_service_script(ctx) {
 
 function service_exists(service) {
     return file_executable("/etc/init.d/" + as_string(service));
-}
-
-function validate_extended_server_features(ctx, sing_box_version, sing_box_version_output) {
-    if (sing_box_is_extended(ctx, sing_box_version))
-        return;
-
-    for (let section in sections_by_type("server")) {
-        if (!server_enabled(section))
-            continue;
-
-        let name = section_name(section);
-        let protocol = option(section, "protocol", "vless");
-        let transport = option(section, "transport", "tcp");
-
-        if (protocol == "mtproto")
-            fail_requirement("Server '" + name + "' uses MTProto proxy, but sing-box-extended is not installed. Install sing-box-extended or disable this server. Aborted.", "fatal");
-
-        if (protocol == "tailscale" && !sing_box_supports_tailscale(ctx, sing_box_version, sing_box_version_output))
-            fail_requirement("Server '" + name + "' uses Tailscale, but the installed sing-box binary was built without Tailscale support. Install full sing-box or sing-box-extended, or disable this server. Aborted.", "fatal");
-
-        if (transport == "xhttp")
-            fail_requirement("Server '" + name + "' uses XHTTP transport, but sing-box-extended is not installed. Install sing-box-extended or change the transport. Aborted.", "fatal");
-    }
 }
 
 function has_outbound_section(ctx) {

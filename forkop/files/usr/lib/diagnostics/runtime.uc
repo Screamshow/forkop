@@ -613,111 +613,6 @@ function public_host_flags(public_host, public_host_ips, wan_ip, wan_public) {
     ), /[\r\n]+$/g, "");
 }
 
-function check_inbounds_config() {
-    let count = 0;
-    for (let section in uci_sections("server"))
-        if (bool_option(section, "enabled", false))
-            count++;
-    write_json({ enabled_count: count });
-    return 0;
-}
-
-function check_inbounds() {
-    let cfg = settings();
-    let sing_box_config_path = option(cfg, "config_path", "");
-    let wan_ip = get_wan_ip_addresses();
-    let wan_public = 0;
-    for (let ip in words(wan_ip)) {
-        if (valid_public_ip(ip)) {
-            wan_public = 1;
-            break;
-        }
-    }
-    let items = [];
-    let enabled_count = 0;
-
-    for (let section in uci_sections("server")) {
-        if (!bool_option(section, "enabled", false))
-            continue;
-        enabled_count++;
-
-        let section_name = as_string(section[".name"] || "");
-        let label = option(section, "label", section_name);
-        let protocol = option(section, "protocol", "vless");
-        let listen = option(section, "listen", "0.0.0.0");
-        let listen_port = option(section, "listen_port", "");
-        let public_host = option(section, "public_host", "");
-        let routing_mode = option(section, "routing_mode", "rules");
-        let inbound_tag = server_inbound_tag(section_name);
-        let expected_type = server_runtime_type_for_protocol(protocol);
-        let required_proto = server_required_inbound_proto(protocol);
-        let runtime_json = protocol == "tailscale"
-            ? module_output(PROVIDERS_STATUS_UC, [ "endpoint-summary", sing_box_config_path, inbound_tag ])
-            : module_output(PROVIDERS_STATUS_UC, [ "inbound-summary", sing_box_config_path, inbound_tag ]);
-
-        let listening = -1;
-        let firewall_required = 0;
-        let firewall_open = -1;
-        let port_conflict = 0;
-        let port_conflict_owners = "";
-        if (protocol != "tailscale" && protocol != "json_inbound") {
-            port_conflict_owners = server_required_port_conflict_owners(listen, listen_port, required_proto);
-            if (port_conflict_owners != "")
-                port_conflict = 1;
-            listening = server_required_ports_listening(listen, listen_port, required_proto) ? 1 : 0;
-            if (server_listen_requires_firewall(listen, wan_ip)) {
-                firewall_required = 1;
-                firewall_open = firewall_required_protocols_open(listen_port, required_proto) ? 1 : 0;
-            }
-        }
-
-        let routes_configured = module_success(PROVIDERS_STATUS_UC, [
-            "has-route-rule-for-inbound", sing_box_config_path, inbound_tag
-        ]) ? 1 : 0;
-
-        let public_host_ips = protocol == "json_inbound" ? "" : resolve_public_host_ips(public_host);
-        let flags = words(public_host_flags(public_host, public_host_ips, wan_ip, wan_public));
-        while (length(flags) < 3)
-            push(flags, "-1");
-
-        let item_json = status_output([
-            "inbound-item-json",
-            runtime_json,
-            section_name,
-            label,
-            protocol,
-            routing_mode,
-            inbound_tag,
-            listen,
-            listen_port,
-            public_host,
-            public_host_ips,
-            expected_type,
-            required_proto,
-            listening,
-            firewall_required,
-            firewall_open,
-            port_conflict,
-            port_conflict_owners,
-            routes_configured,
-            flags[0],
-            flags[1],
-            flags[2]
-        ], null);
-        let item = parse_json_or_null(item_json);
-        push(items, type(item) == "object" ? item : {});
-    }
-
-    write_json({
-        enabled_count,
-        config_path: sing_box_config_path,
-        wan_ip,
-        wan_public,
-        items
-    });
-    return 0;
-}
-
 function cleanup_check_proxy_dir(dir) {
     dir = as_string(dir);
     let prefix = TMP_SING_BOX_FOLDER + "/check-proxy-";
@@ -1107,6 +1002,14 @@ function build_system_info() {
         index(zms_source, "/zapret-manager/proxy/") >= 0 && index(zmsa_source, "/zapret-manager/proxy/") >= 0 ? 1 : 0;
     let device_model = first_line_value("/tmp/sysinfo/model", "unknown");
     let packet_steering_mode = trim(uci_core.get("network.@globals[0].packet_steering"));
+    let direct_proxy_enabled = bool_option(settings(), "direct_proxy_enabled", false) ? 1 : 0;
+    let direct_proxy_port = option(settings(), "direct_proxy_port", "2080");
+    let direct_proxy_address = direct_proxy_enabled
+        ? trim(module_output(SINGBOX_RUNTIME_UC, [ "service-listen-address" ]))
+        : "";
+    let torrserver_direct_status = parse_json_or_null(module_output(LIB_DIR + "/torrserver/direct.uc", [ "status" ]));
+    if (type(torrserver_direct_status) != "object")
+        torrserver_direct_status = {};
 
     return {
         forkop_version: FORKOP_VERSION,
@@ -1126,6 +1029,13 @@ function build_system_info() {
         byedpi_installed,
         zapret_manager_installed,
         packet_steering_mode,
+        direct_proxy_enabled,
+        direct_proxy_address,
+        direct_proxy_port,
+        torrserver_running: int(torrserver_direct_status.running || 0),
+        torrserver_direct_available: int(torrserver_direct_status.available || 0),
+        torrserver_direct_enabled: int(torrserver_direct_status.enabled || 0),
+        torrserver_direct_active: int(torrserver_direct_status.active || 0),
         openwrt_version: openwrt_release(),
         device_model,
         generated_at: int(clock()[0])
@@ -1141,33 +1051,6 @@ function get_system_info() {
     let system_info = sprintf("%J", build_system_info());
     write_system_info_cache(system_info);
     print(system_info, "\n");
-    return 0;
-}
-
-function get_server_capabilities() {
-    if (!file_executable(SING_BOX_BIN_PATH)) {
-        write_json({
-            sing_box_extended: 0,
-            sing_box_tiny: 0,
-            sing_box_tailscale: 0
-        });
-        return 0;
-    }
-
-    let sing_box_version_output = "";
-    let sing_box_version = "";
-    if (sing_box_live_probe_disabled())
-        sing_box_version = replace(module_output(SINGBOX_RUNTIME_UC, [ "read-version-state" ]), /[\r\n]+$/g, "");
-    else {
-        sing_box_version_output = module_output(SINGBOX_RUNTIME_UC, [ "version-output" ]);
-        sing_box_version = replace(module_output_stdin(SINGBOX_RUNTIME_UC, [ "version-from-output" ], sing_box_version_output), /[\r\n]+$/g, "");
-    }
-    let flags = sing_box_capability_flags(sing_box_version, sing_box_version_output);
-    write_json({
-        sing_box_extended: flags.extended,
-        sing_box_tiny: flags.tiny,
-        sing_box_tailscale: flags.tailscale
-    });
     return 0;
 }
 
