@@ -1606,12 +1606,13 @@ rewrite_package_repository_file() {
 
     rewritten="$TMP_DIR/repository.$MIRROR_BACKUP_COUNT.rewritten"
     sed -E \
-        -e "s#https?://[^/]+/(pub/software/openwrt/)?releases/#${MIRROR_BASE_URL}/openwrt/releases/#" \
+        -e "s#https?://[^/]+/(pub/software/openwrt/|openwrt/)?releases/#${MIRROR_BASE_URL}/openwrt/releases/#" \
+        -e "s#${MIRROR_BASE_URL}/openwrt/releases/v[0-9]+\\.x/v?([0-9]+\\.[0-9]+\\.[0-9]+)/mediatek/filogic/?([[:space:]]|$)#${MIRROR_BASE_URL}/openwrt/releases/\\1/targets/mediatek/filogic/packages\\2#" \
         -e "s#${MIRROR_BASE_URL}/openwrt/releases/v[0-9]+\\.x/v([0-9]+\\.[0-9]+\\.[0-9]+)/([^/]+)/([^/]+)/packages/packages\\.adb#${MIRROR_BASE_URL}/openwrt/releases/\\1/targets/\\2/\\3/packages/packages.adb#" \
         -e "s#${MIRROR_BASE_URL}/openwrt/releases/v[0-9]+\\.x/v([0-9]+\\.[0-9]+\\.[0-9]+)/([^/]+)/([^/]+)/packages\\.adb#${MIRROR_BASE_URL}/openwrt/releases/\\1/packages/\\2/\\3/packages.adb#" \
         "$repository_file" > "$rewritten" || fail "Failed to prepare $repository_file"
 
-    if grep -E 'https?://[^/]+/(pub/software/openwrt/)?releases/' "$rewritten" |
+    if grep -E 'https?://[^/]+/(pub/software/openwrt/|openwrt/)?releases/' "$rewritten" |
         grep -Fv "$MIRROR_BASE_URL/openwrt/releases/" >/dev/null; then
         fail "Some OpenWrt feeds in $repository_file could not be redirected to $MIRROR_BASE_URL"
     fi
@@ -1858,7 +1859,7 @@ forkop_install_required_space_kb() {
 
     missing_dependency_count=0
     for dependency in \
-        ca-bundle kmod-inet-diag kmod-netlink-diag kmod-tun curl ucode \
+        ca-bundle kmod-inet-diag kmod-tun curl ucode \
         ucode-mod-fs ucode-mod-uci kmod-nft-tproxy coreutils-base64 \
         bind-dig nftables-json kmod-nft-nat ip-full luci-base; do
         pkg_is_installed "$dependency" ||
