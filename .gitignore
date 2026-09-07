@@ -18,6 +18,9 @@ ops/deployed-nginx/
 
 # Local verification and release working files
 /tests/
+!/tests/
+/tests/*
+!/tests/latency_reload_serialization.sh
 /docs/releases/
 /ops/mirror/
 /.github/workflows/backend-ci.yml

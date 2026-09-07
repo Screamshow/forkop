@@ -43,6 +43,11 @@ const ZAPRET_LEGACY_DEFAULT_NFQWS_OPT = getenv("ZAPRET_LEGACY_DEFAULT_NFQWS_OPT"
 const DEFAULT_LATENCY_TEST_URL = getenv("DEFAULT_LATENCY_TEST_URL") || "https://www.gstatic.com/generate_204";
 const RUNTIME_STABLE_MIN_AGE = getenv("FORKOP_RUNTIME_STABLE_MIN_AGE") || "2";
 const AUTOMATIC_LATENCY_TEST_LOCK_DIR = getenv("FORKOP_AUTOMATIC_LATENCY_TEST_LOCK_DIR") || RUNTIME_STATE_DIR + "/automatic-latency-test.lock";
+const RELOAD_LOCK_DIR = getenv("FORKOP_RELOAD_LOCK_DIR") || "/var/run/forkop.reload.lock";
+const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/forkop/reload.pending";
+const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
+const AUTOMATIC_LATENCY_BATCH_SIZE = int(getenv("FORKOP_AUTOMATIC_LATENCY_BATCH_SIZE") || "4");
+const AUTOMATIC_LATENCY_BATCH_PAUSE = getenv("FORKOP_AUTOMATIC_LATENCY_BATCH_PAUSE") || "1";
 
 const STATUS_UC = LIB_DIR + "/diagnostics/status.uc";
 const HELPERS_UC = LIB_DIR + "/core/helpers.uc";
@@ -1693,19 +1698,28 @@ function clash_api(action, arg1, arg2, arg3) {
 }
 
 function automatic_latency_test() {
-    let owner_pid = trim(command_output_from_args([ "sh", "-c", "echo $$" ]));
-    let acquired = false;
-    for (let attempt = 0; owner_pid != "" && attempt < 20; attempt++) {
-        if (module_success(SERVICE_STATE_UC, [
-            "acquire-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR, owner_pid
-        ])) {
-            acquired = true;
-            break;
-        }
-        command_success_from_args([ "sleep", "1" ]);
+    let stat = as_string(fs.readfile("/proc/self/stat"));
+    let separator = index(stat, " ");
+    let owner_pid = separator > 0 ? substr(stat, 0, separator) : "";
+    if (owner_pid == "" || !module_success(SERVICE_STATE_UC, [
+        "acquire-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR, owner_pid
+    ])) {
+        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test is already scheduled or running; skipping duplicate" ]);
+        return 0;
     }
-    if (!acquired) {
-        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test is already running; skipping" ]);
+
+    if (!module_success(SERVICE_STATE_UC, [
+        "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid, "300"
+    ])) {
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+        command_success_from_args([ "logger", "-t", "forkop", "[warn] Automatic latency test skipped because Forkop did not finish reloading" ]);
+        return 0;
+    }
+
+    if (!module_success(SERVICE_STATE_UC, [ "single-ready-sing-box-runtime" ])) {
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test skipped: sing-box is not ready or multiple processes are running" ]);
         return 0;
     }
 
@@ -1719,18 +1733,39 @@ function automatic_latency_test() {
 
     if (length(proxy_tags) == 0) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
         command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test skipped: no proxy outbounds available" ]);
         return 0;
     }
 
     command_success_from_args([ "logger", "-t", "forkop", "[info] Starting automatic latency test for " + length(proxy_tags) + " proxy outbounds" ]);
-    let status = clash_api("get_proxy_latencies", sprintf("%J", proxy_tags), "5000", "");
-    let sing_box_pid_after = trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]));
-    module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
-    if (status != 0 && sing_box_pid_before != sing_box_pid_after) {
-        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test cancelled because sing-box was reloaded" ]);
-        return 0;
+    let status = 0;
+    let completed = 0;
+    let batch_size = AUTOMATIC_LATENCY_BATCH_SIZE > 0 ? AUTOMATIC_LATENCY_BATCH_SIZE : 4;
+    for (let proxy_tag in proxy_tags) {
+        if (clash_api("get_proxy_latency", proxy_tag, "5000", "") != 0)
+            status = 1;
+        completed++;
+
+        if (completed < length(proxy_tags) && completed % batch_size == 0) {
+            module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+            module_success(SERVICE_STATE_UC, [ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
+            command_success_from_args([ "sleep", AUTOMATIC_LATENCY_BATCH_PAUSE ]);
+            let reacquired = module_success(SERVICE_STATE_UC, [
+                "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid, "300"
+            ]);
+            if (!reacquired || !module_success(SERVICE_STATE_UC, [ "single-ready-sing-box-runtime" ]) ||
+                sing_box_pid_before != trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]))) {
+                if (reacquired)
+                    module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+                module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+                command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test cancelled because sing-box was reloaded" ]);
+                return 0;
+            }
+        }
     }
+    module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+    module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
     command_success_from_args([ "logger", "-t", "forkop", status == 0 ?
         "[info] Automatic latency test completed" :
         "[warn] Automatic latency test completed with errors" ]);

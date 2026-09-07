@@ -568,6 +568,16 @@ function sing_box_service_running() {
     return pid > 0 && pid_is_sing_box(pid);
 }
 
+function sing_box_process_count() {
+    let count = 0;
+    for (let exe_path in fs.glob("/proc/[0-9]*/exe")) {
+        let parts = split(as_string(exe_path), "/");
+        if (length(parts) >= 4 && pid_is_sing_box(parts[2]))
+            count++;
+    }
+    return count;
+}
+
 function sing_box_service_stable(min_age) {
     min_age = int(min_age || 2);
 
@@ -591,6 +601,11 @@ function sing_box_runtime_ports_ready() {
         SB_TPROXY_INBOUND_PORT,
         SB_TPROXY_INBOUND6_ADDRESS
     );
+}
+
+function single_ready_sing_box_runtime() {
+    return sing_box_process_count() == 1 &&
+        sing_box_service_running() && sing_box_runtime_ports_ready();
 }
 
 function forkop_running(rt_table, nft_table, mark) {
@@ -1703,6 +1718,8 @@ else if (mode == "reload-sing-box-runtime")
     reload_sing_box_runtime(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
 else if (mode == "hup-sing-box-runtime")
     hup_sing_box_runtime();
+else if (mode == "single-ready-sing-box-runtime")
+    exit(single_ready_sing_box_runtime() ? 0 : 1);
 else if (mode == "clear-reload-state")
     clear_reload_state(ARGV[1], ARGV[2]);
 else if (mode == "remove-file")

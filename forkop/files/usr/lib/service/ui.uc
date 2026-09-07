@@ -1395,7 +1395,7 @@ function latency_clash_method(latency_type) {
 }
 
 function latency_worker(path, latency_type, tag, timeout) {
-    let owner_pid = trim(command_output_from_args([ "sh", "-c", "echo $$" ]));
+    let owner_pid = current_pid();
     if (owner_pid == "" || !module_success(STATE_UC, [
         "acquire-runtime-dir-lock", LATENCY_TEST_LOCK_DIR, owner_pid
     ])) {

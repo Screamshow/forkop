@@ -2608,6 +2608,7 @@ function finish_list_update(status) {
     // A reload requested while this worker owns the runtime lock is queued by
     // init.d and is only safe to run after every download has finished.
     service_state_success([ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
+    module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
     exit(status == 0 ? 0 : 1);
 }
 
@@ -2887,7 +2888,6 @@ function subscription_update_common_locked(force, target_section, target_source_
         log_message("Subscription update applied for changed rules; failed rules kept their previous cache", "info");
     else
         log_message("Subscription update completed", "info");
-    module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
     return true;
 }
 
@@ -2915,6 +2915,8 @@ function subscription_update_common(force, target_section, target_source_index) 
     release_runtime_lock(RELOAD_LOCK_DIR);
     release_runtime_lock(SUBSCRIPTION_UPDATE_LOCK_DIR);
     run_pending_reload_if_requested();
+    if (ok)
+        module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
     return ok ? 0 : 1;
 }
 
