@@ -21,6 +21,7 @@ ops/deployed-nginx/
 !/tests/
 /tests/*
 !/tests/latency_reload_serialization.sh
+!/tests/ruleset_cache.sh
 /docs/releases/
 /ops/mirror/
 /.github/workflows/backend-ci.yml

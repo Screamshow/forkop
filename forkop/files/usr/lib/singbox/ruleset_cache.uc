@@ -183,6 +183,26 @@ function empty_ruleset_path(url) {
     return path;
 }
 
+function prune_stale_cache(manifest) {
+    let keep = {};
+    for (let key, entry in common.object_or_empty(manifest)) {
+        let format = as_string(entry.format) == "source" ? "source" : "binary";
+        let path = cache_path(entry.url, format);
+        keep[path] = true;
+        keep[CACHE_DIR + "/empty-" + cache_key(entry.url) + ".json"] = true;
+        if (format == "binary")
+            keep[binary_validation_path(path)] = true;
+    }
+
+    for (let path in fs.glob(CACHE_DIR + "/*")) {
+        let name = substr(path, length(CACHE_DIR) + 1);
+        let managed = match(name, /^[0-9a-f]{12}\.(srs|json)(\.validated)?$/) ||
+            match(name, /^empty-[0-9a-f]{12}\.json$/);
+        if (managed && !keep[path])
+            fs.unlink(path);
+    }
+}
+
 function local_rule_set(rule_set, manifest, allow_download) {
     let url = as_string(rule_set.url);
     let format = as_string(rule_set.format) == "source" ? "source" : "binary";
@@ -227,7 +247,10 @@ function materialize_config(config_path, allow_download) {
         return false;
     if (common.write_json_file(MANIFEST_PATH, manifest) == null)
         return false;
-    return command_success([ "chmod", "0600", MANIFEST_PATH ]);
+    if (!command_success([ "chmod", "0600", MANIFEST_PATH ]))
+        return false;
+    prune_stale_cache(manifest);
+    return true;
 }
 
 function refresh_manifest(proxy_address) {
