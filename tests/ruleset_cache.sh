@@ -94,6 +94,77 @@ done
 [ "$(find "$WORK_DIR/cache" -maxdepth 1 -type f -name '*.srs' | wc -l)" -eq 1 ] ||
   fail "materialization must retain the active binary rule-set cache"
 
+# Interrupted refreshes must not accumulate persistent temporary files. Exact
+# managed patterns are cleaned, while unrelated files remain untouched.
+printf 'partial\n' >"$WORK_DIR/cache/aaaaaaaaaaaa.srs.download.1.2"
+printf 'partial validation\n' >"$WORK_DIR/cache/aaaaaaaaaaaa.srs.download.1.2.validated"
+printf 'partial manifest\n' >"$WORK_DIR/cache/manifest.json.1.2.tmp"
+printf 'partial validation output\n' >"$WORK_DIR/cache/.validate-aaaaaaaaaaaa.json"
+printf 'keep\n' >"$WORK_DIR/cache/user-file.download.1.2"
+PATH="$WORK_DIR/bin:$PATH" \
+RULESET_TEST_SOURCE_JSON="$WORK_DIR/source.json" \
+RULESET_TEST_SOURCE_SRS="$WORK_DIR/source.srs" \
+FORKOP_RULESET_CACHE_DIR="$WORK_DIR/cache" \
+FORKOP_RULESET_CACHE_MANIFEST="$WORK_DIR/cache/manifest.json" \
+FORKOP_RULESET_CACHE_TEMP_MAX_AGE=0 \
+  ucode -L "$FORKOP_LIB" "$RULESET_CACHE_UC" materialize-config "$WORK_DIR/config-prune.json"
+for temporary in aaaaaaaaaaaa.srs.download.1.2 aaaaaaaaaaaa.srs.download.1.2.validated manifest.json.1.2.tmp .validate-aaaaaaaaaaaa.json; do
+  [ ! -e "$WORK_DIR/cache/$temporary" ] ||
+    fail "stale rule-set temporary file was not removed: $temporary"
+done
+[ -e "$WORK_DIR/cache/user-file.download.1.2" ] ||
+  fail "temporary cleanup removed an unrelated cache file"
+
+# A failed independent source must retain its old cache without suppressing
+# application of another source that changed successfully.
+mkdir -p "$WORK_DIR/partial-cache"
+cat >"$WORK_DIR/partial-old.json" <<'EOF'
+{"version":1,"rules":[{"domain_suffix":["old.test"]}]}
+EOF
+cat >"$WORK_DIR/partial-new.json" <<'EOF'
+{"version":1,"rules":[{"domain_suffix":["new.test"]}]}
+EOF
+cat >"$WORK_DIR/partial-config.json" <<'EOF'
+{"route":{"rule_set":[
+  {"type":"remote","tag":"good","format":"source","url":"https://good.test/rules.json"},
+  {"type":"remote","tag":"bad","format":"source","url":"https://bad.test/rules.json"}
+]}}
+EOF
+PATH="$WORK_DIR/bin:$PATH" \
+RULESET_TEST_SOURCE_JSON="$WORK_DIR/partial-old.json" \
+RULESET_TEST_SOURCE_SRS="$WORK_DIR/source.srs" \
+FORKOP_RULESET_CACHE_DIR="$WORK_DIR/partial-cache" \
+FORKOP_RULESET_CACHE_MANIFEST="$WORK_DIR/partial-cache/manifest.json" \
+  ucode -L "$FORKOP_LIB" "$RULESET_CACHE_UC" materialize-config "$WORK_DIR/partial-config.json"
+good_path="$(ucode -e 'let fs=require("fs"); let c=json(fs.readfile(ARGV[0])); print(c.route.rule_set[0].path)' "$WORK_DIR/partial-config.json")"
+bad_path="$(ucode -e 'let fs=require("fs"); let c=json(fs.readfile(ARGV[0])); print(c.route.rule_set[1].path)' "$WORK_DIR/partial-config.json")"
+cat >"$WORK_DIR/bin/curl" <<'EOF'
+#!/bin/sh
+output=''
+url=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output) output="$2"; shift 2 ;;
+    --proxy|--connect-timeout|--max-time) shift 2 ;;
+    --fail|--location|--silent|--show-error) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+case "$url" in
+  https://good.test/*) cp "$RULESET_TEST_SOURCE_JSON" "$output" ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$WORK_DIR/bin/curl"
+PATH="$WORK_DIR/bin:$PATH" \
+RULESET_TEST_SOURCE_JSON="$WORK_DIR/partial-new.json" \
+FORKOP_RULESET_CACHE_DIR="$WORK_DIR/partial-cache" \
+FORKOP_RULESET_CACHE_MANIFEST="$WORK_DIR/partial-cache/manifest.json" \
+  ucode -L "$FORKOP_LIB" "$RULESET_CACHE_UC" refresh >/dev/null 2>&1 ||
+  fail "a changed rule set must request reload even when another source failed"
+grep -Fq 'new.test' "$good_path" || fail "successful rule-set refresh was not committed"
+grep -Fq 'old.test' "$bad_path" || fail "failed rule-set refresh did not retain last-known-good data"
+
 cat >"$WORK_DIR/offline.json" <<'EOF'
 {"route":{"rule_set":[{"type":"remote","tag":"offline","format":"binary","url":"https://offline.test/missing.srs"}]}}
 EOF

@@ -21,8 +21,11 @@ ops/deployed-nginx/
 !/tests/
 /tests/*
 !/tests/latency_reload_serialization.sh
+!/tests/list_update_reload_policy.sh
+!/tests/list_cache.sh
 !/tests/ruleset_cache.sh
-/docs/releases/
+/docs/releases/*
+!/docs/releases/1.3.8.md
 /ops/mirror/
 /.github/workflows/backend-ci.yml
 /.github/workflows/shellcheck.yml

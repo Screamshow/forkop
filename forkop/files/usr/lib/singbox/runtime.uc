@@ -847,9 +847,10 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
     }
     log_file_lines(runtime_log, "warn", "sing-box config generator: ");
 
-    let rule_set_materialize_mode = bool_option(settings, "download_lists_via_proxy", false) ?
-        "cache-only" : "allow-download";
-    if (!module_success([ RULESET_CACHE_UC, "materialize-config", temp_config, rule_set_materialize_mode ])) {
+    // Configuration generation must be deterministic and network-free. Missing
+    // remote rule sets are represented by an empty local placeholder and are
+    // refreshed only by the serialized post-start/update worker.
+    if (!module_success([ RULESET_CACHE_UC, "materialize-config", temp_config, "cache-only" ])) {
         log_message("Failed to materialize remote rule sets into the persistent local cache. Aborted.", "fatal");
         remove_files([ temp_config, runtime_log ]);
         exit(1);

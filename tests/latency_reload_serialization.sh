@@ -13,12 +13,11 @@ fail() {
 
 grep -Fq 'refresh-rulesets-after-start' "$LIFECYCLE_UC" ||
   fail "cold-start rule-set refresh must remain enabled without a latency test"
-grep -Fq 'module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ])' "$LIFECYCLE_UC" ||
-  fail "a completed sing-box reload must schedule dashboard latency warm-up"
-grep -Fq 'plan.needs_sing_box_reload == 1 && plan.needs_list_update != 1' "$LIFECYCLE_UC" ||
-  fail "reload lifecycle must leave list-triggered warm-up to the completed list worker"
-[ "$(grep -Fc 'module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ])' "$UPDATES_UC")" -eq 2 ] ||
-  fail "list and subscription updates must schedule one coalesced latency warm-up"
+if grep -Fq 'module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ])' "$LIFECYCLE_UC"; then
+  fail "ordinary lifecycle reloads must not schedule automatic latency tests"
+fi
+[ "$(grep -Fc 'module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ])' "$UPDATES_UC")" -eq 1 ] ||
+  fail "only subscription updates may schedule an automatic latency test"
 grep -Fq '"acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid' "$DIAGNOSTICS_UC" ||
   fail "automatic latency test must serialize against Forkop reload"
 grep -Fq '"single-ready-sing-box-runtime"' "$DIAGNOSTICS_UC" ||

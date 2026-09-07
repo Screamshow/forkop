@@ -5,12 +5,16 @@ let uci_core = require("core.uci");
 let connections = require("config.connections");
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
+const STATE_UC = getenv("FORKOP_STATE_UC") || LIB_DIR + "/service/state.uc";
 const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
 const TMP_SING_BOX_FOLDER = getenv("TMP_SING_BOX_FOLDER") || "/tmp/sing-box";
 const TMP_RULESET_FOLDER = getenv("TMP_RULESET_FOLDER") || TMP_SING_BOX_FOLDER + "/rulesets";
 const TMP_SUBSCRIPTION_FOLDER = getenv("TMP_SUBSCRIPTION_FOLDER") || TMP_SING_BOX_FOLDER + "/subscriptions";
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
-const LIST_UPDATE_STATE_FILE = getenv("FORKOP_LIST_UPDATE_STATE_FILE") || RUNTIME_STATE_DIR + "/list-update.timestamp";
+const PERSISTENT_LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forkop/list-cache";
+const PERSISTENT_LIST_CACHE_MANIFEST = getenv("FORKOP_PERSISTENT_LIST_CACHE_MANIFEST") || PERSISTENT_LIST_CACHE_DIR + "/manifest.json";
+const PERSISTENT_LIST_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_LIST_CACHE_FORMAT") || "1";
+const LIST_UPDATE_STATE_FILE = getenv("FORKOP_LIST_UPDATE_STATE_FILE") || PERSISTENT_LIST_CACHE_DIR + "/last-success.timestamp";
 const LIST_UPDATE_PID_FILE = getenv("FORKOP_LIST_UPDATE_PID_FILE") || "/var/run/forkop_list_update.pid";
 const SUBSCRIPTION_UPDATE_STATE_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_STATE_DIR") || RUNTIME_STATE_DIR + "/subscription-update";
 const SUBSCRIPTION_JOB_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_JOB_DIR") || "/var/run/forkop/subscription-update-jobs";
@@ -25,6 +29,8 @@ const PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION
 const PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE") || PERSISTENT_SUBSCRIPTION_CACHE_DIR + "/cache-format";
 const PERSISTENT_SUBSCRIPTION_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT") || "9";
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STATE_DIR + "/reload.pending";
+const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNTIME_STATE_DIR + "/list-update.reload";
+const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
 const RELOAD_STATE_FILE = getenv("FORKOP_RELOAD_STATE_FILE") || RUNTIME_STATE_DIR + "/reload-state";
 const RELOAD_STATE_FORMAT = getenv("FORKOP_RELOAD_STATE_FORMAT") || "1";
 const RULE_CONDITION_CACHE_DIR = getenv("FORKOP_RULE_CONDITION_CACHE_DIR") || RUNTIME_STATE_DIR + "/rule-condition-cache";
@@ -33,6 +39,7 @@ const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
 const PRIORITY_UC = getenv("FORKOP_PRIORITY_UC") || LIB_DIR + "/singbox/priority.uc";
 const DNS_FAILOVER_UC = getenv("FORKOP_DNS_FAILOVER_UC") || LIB_DIR + "/singbox/dns_failover.uc";
 const DIAGNOSTICS_UC = getenv("FORKOP_DIAGNOSTICS_UC") || LIB_DIR + "/diagnostics/runtime.uc";
+const RULESET_CACHE_UC = getenv("FORKOP_RULESET_CACHE_UC") || LIB_DIR + "/singbox/ruleset_cache.uc";
 const COMPONENT_JOB_DIR = getenv("UPDATES_JOB_DIR") || getenv("FORKOP_UI_COMPONENT_ACTION_DIR") || "/var/run/forkop/component-actions";
 const COMPONENT_UPDATE_CHECK_CACHE_DIR = getenv("FORKOP_COMPONENT_UPDATE_CHECK_CACHE_DIR") || RUNTIME_STATE_DIR + "/component-update-checks";
 const COMPONENT_UPDATE_CHECK_STATE_FILE = getenv("FORKOP_COMPONENT_UPDATE_CHECK_STATE_FILE") || RUNTIME_STATE_DIR + "/component-update-check.timestamp";
@@ -75,6 +82,14 @@ let rule_config = null;
 let routing_rulesets_module_value = null;
 let singbox_rulesets_module_value = null;
 let list_mirror_download_state = {};
+let list_ruleset_snapshot_dir = "";
+let list_nft_snapshot_file = "";
+let list_download_staging_dir = "";
+let list_download_cache = {};
+let list_download_metadata = [];
+let list_download_sequence = 0;
+let list_update_signature_at_start = "";
+let subscription_outbounds_changed = false;
 
 function routing_rulesets_module() {
     if (routing_rulesets_module_value == null)
@@ -318,6 +333,189 @@ function file_exists_value(path) {
 function file_nonempty(path) {
     let stat = fs.stat(as_string(path));
     return stat != null && int(stat.size || 0) > 0;
+}
+
+function cache_copy_file(source, target) {
+    let data = fs.readfile(as_string(source));
+    return data != null && write_file(target, data);
+}
+
+function valid_list_ruleset_file(path) {
+    let value = read_json_file(path);
+    return type(value) == "object" && type(value.rules) == "array";
+}
+
+function managed_list_ruleset_name(name) {
+    return match(as_string(name), /^[A-Za-z0-9_][A-Za-z0-9_.-]*-(lists|remote-domains|remote-subnets)-ruleset\.json$/) != null;
+}
+
+function current_list_update_signature() {
+    return trim(command_output_from_args([
+        "ucode", "-L", LIB_DIR, STATE_UC, "list-update-signature"
+    ]));
+}
+
+function persistent_list_cache_manifest() {
+    let manifest = read_json_file(PERSISTENT_LIST_CACHE_MANIFEST);
+    return type(manifest) == "object" ? manifest : null;
+}
+
+function recover_persistent_list_cache_transaction() {
+    let stage = PERSISTENT_LIST_CACHE_DIR + ".stage";
+    let previous = PERSISTENT_LIST_CACHE_DIR + ".previous";
+
+    // A power loss can occur after the active generation was renamed to
+    // .previous but before the staged generation became active. Prefer the
+    // last complete generation; an incomplete stage is never trusted.
+    if (!file_exists_value(PERSISTENT_LIST_CACHE_DIR) && file_exists_value(previous))
+        fs.rename(previous, PERSISTENT_LIST_CACHE_DIR);
+    if (file_exists_value(PERSISTENT_LIST_CACHE_DIR))
+        command_success_from_args([ "rm", "-rf", previous ]);
+    command_success_from_args([ "rm", "-rf", stage ]);
+}
+
+function persistent_list_cache_valid() {
+    recover_persistent_list_cache_transaction();
+    let manifest = persistent_list_cache_manifest();
+    if (manifest == null || as_string(manifest.format) != PERSISTENT_LIST_CACHE_FORMAT)
+        return false;
+
+    let signature = current_list_update_signature();
+    if (signature == "" || as_string(manifest.signature) != signature || type(manifest.files) != "object")
+        return false;
+
+    for (let name, expected_md5 in manifest.files) {
+        if (!managed_list_ruleset_name(name))
+            return false;
+        let path = PERSISTENT_LIST_CACHE_DIR + "/" + name;
+        if (!valid_list_ruleset_file(path) || file_md5(path) != as_string(expected_md5))
+            return false;
+    }
+    for (let source in array_or_empty(manifest.sources)) {
+        source = object_or_empty(source);
+        let name = as_string(source.name);
+        let url = as_string(source.url);
+        if (url == "" || match(name, /^source-[0-9]+$/) == null)
+            return false;
+        let path = PERSISTENT_LIST_CACHE_DIR + "/" + name;
+        if (!file_nonempty(path) || file_md5(path) != as_string(source.md5))
+            return false;
+    }
+    return true;
+}
+
+function restore_persistent_list_cache() {
+    if (!persistent_list_cache_valid())
+        return false;
+
+    let manifest = persistent_list_cache_manifest();
+    if (!ensure_dir(TMP_RULESET_FOLDER))
+        return false;
+
+    let keep = {};
+    for (let name, expected_md5 in manifest.files) {
+        let source = PERSISTENT_LIST_CACHE_DIR + "/" + name;
+        let target = TMP_RULESET_FOLDER + "/" + name;
+        let temporary = target + ".restore." + as_string(now_seconds());
+        keep[name] = true;
+        remove_file(temporary);
+        if (!cache_copy_file(source, temporary) || file_md5(temporary) != as_string(expected_md5) || !fs.rename(temporary, target)) {
+            remove_file(temporary);
+            return false;
+        }
+    }
+
+    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
+        if (managed_list_ruleset_name(name) && !keep[name])
+            remove_file(path);
+    }
+    return true;
+}
+
+function invalidate_persistent_list_cache() {
+    command_success_from_args([ "rm", "-rf", PERSISTENT_LIST_CACHE_DIR ]);
+    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
+        if (managed_list_ruleset_name(name))
+            remove_file(path);
+    }
+    return true;
+}
+
+function persist_list_cache(timestamp) {
+    let signature = current_list_update_signature();
+    if (signature == "")
+        return false;
+
+    let stage = PERSISTENT_LIST_CACHE_DIR + ".stage";
+    let previous = PERSISTENT_LIST_CACHE_DIR + ".previous";
+    command_success_from_args([ "rm", "-rf", stage ]);
+    command_success_from_args([ "rm", "-rf", previous ]);
+    if (!ensure_dir(stage))
+        return false;
+
+    let files = {};
+    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
+        if (!managed_list_ruleset_name(name))
+            continue;
+        let target = stage + "/" + name;
+        if (!valid_list_ruleset_file(path) || !cache_copy_file(path, target) || !valid_list_ruleset_file(target)) {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+        files[name] = file_md5(target);
+        if (files[name] == "") {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+    }
+
+    let sources = [];
+    for (let source in list_download_metadata) {
+        source = object_or_empty(source);
+        let cached = as_string(list_download_cache[as_string(source.url)]);
+        let name = as_string(source.name);
+        let target = stage + "/" + name;
+        if (cached == "" || match(name, /^source-[0-9]+$/) == null ||
+            !cache_copy_file(cached, target) || !file_nonempty(target)) {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+        push(sources, {
+            name,
+            url: as_string(source.url),
+            format: as_string(source.format),
+            md5: file_md5(target)
+        });
+    }
+
+    if (!write_file(stage + "/manifest.json", json_text({
+        format: PERSISTENT_LIST_CACHE_FORMAT,
+        signature,
+        files,
+        sources
+    })) || !write_file(stage + "/last-success.timestamp", as_string(timestamp) + "\n")) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    command_success_from_args([ "chmod", "0700", stage ]);
+    for (let path in fs.glob(stage + "/*"))
+        command_success_from_args([ "chmod", "0600", path ]);
+
+    if (file_exists_value(PERSISTENT_LIST_CACHE_DIR) && !fs.rename(PERSISTENT_LIST_CACHE_DIR, previous)) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    if (!fs.rename(stage, PERSISTENT_LIST_CACHE_DIR)) {
+        if (file_exists_value(previous))
+            fs.rename(previous, PERSISTENT_LIST_CACHE_DIR);
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    command_success_from_args([ "rm", "-rf", previous ]);
+    return true;
 }
 
 function copy_file(source, target) {
@@ -2092,7 +2290,7 @@ function download_fallback(url, filepath, proxy_address) {
     return false;
 }
 
-function download_to_file(url, filepath, proxy_address) {
+function download_to_file_network(url, filepath, proxy_address) {
     let fallbacks = fallback_urls(url);
     let mirror_state = mirror_download_state(url);
     if (mirror_state != null && mirror_state.fallback_active) {
@@ -2127,6 +2325,124 @@ function download_to_file(url, filepath, proxy_address) {
         if (download_fallback(fallback, filepath, proxy_address))
             return true;
     return false;
+}
+
+function download_to_file(url, filepath, proxy_address) {
+    let staged = as_string(list_download_cache[as_string(url)]);
+    if (staged != "")
+        return copy_file(staged, filepath);
+    return download_to_file_network(url, filepath, proxy_address);
+}
+
+function list_preflight_add(entries, seen, url, format) {
+    url = as_string(url);
+    if (url == "" || seen[url])
+        return;
+    seen[url] = true;
+    push(entries, { url, format: as_string(format) });
+}
+
+function list_preflight_entries(sections) {
+    let entries = [];
+    let seen = {};
+    for (let section in sections) {
+        if (!bool_option(section, "enabled", true))
+            continue;
+        for (let service in connections.community_lists(section))
+            for (let url in array_or_empty(BUILTIN_SUBNET_URLS[as_string(service)]))
+                list_preflight_add(entries, seen, url, "plain");
+        for (let reference in list_option_values(section, "domain_ip_lists"))
+            if (match(reference, /^https?:\/\//) != null)
+                list_preflight_add(entries, seen, reference, "plain");
+        for (let url in list_option_values(section, "remote_domain_lists")) {
+            let extension = singbox_rulesets_module().file_extension(url);
+            if (extension != "json" && extension != "srs")
+                list_preflight_add(entries, seen, url, "plain");
+        }
+        for (let url in list_option_values(section, "remote_subnet_lists")) {
+            let extension = singbox_rulesets_module().file_extension(url);
+            list_preflight_add(entries, seen, url, extension == "json" || extension == "srs" ? extension : "plain");
+        }
+        for (let reference in connections.rule_sets_with_subnets(section)) {
+            if (match(reference, /^https?:\/\//) == null)
+                continue;
+            let extension = singbox_rulesets_module().file_extension(reference);
+            list_preflight_add(entries, seen, reference, extension == "json" || extension == "srs" ? extension : "srs");
+        }
+    }
+    return entries;
+}
+
+function validate_staged_list_download(path, format) {
+    if (!file_nonempty(path))
+        return false;
+    if (format == "json")
+        return valid_list_ruleset_file(path);
+    if (format != "srs")
+        return true;
+
+    let output = path + ".json";
+    remove_file(output);
+    let ok = command_success_from_args([ "sing-box", "rule-set", "decompile", path, "-o", output ]) &&
+        valid_list_ruleset_file(output);
+    remove_file(output);
+    return ok;
+}
+
+function prepare_list_downloads(sections, proxy_address) {
+    list_download_cache = {};
+    list_download_metadata = [];
+    list_download_sequence = 0;
+    list_download_staging_dir = temp_path();
+    if (list_download_staging_dir != "")
+        remove_file(list_download_staging_dir);
+    if (list_download_staging_dir == "" || !ensure_dir(list_download_staging_dir)) {
+        list_download_staging_dir = "";
+        return false;
+    }
+
+    for (let entry in list_preflight_entries(sections)) {
+        list_download_sequence++;
+        let path = list_download_staging_dir + "/source-" + as_string(list_download_sequence);
+        if (!download_to_file_network(entry.url, path, proxy_address) ||
+            !validate_staged_list_download(path, entry.format)) {
+            log_message("Failed to preflight list source " + entry.url + "; keeping the active generation", "error");
+            command_success_from_args([ "rm", "-rf", list_download_staging_dir ]);
+            list_download_staging_dir = "";
+            list_download_cache = {};
+            return false;
+        }
+        list_download_cache[entry.url] = path;
+        push(list_download_metadata, {
+            name: "source-" + as_string(list_download_sequence),
+            url: entry.url,
+            format: entry.format
+        });
+    }
+    return true;
+}
+
+function cleanup_list_downloads() {
+    if (list_download_staging_dir != "")
+        command_success_from_args([ "rm", "-rf", list_download_staging_dir ]);
+    list_download_staging_dir = "";
+    list_download_cache = {};
+    list_download_metadata = [];
+}
+
+function load_persistent_list_sources() {
+    if (!persistent_list_cache_valid())
+        return false;
+    let manifest = persistent_list_cache_manifest();
+    list_download_cache = {};
+    list_download_metadata = [];
+    for (let source in array_or_empty(manifest.sources)) {
+        source = object_or_empty(source);
+        let path = PERSISTENT_LIST_CACHE_DIR + "/" + as_string(source.name);
+        list_download_cache[as_string(source.url)] = path;
+        push(list_download_metadata, source);
+    }
+    return true;
 }
 
 function convert_crlf_to_lf(path) {
@@ -2600,7 +2916,188 @@ function list_update_pid_end() {
     remove_file(LIST_UPDATE_PID_FILE);
 }
 
-function finish_list_update(status) {
+function begin_list_ruleset_snapshot() {
+    list_ruleset_snapshot_dir = temp_path();
+    if (list_ruleset_snapshot_dir != "")
+        remove_file(list_ruleset_snapshot_dir);
+    if (list_ruleset_snapshot_dir == "" || !ensure_dir(list_ruleset_snapshot_dir)) {
+        list_ruleset_snapshot_dir = "";
+        return;
+    }
+
+    ensure_dir(TMP_RULESET_FOLDER);
+    if (!command_success_from_args([ "cp", "-R", "-p", TMP_RULESET_FOLDER + "/.", list_ruleset_snapshot_dir ])) {
+        command_success_from_args([ "rm", "-rf", list_ruleset_snapshot_dir ]);
+        list_ruleset_snapshot_dir = "";
+    }
+}
+
+function begin_list_nft_snapshot() {
+    list_nft_snapshot_file = temp_path();
+    if (list_nft_snapshot_file == "")
+        return false;
+    let command = command_from_args([ "nft", "-j", "list", "table", "inet", NFT_TABLE_NAME ]) +
+        " >" + shell_quote(list_nft_snapshot_file);
+    if (command_status(command) != 0 || !file_nonempty(list_nft_snapshot_file)) {
+        remove_file(list_nft_snapshot_file);
+        list_nft_snapshot_file = "";
+        return false;
+    }
+    return true;
+}
+
+function restore_list_nft_snapshot() {
+    if (list_nft_snapshot_file == "")
+        return false;
+    command_success_from_args([ "nft", "delete", "table", "inet", NFT_TABLE_NAME ]);
+    return command_success_from_args([ "nft", "-j", "-f", list_nft_snapshot_file ]);
+}
+
+function finish_list_nft_snapshot(commit) {
+    if (list_nft_snapshot_file == "")
+        return true;
+    let ok = true;
+    if (!commit)
+        ok = restore_list_nft_snapshot();
+    remove_file(list_nft_snapshot_file);
+    list_nft_snapshot_file = "";
+    return ok;
+}
+
+function finish_list_ruleset_snapshot(commit) {
+    if (list_ruleset_snapshot_dir == "")
+        return false;
+
+    if (!commit) {
+        command_success_from_args([ "rm", "-rf", TMP_RULESET_FOLDER ]);
+        ensure_dir(TMP_RULESET_FOLDER);
+        let restored = command_success_from_args([ "cp", "-R", "-p", list_ruleset_snapshot_dir + "/.", TMP_RULESET_FOLDER ]);
+        command_success_from_args([ "rm", "-rf", list_ruleset_snapshot_dir ]);
+        list_ruleset_snapshot_dir = "";
+        return false;
+    }
+
+    let sing_box_changed = false;
+    let seen = {};
+    for (let backup in fs.glob(list_ruleset_snapshot_dir + "/*")) {
+        let name = substr(backup, length(list_ruleset_snapshot_dir) + 1);
+        let current = TMP_RULESET_FOLDER + "/" + name;
+        seen[name] = true;
+        if (file_md5(backup) != "" && file_md5(backup) == file_md5(current)) {
+            // Preserve both bytes and metadata when a checked source produced
+            // exactly the same materialized rule set.
+            fs.rename(backup, current);
+        }
+        else if (match(name, /-(lists|remote-domains)-ruleset\.json$/) != null)
+            sing_box_changed = true;
+    }
+    for (let current in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(current, length(TMP_RULESET_FOLDER) + 1);
+        if (!seen[name] && match(name, /-(lists|remote-domains)-ruleset\.json$/) != null)
+            sing_box_changed = true;
+    }
+
+    command_success_from_args([ "rm", "-rf", list_ruleset_snapshot_dir ]);
+    list_ruleset_snapshot_dir = "";
+    return sing_box_changed;
+}
+
+function reset_remote_plain_rulesets(sections) {
+    for (let section in sections) {
+        if (!bool_option(section, "enabled", true))
+            continue;
+
+        for (let url in list_option_values(section, "remote_domain_lists")) {
+            let extension = singbox_rulesets_module().file_extension(url);
+            if (extension != "json" && extension != "srs") {
+                remove_file(remote_ruleset_path(section, "domains"));
+                break;
+            }
+        }
+        for (let url in list_option_values(section, "remote_subnet_lists")) {
+            let extension = singbox_rulesets_module().file_extension(url);
+            if (extension != "json" && extension != "srs") {
+                remove_file(remote_ruleset_path(section, "subnets"));
+                break;
+            }
+        }
+    }
+}
+
+function apply_persistent_list_cache() {
+    if (!restore_persistent_list_cache() || !load_persistent_list_sources())
+        return false;
+
+    let settings = uci_settings();
+    let sections = uci_sections("section");
+    reset_remote_plain_rulesets(sections);
+    let ok = true;
+    for (let section in sections)
+        if (!rebuild_domain_ip_lists_from_rule(section, settings))
+            ok = false;
+    for (let section in sections)
+        if (!import_builtin_subnets_from_rule(section, settings))
+            ok = false;
+    for (let section in sections)
+        if (!import_domains_from_remote_domain_lists(section, settings))
+            ok = false;
+    for (let section in sections)
+        if (!import_subnets_from_remote_subnet_lists(section, settings))
+            ok = false;
+    for (let section in sections)
+        if (!import_rule_sets_with_subnets_from_rule(section, settings))
+            ok = false;
+    list_download_cache = {};
+    list_download_metadata = [];
+    return ok;
+}
+
+function run_deferred_ruleset_refresh() {
+    let request = trim(file_first_line_value(RULESET_REFRESH_AFTER_LIST_FILE));
+    remove_file(RULESET_REFRESH_AFTER_LIST_FILE);
+    if (request == "")
+        return;
+    module_background([
+        RULESET_CACHE_UC,
+        request == "due" ? "refresh-if-due-and-reload" : "refresh-and-reload",
+        service_proxy_address(uci_settings(), "lists")
+    ]);
+}
+
+function finish_list_update(status, applied) {
+    if (applied == null)
+        applied = status == 0;
+    let rulesets_changed = finish_list_ruleset_snapshot(applied);
+    let nft_restored = finish_list_nft_snapshot(applied);
+    cleanup_list_downloads();
+    let reload_deferred = file_exists_value(LIST_UPDATE_RELOAD_FILE);
+    let ruleset_request = trim(file_first_line_value(RULESET_REFRESH_AFTER_LIST_FILE));
+    let ruleset_changed = false;
+    remove_file(LIST_UPDATE_RELOAD_FILE);
+    remove_file(RULESET_REFRESH_AFTER_LIST_FILE);
+
+    // When both list families changed, refresh remote sing-box rule sets while
+    // the old service proxy is still alive and coalesce everything into the
+    // same final reload.
+    if (!applied) {
+        // A source/config reload requested this transaction, but no complete
+        // generation was committed. Keep both requests pending so the next
+        // successful scheduled or manual list update applies all changes once.
+        if (reload_deferred)
+            write_file(LIST_UPDATE_RELOAD_FILE, "1\n");
+        if (ruleset_request != "")
+            write_file(RULESET_REFRESH_AFTER_LIST_FILE, ruleset_request + "\n");
+    }
+    else if (ruleset_request != "") {
+        let ruleset_status = module_status([
+            RULESET_CACHE_UC,
+            ruleset_request == "due" ? "refresh-if-due" : "refresh",
+            service_proxy_address(uci_settings(), "lists")
+        ]);
+        ruleset_changed = ruleset_status == 0;
+        if (ruleset_status > 1)
+            log_message("Remote rule-set refresh failed; keeping its last-known-good cache", "warn");
+    }
     list_update_pid_end();
     release_runtime_lock(RELOAD_LOCK_DIR);
 
@@ -2608,7 +3105,10 @@ function finish_list_update(status) {
     // A reload requested while this worker owns the runtime lock is queued by
     // init.d and is only safe to run after every download has finished.
     service_state_success([ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
-    module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
+    if (!applied && !nft_restored)
+        log_message("Failed to restore nftables after an aborted list update", "fatal");
+    if (applied && (reload_deferred || rulesets_changed || ruleset_changed))
+        command_status(command_from_args([ SERVICE_INIT, "reload", "list-content" ]) + " >/dev/null 2>&1 1000>&-");
     exit(status == 0 ? 0 : 1);
 }
 
@@ -2637,11 +3137,6 @@ function dns_probe_passed(proxy_address) {
     return false;
 }
 
-function write_list_update_timestamp(timestamp) {
-    ensure_dir(RUNTIME_STATE_DIR);
-    write_file(LIST_UPDATE_STATE_FILE, as_string(timestamp) + "\n");
-}
-
 function list_update() {
     log_message("Starting lists update", "info");
     if (!list_update_pid_begin())
@@ -2659,12 +3154,23 @@ function list_update() {
 
     list_mirror_download_state = {};
     let settings = uci_settings();
+    list_update_signature_at_start = current_list_update_signature();
+    if (list_update_signature_at_start == "")
+        finish_list_update(1, false);
     let proxy_address = service_proxy_address(settings, "lists");
     if (!dns_probe_passed(proxy_address)) {
-        finish_list_update(1);
+        finish_list_update(1, false);
     }
     log_message("Downloading and processing lists", "info");
     let sections = uci_sections("section");
+    if (!prepare_list_downloads(sections, proxy_address))
+        finish_list_update(1, false);
+    begin_list_ruleset_snapshot();
+    if (!begin_list_nft_snapshot()) {
+        log_message("Could not snapshot the active nftables table; aborting the list transaction", "error");
+        finish_list_update(1, false);
+    }
+    reset_remote_plain_rulesets(sections);
     let ok = true;
 
     for (let section in sections)
@@ -2683,15 +3189,49 @@ function list_update() {
         if (!import_rule_sets_with_subnets_from_rule(section, settings))
             ok = false;
 
-    if (ok) {
-        write_list_update_timestamp(now_seconds());
+    if (current_list_update_signature() != list_update_signature_at_start) {
+        log_message("List sources changed during the update; discarding the stale generation", "warn");
+        ok = false;
+    }
+
+    let applied = ok && persist_list_cache(now_seconds());
+    if (applied) {
         log_message("Lists update completed successfully", "info");
     }
     else {
+        if (ok)
+            log_message("Lists were applied, but the persistent list cache could not be committed", "error");
+        ok = false;
         log_message("Lists update failed", "info");
     }
 
-    finish_list_update(ok ? 0 : 1);
+    finish_list_update(ok ? 0 : 1, applied);
+}
+
+function list_update_after_start() {
+    if (!service_state_success([ "has-list-update-sources" ])) {
+        run_deferred_ruleset_refresh();
+        exit(0);
+    }
+
+    if (!restore_persistent_list_cache()) {
+        log_message("Persistent list cache is missing, stale or invalid; scheduling a recovery update", "info");
+        list_update();
+    }
+
+    let interval = settings_update_interval(uci_settings());
+    if (interval == "") {
+        run_deferred_ruleset_refresh();
+        exit(0);
+    }
+    let seconds = duration_to_seconds_value(interval);
+    if (seconds == null)
+        exit(1);
+    let status = update_due_status(now_seconds(), file_first_line_value(LIST_UPDATE_STATE_FILE), seconds);
+    if (status == 0)
+        list_update();
+    run_deferred_ruleset_refresh();
+    exit(status == 1 ? 0 : 1);
 }
 
 function list_update_if_due() {
@@ -2811,6 +3351,7 @@ function run_pending_reload_if_requested() {
 }
 
 function subscription_update_common_locked(force, target_section, target_source_index) {
+    subscription_outbounds_changed = false;
     let result = subscription_cache_capture([
         "update-request",
         force ? "1" : "0",
@@ -2884,6 +3425,8 @@ function subscription_update_common_locked(force, target_section, target_source_
     if (!write_current_reload_state_clean())
         return false;
 
+    subscription_outbounds_changed = true;
+
     if (failed > 0)
         log_message("Subscription update applied for changed rules; failed rules kept their previous cache", "info");
     else
@@ -2915,7 +3458,7 @@ function subscription_update_common(force, target_section, target_source_index) 
     release_runtime_lock(RELOAD_LOCK_DIR);
     release_runtime_lock(SUBSCRIPTION_UPDATE_LOCK_DIR);
     run_pending_reload_if_requested();
-    if (ok)
+    if (ok && subscription_outbounds_changed)
         module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
     return ok ? 0 : 1;
 }
@@ -3072,6 +3615,16 @@ else if (mode == "list-update")
     list_update();
 else if (mode == "list-update-if-due")
     list_update_if_due();
+else if (mode == "list-update-after-start")
+    list_update_after_start();
+else if (mode == "restore-list-cache")
+    exit(restore_persistent_list_cache() ? 0 : 1);
+else if (mode == "list-cache-valid")
+    exit(persistent_list_cache_valid() ? 0 : 1);
+else if (mode == "apply-list-cache")
+    exit(apply_persistent_list_cache() ? 0 : 1);
+else if (mode == "invalidate-list-cache")
+    exit(invalidate_persistent_list_cache() ? 0 : 1);
 else if (mode == "stop-list-update")
     stop_list_update();
 else if (mode == "list-update-due-status")

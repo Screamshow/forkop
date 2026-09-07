@@ -1098,17 +1098,14 @@ function append_list_update_signature_body(body, section) {
     if (name == "" || !bool_option(section, "enabled", true))
         return body;
 
-    let action = option(section, "action", "");
-    body = signature_add_value(body, "lists." + name + ".action", action);
-    if (action == "dns") {
-        body = signature_add_value(body, "lists." + name + ".domain_ip_lists", option(section, "domain_ip_lists", ""));
-        return body;
-    }
-
-    body = signature_add_value(body, "lists." + name + ".ports", section_rule_ports_csv(section));
-    body = signature_add_value(body, "lists." + name + ".community_subnet_lists", rule_config.filter_community_subnet_lists_value(connections.community_lists_value(section)));
+    // This signature deliberately describes only the identity and composition
+    // of list sources.  Local routing conditions (action, ports, interfaces,
+    // source/excluded addresses and section order) are handled by the sing-box
+    // and nft signatures and must not cause network list updates.
+    body = signature_add_value(body, "lists." + name + ".community_lists", connections.community_lists_value(section));
     body = signature_add_value(body, "lists." + name + ".remote_domain_lists", option(section, "remote_domain_lists", ""));
     body = signature_add_value(body, "lists." + name + ".remote_subnet_lists", option(section, "remote_subnet_lists", ""));
+    body = signature_add_value(body, "lists." + name + ".rule_set", connections.rule_sets_value(section));
     body = signature_add_value(body, "lists." + name + ".rule_set_with_subnets", connections.rule_sets_with_subnets_value(section));
     body = signature_add_value(body, "lists." + name + ".domain_ip_lists", option(section, "domain_ip_lists", ""));
 
@@ -1117,9 +1114,18 @@ function append_list_update_signature_body(body, section) {
 
 function list_update_signature_body(sections) {
     let body = "";
+    let by_name = {};
 
-    for (let section in sections)
-        body = append_list_update_signature_body(body, object_or_empty(section));
+    // UCI section order affects rule priority, but not which remote objects
+    // have to be downloaded. Keep source detection stable across reordering.
+    for (let section in sections) {
+        section = object_or_empty(section);
+        let name = section_name(section);
+        if (name != "")
+            by_name[name] = section;
+    }
+    for (let name in sort(keys(by_name)))
+        body = append_list_update_signature_body(body, by_name[name]);
 
     return body;
 }

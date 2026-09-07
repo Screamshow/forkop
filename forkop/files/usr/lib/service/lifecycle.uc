@@ -27,6 +27,8 @@ const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIM
 const RELOAD_STATE_FILE = getenv("FORKOP_RELOAD_STATE_FILE") || RUNTIME_STATE_DIR + "/reload-state";
 const RELOAD_STATE_SNAPSHOT_FILE = getenv("FORKOP_RELOAD_STATE_SNAPSHOT_FILE") || RUNTIME_STATE_DIR + "/reload-state.snapshot." + clock()[0] + "." + clock()[1];
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STATE_DIR + "/reload.pending";
+const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNTIME_STATE_DIR + "/list-update.reload";
+const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
 const SERVICE_TRIGGER_SYNC_FILE = getenv("FORKOP_SERVICE_TRIGGER_SYNC_FILE") || RUNTIME_STATE_DIR + "/service-triggers.sync";
 const SUBSCRIPTION_UPDATE_STATE_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_STATE_DIR") || RUNTIME_STATE_DIR + "/subscription-update";
@@ -738,6 +740,11 @@ function start_main() {
         return status;
     }
 
+    // Materialized plain lists live under /tmp at runtime. Restore the last
+    // fully validated generation before nftables and sing-box are built so a
+    // normal reboot is network-free and never starts with half-built lists.
+    module_success(UPDATES_UC, [ "restore-list-cache" ]);
+
     status = nft_rebuild_runtime();
     if (status != 0)
         return status;
@@ -745,6 +752,18 @@ function start_main() {
     status = module_status(SINGBOX_UC, [ "configure-service" ]);
     if (status != 0)
         return status;
+
+    // The generator rebuilds local file references. Re-apply the complete
+    // cached generation to both rule-set files and the freshly-created nft
+    // table before sing-box validates/starts. A corrupt cache is fatal here;
+    // silently starting with a partial routing policy is less safe.
+    if (module_success(UPDATES_UC, [ "list-cache-valid" ])) {
+        status = module_status(UPDATES_UC, [ "apply-list-cache" ]);
+        if (status != 0) {
+            log_message("Persistent list cache could not be applied. Aborted.", "fatal");
+            return status;
+        }
+    }
 
     status = singbox_init_config();
     if (status != 0)
@@ -783,7 +802,7 @@ function refresh_rulesets_after_start() {
     let proxy_address = setting_bool("download_lists_via_proxy", false)
         ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT)
         : "";
-    let status = module_status(RULESET_CACHE_UC, [ "refresh", proxy_address ]);
+    let status = module_status(RULESET_CACHE_UC, [ "refresh-if-due", proxy_address ]);
 
     if (status == 0) {
         log_message("Rule-set cache changed; reloading Forkop", "info");
@@ -833,8 +852,15 @@ function start_impl() {
         return status;
     }
 
-    module_background(LIFECYCLE_UC, [ "refresh-rulesets-after-start" ]);
-    module_background(UPDATES_UC, [ "list-update" ]);
+    if (module_success(STATE_UC, [ "has-list-update-sources" ])) {
+        // Serialize the two network workers. The rule-set refresh may reload
+        // sing-box and must not tear down the service proxy during list I/O.
+        write_file(RULESET_REFRESH_AFTER_LIST_FILE, "due\n");
+        module_background(UPDATES_UC, [ "list-update-after-start" ]);
+    }
+    else {
+        module_background(LIFECYCLE_UC, [ "refresh-rulesets-after-start" ]);
+    }
     module_background(DIAGNOSTICS_UC, [ "get-system-info" ]);
     return 0;
 }
@@ -1258,7 +1284,12 @@ function reload(reason) {
             return abort_reload(status, true);
     }
 
-    if (plan.needs_sing_box_reload == 1) {
+    if (plan.needs_sing_box_reload == 1 && plan.needs_list_update == 1) {
+        // The list worker owns one final reload after every source has been
+        // processed. Avoid applying an intermediate config with stale files.
+        write_file(LIST_UPDATE_RELOAD_FILE, "1\n");
+    }
+    else if (plan.needs_sing_box_reload == 1) {
         module_success(DNS_FAILOVER_UC, [ "stop-runtime" ]);
         module_success(PRIORITY_UC, [ "stop-runtime" ]);
         status = module_status(SINGBOX_UC, [ "configure-service" ]);
@@ -1356,18 +1387,24 @@ function reload(reason) {
     // files immediately. Start them only after the reload snapshot and config
     // fingerprint have been committed, otherwise Forkop mistakes its own
     // runtime updates for a concurrent user edit and queues another reload.
+    if (plan.changed_list == 1 && plan.needs_list_update == 1)
+        write_file(RULESET_REFRESH_AFTER_LIST_FILE, "force\n");
     if (plan.needs_list_update == 1)
         module_background(UPDATES_UC, [ "list-update" ]);
 
-    // A list worker schedules the warm-up after it has released the reload
-    // lock and applied any pending reload. Avoid racing it from lifecycle.
-    if (plan.needs_sing_box_reload == 1 && plan.needs_list_update != 1)
-        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test" ]);
-
-    module_background(RULESET_CACHE_UC, [
-        "refresh-and-reload",
-        setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
-    ]);
+    // Refresh persistent remote rule sets only when their source signature
+    // changed. Local routing edits must stay entirely offline. The refresh
+    // worker compares content and requests one reload only when cache bytes
+    // actually changed.
+    if (plan.changed_list == 1) {
+        if (plan.needs_list_update != 1) {
+            module_success(UPDATES_UC, [ "invalidate-list-cache" ]);
+            module_background(RULESET_CACHE_UC, [
+                "refresh-and-reload",
+                setting_bool("download_lists_via_proxy", false) ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT) : ""
+            ]);
+        }
+    }
 
     return 0;
 }

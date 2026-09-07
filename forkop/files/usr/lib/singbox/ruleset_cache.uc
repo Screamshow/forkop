@@ -8,6 +8,7 @@ let rulesets = require("singbox.rulesets");
 const CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const MANIFEST_PATH = getenv("FORKOP_RULESET_CACHE_MANIFEST") || CACHE_DIR + "/manifest.json";
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
+const TEMPORARY_FILE_MAX_AGE = int(getenv("FORKOP_RULESET_CACHE_TEMP_MAX_AGE") || "3600");
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -31,6 +32,31 @@ function command_success(args) {
 function ensure_cache_dir() {
     return command_success([ "mkdir", "-p", CACHE_DIR ]) &&
         command_success([ "chmod", "0700", CACHE_DIR ]);
+}
+
+function cleanup_stale_temporary_file(path, now, max_age) {
+    let name = substr(path, length(CACHE_DIR) + 1);
+    let managed = match(name, /^[0-9a-f]{12}\.(srs|json)\.download\.[0-9]+\.[0-9]+(\.validated)?$/) != null ||
+        match(name, /^manifest\.json\.[0-9]+\.[0-9]+\.tmp$/) != null ||
+        match(name, /^\.validate-[0-9a-f]{12}\.json$/) != null;
+    if (!managed)
+        return;
+
+    let stat = fs.stat(path);
+    let mtime = stat == null ? 0 : int(stat.mtime || 0);
+    if (mtime <= 0 || now < mtime || now - mtime >= max_age)
+        fs.unlink(path);
+}
+
+function cleanup_stale_temporary_files() {
+    let now = int(clock()[0]);
+    let max_age = TEMPORARY_FILE_MAX_AGE >= 0 ? TEMPORARY_FILE_MAX_AGE : 3600;
+
+    for (let path in fs.glob(CACHE_DIR + "/*"))
+        cleanup_stale_temporary_file(path, now, max_age);
+    // BusyBox/ucode globbing does not include dotfiles in '*'.
+    for (let path in fs.glob(CACHE_DIR + "/.*"))
+        cleanup_stale_temporary_file(path, now, max_age);
 }
 
 function append_unique(values, value) {
@@ -125,6 +151,52 @@ function valid_cache(path, format) {
     return format == "source" ? valid_source(path) : valid_binary(path);
 }
 
+function duration_seconds(value) {
+    let rest = as_string(value);
+    if (rest == "")
+        return 86400;
+    let total = 0;
+    let multipliers = { s: 1, m: 60, h: 3600, d: 86400 };
+    while (rest != "") {
+        let matched = match(rest, /^([0-9]+)([smhd])(.*)$/);
+        if (matched == null)
+            return 86400;
+        total += int(matched[1]) * multipliers[matched[2]];
+        rest = matched[3];
+    }
+    return total > 0 ? total : 86400;
+}
+
+function entry_is_due(entry) {
+    entry = common.object_or_empty(entry);
+    let format = as_string(entry.format) == "source" ? "source" : "binary";
+    if (!valid_cache(cache_path(entry.url, format), format))
+        return true;
+    let last = int(entry.last_success || "0");
+    let now = int(clock()[0]);
+    let interval = duration_seconds(entry.update_interval);
+    if (last <= 0)
+        return true;
+    if (now < last)
+        return last - now > interval;
+    return now - last >= interval;
+}
+
+function write_manifest(manifest) {
+    let stamp = clock();
+    let temporary = MANIFEST_PATH + "." + as_string(stamp[0]) + "." + as_string(stamp[1]) + ".tmp";
+    fs.unlink(temporary);
+    if (common.write_json_file(temporary, manifest) == null || !command_success([ "chmod", "0600", temporary ])) {
+        fs.unlink(temporary);
+        return false;
+    }
+    if (!fs.rename(temporary, MANIFEST_PATH)) {
+        fs.unlink(temporary);
+        return false;
+    }
+    return true;
+}
+
 function download_candidate(url, target, proxy_address) {
     let args = [ "curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "8", "--max-time", "30" ];
     if (as_string(proxy_address) != "")
@@ -160,19 +232,19 @@ function refresh_entry(entry, proxy_address) {
             fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
             mark_binary_valid(target);
-            return false;
+            return { ok: true, changed: false };
         }
         if (fs.rename(temporary, target)) {
             fs.unlink(binary_validation_path(temporary));
             mark_binary_valid(target);
             command_success([ "chmod", "0600", target ]);
-            return true;
+            return { ok: true, changed: true };
         }
         fs.unlink(temporary);
         fs.unlink(binary_validation_path(temporary));
-        return false;
+        return { ok: false, changed: false };
     }
-    return false;
+    return { ok: false, changed: false };
 }
 
 function empty_ruleset_path(url) {
@@ -203,16 +275,27 @@ function prune_stale_cache(manifest) {
     }
 }
 
-function local_rule_set(rule_set, manifest, allow_download) {
+function local_rule_set(rule_set, manifest, previous_manifest, allow_download) {
     let url = as_string(rule_set.url);
     let format = as_string(rule_set.format) == "source" ? "source" : "binary";
     let key = cache_key(url);
-    let entry = { url, format };
+    let entry = {
+        url,
+        format,
+        update_interval: as_string(rule_set.update_interval) == "" ? "1d" : as_string(rule_set.update_interval),
+        last_success: 0
+    };
+    let previous = common.object_or_empty(common.object_or_empty(previous_manifest)[key]);
+    if (as_string(previous.url) == url && as_string(previous.format) == format)
+        entry.last_success = int(previous.last_success || "0");
     manifest[key] = entry;
 
     let path = cache_path(url, format);
-    if (allow_download && !valid_cache(path, format))
-        refresh_entry(entry, "");
+    if (allow_download && !valid_cache(path, format)) {
+        let result = refresh_entry(entry, "");
+        if (result.ok)
+            entry.last_success = int(clock()[0]);
+    }
 
     let local_format = format;
     if (!valid_cache(path, format)) {
@@ -232,40 +315,66 @@ function local_rule_set(rule_set, manifest, allow_download) {
 function materialize_config(config_path, allow_download) {
     if (!ensure_cache_dir())
         return false;
+    cleanup_stale_temporary_files();
     let config = common.read_json_file(config_path);
     if (type(config) != "object")
         return false;
     let route = common.object_or_empty(config.route);
     let values = common.array_or_empty(route.rule_set);
+    let previous_manifest = common.object_or_empty(common.read_json_file(MANIFEST_PATH));
     let manifest = {};
     for (let i = 0; i < length(values); i++)
         if (type(values[i]) == "object" && values[i].type == "remote")
-            values[i] = local_rule_set(values[i], manifest, allow_download);
+            values[i] = local_rule_set(values[i], manifest, previous_manifest, allow_download);
     route.rule_set = values;
     config.route = route;
     if (!common.write_json_file(config_path, config))
         return false;
-    if (common.write_json_file(MANIFEST_PATH, manifest) == null)
-        return false;
-    if (!command_success([ "chmod", "0600", MANIFEST_PATH ]))
+    if (!write_manifest(manifest))
         return false;
     prune_stale_cache(manifest);
     return true;
 }
 
-function refresh_manifest(proxy_address) {
+function refresh_manifest(proxy_address, due_only) {
     if (!ensure_cache_dir())
         return false;
+    cleanup_stale_temporary_files();
     let manifest = common.object_or_empty(common.read_json_file(MANIFEST_PATH));
     let changed = false;
-    for (let key, entry in manifest)
-        if (refresh_entry(entry, proxy_address))
+    let failed = false;
+    let attempted = false;
+    for (let key, entry in manifest) {
+        if (due_only && !entry_is_due(entry))
+            continue;
+        attempted = true;
+        let result = refresh_entry(entry, proxy_address);
+        if (!result.ok) {
+            failed = true;
+            continue;
+        }
+        entry.last_success = int(clock()[0]);
+        if (result.changed)
             changed = true;
-    return changed;
+    }
+    if (attempted && !write_manifest(manifest))
+        failed = true;
+    // Entries are independent and each refresh is atomically renamed over its
+    // own last-known-good file. Apply successful changes even if another entry
+    // failed; failed entries keep their old cache and remain due for retry.
+    if (failed && !changed)
+        return 2;
+    return changed ? 0 : 1;
 }
 
 function refresh_and_reload(proxy_address) {
-    if (!refresh_manifest(proxy_address))
+    if (refresh_manifest(proxy_address, false) != 0)
+        return;
+    system(command_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]) + " >/dev/null 2>&1 1000>&- &");
+}
+
+function refresh_if_due_and_reload(proxy_address) {
+    if (refresh_manifest(proxy_address, true) != 0)
         return;
     system(command_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]) + " >/dev/null 2>&1 1000>&- &");
 }
@@ -274,9 +383,13 @@ let mode = ARGV[0] || "";
 if (mode == "materialize-config")
     exit(materialize_config(ARGV[1], as_string(ARGV[2]) != "cache-only") ? 0 : 1);
 else if (mode == "refresh")
-    exit(refresh_manifest(ARGV[1]) ? 0 : 1);
+    exit(refresh_manifest(ARGV[1], false));
+else if (mode == "refresh-if-due")
+    exit(refresh_manifest(ARGV[1], true));
 else if (mode == "refresh-and-reload")
     refresh_and_reload(ARGV[1]);
+else if (mode == "refresh-if-due-and-reload")
+    refresh_if_due_and_reload(ARGV[1]);
 else if (mode == "fallback-urls")
     for (let url in fallback_urls(ARGV[1]))
         print(url, "\n");
