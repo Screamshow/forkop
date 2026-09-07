@@ -12,9 +12,16 @@ const TMP_RULESET_FOLDER = getenv("TMP_RULESET_FOLDER") || TMP_SING_BOX_FOLDER +
 const TMP_SUBSCRIPTION_FOLDER = getenv("TMP_SUBSCRIPTION_FOLDER") || TMP_SING_BOX_FOLDER + "/subscriptions";
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const PERSISTENT_LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forkop/list-cache";
+const PERSISTENT_RULESET_CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const PERSISTENT_LIST_CACHE_MANIFEST = getenv("FORKOP_PERSISTENT_LIST_CACHE_MANIFEST") || PERSISTENT_LIST_CACHE_DIR + "/manifest.json";
 const PERSISTENT_LIST_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_LIST_CACHE_FORMAT") || "1";
 const LIST_UPDATE_STATE_FILE = getenv("FORKOP_LIST_UPDATE_STATE_FILE") || PERSISTENT_LIST_CACHE_DIR + "/last-success.timestamp";
+const LIST_UPDATE_RUNTIME_STATE_FILE = getenv("FORKOP_LIST_UPDATE_RUNTIME_STATE_FILE") || RUNTIME_STATE_DIR + "/list-update-last-success.timestamp";
+const LIST_UPDATE_RUNTIME_SIGNATURE_FILE = getenv("FORKOP_LIST_UPDATE_RUNTIME_SIGNATURE_FILE") || RUNTIME_STATE_DIR + "/list-update-signature";
+const PERSISTENT_LIST_CACHE_MAX_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MAX_BYTES") || "8388608");
+const PERSISTENT_LIST_CACHE_MIN_FREE_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MIN_FREE_BYTES") || "8388608");
+const PERSISTENT_LIST_CACHE_MANIFEST_ALLOWANCE = 65536;
+const LIST_DOWNLOAD_MIN_FREE_BYTES = int(getenv("FORKOP_LIST_DOWNLOAD_MIN_FREE_BYTES") || "8388608");
 const LIST_UPDATE_PID_FILE = getenv("FORKOP_LIST_UPDATE_PID_FILE") || "/var/run/forkop_list_update.pid";
 const SUBSCRIPTION_UPDATE_STATE_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_STATE_DIR") || RUNTIME_STATE_DIR + "/subscription-update";
 const SUBSCRIPTION_JOB_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_JOB_DIR") || "/var/run/forkop/subscription-update-jobs";
@@ -335,6 +342,84 @@ function file_nonempty(path) {
     return stat != null && int(stat.size || 0) > 0;
 }
 
+function rounded_file_bytes(path) {
+    let stat = fs.stat(as_string(path));
+    let size = stat == null ? 0 : int(stat.size || 0);
+    return size <= 0 ? 0 : int((size + 4095) / 4096) * 4096;
+}
+
+function persistent_list_cache_available_bytes() {
+    let override = getenv("FORKOP_PERSISTENT_LIST_CACHE_AVAILABLE_BYTES");
+    if (override != null && as_string(override) != "")
+        return int(override);
+
+    let slash = rindex(PERSISTENT_LIST_CACHE_DIR, "/");
+    let probe = slash >= 0 ? substr(PERSISTENT_LIST_CACHE_DIR, 0, slash) : "";
+    if (probe == "")
+        probe = "/";
+    ensure_dir(probe);
+    let output = trim(command_output_from_args([ "df", "-Pk", probe ]));
+    let lines = split(output, "\n");
+    if (length(lines) < 2)
+        return -1;
+    let fields = split(trim(lines[length(lines) - 1]), /[ \t]+/);
+    return length(fields) >= 4 ? int(fields[3]) * 1024 : -1;
+}
+
+function persistent_list_cache_estimated_bytes() {
+    let total = PERSISTENT_LIST_CACHE_MANIFEST_ALLOWANCE;
+    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
+        if (match(as_string(name), /^[A-Za-z0-9_][A-Za-z0-9_.-]*-(lists|remote-domains|remote-subnets)-ruleset\.json$/) != null)
+            total += rounded_file_bytes(path);
+    }
+    for (let source in list_download_metadata) {
+        source = object_or_empty(source);
+        let cached = as_string(list_download_cache[as_string(source.url)]);
+        if (cached != "")
+            total += rounded_file_bytes(cached);
+    }
+    return total;
+}
+
+function directory_allocated_bytes(path) {
+    let output = trim(command_output(command_from_args([ "du", "-sk", path ]) + " 2>/dev/null"));
+    if (output == "")
+        return fs.stat(path) == null ? 0 : -1;
+    let fields = split(output, /[ \t\r\n]+/);
+    return length(fields) > 0 ? int(fields[0]) * 1024 : -1;
+}
+
+function list_cache_has_capacity(required, staged) {
+    let ruleset_bytes = directory_allocated_bytes(PERSISTENT_RULESET_CACHE_DIR);
+    if (ruleset_bytes < 0)
+        ruleset_bytes = 0;
+    if (required < 0 || required + ruleset_bytes > PERSISTENT_LIST_CACHE_MAX_BYTES) {
+        log_message(
+            "Persistent list caches need " + (required + ruleset_bytes) + " bytes, exceeding the " +
+                PERSISTENT_LIST_CACHE_MAX_BYTES + " byte combined limit; keeping the lists in runtime memory only",
+            "warn"
+        );
+        return false;
+    }
+
+    let available = persistent_list_cache_available_bytes();
+    if (available < 0) {
+        log_message("Could not determine free flash space; keeping the lists in runtime memory only", "warn");
+        return false;
+    }
+    let remaining = staged ? available : available - required;
+    if (remaining < PERSISTENT_LIST_CACHE_MIN_FREE_BYTES) {
+        log_message(
+            "Persistent list cache would leave only " + remaining + " bytes free; at least " +
+                PERSISTENT_LIST_CACHE_MIN_FREE_BYTES + " bytes are reserved, keeping the lists in runtime memory only",
+            "warn"
+        );
+        return false;
+    }
+    return true;
+}
+
 function cache_copy_file(source, target) {
     let data = fs.readfile(as_string(source));
     return data != null && write_file(target, data);
@@ -358,6 +443,13 @@ function current_list_update_signature() {
 function persistent_list_cache_manifest() {
     let manifest = read_json_file(PERSISTENT_LIST_CACHE_MANIFEST);
     return type(manifest) == "object" ? manifest : null;
+}
+
+function runtime_list_cache_active() {
+    let runtime = int(trim(file_first_line_value(LIST_UPDATE_RUNTIME_STATE_FILE)) || "0");
+    let persistent = int(trim(file_first_line_value(LIST_UPDATE_STATE_FILE)) || "0");
+    let runtime_signature = trim(file_first_line_value(LIST_UPDATE_RUNTIME_SIGNATURE_FILE));
+    return runtime > persistent && runtime_signature != "" && runtime_signature == current_list_update_signature();
 }
 
 function recover_persistent_list_cache_transaction() {
@@ -405,6 +497,11 @@ function persistent_list_cache_valid() {
 }
 
 function restore_persistent_list_cache() {
+    // A successful RAM-only update is newer than the flash cache. Preserve it
+    // across service reloads during this boot; /var/run and /tmp disappear on
+    // a real reboot, when the last persistent cache becomes the fallback.
+    if (runtime_list_cache_active())
+        return true;
     if (!persistent_list_cache_valid())
         return false;
 
@@ -452,6 +549,9 @@ function persist_list_cache(timestamp) {
     let previous = PERSISTENT_LIST_CACHE_DIR + ".previous";
     command_success_from_args([ "rm", "-rf", stage ]);
     command_success_from_args([ "rm", "-rf", previous ]);
+    let estimated = persistent_list_cache_estimated_bytes();
+    if (!list_cache_has_capacity(estimated, false))
+        return false;
     if (!ensure_dir(stage))
         return false;
 
@@ -504,6 +604,14 @@ function persist_list_cache(timestamp) {
     for (let path in fs.glob(stage + "/*"))
         command_success_from_args([ "chmod", "0600", path ]);
 
+    let staged_bytes = directory_allocated_bytes(stage);
+    let staged_capacity_ok = staged_bytes >= 0 && list_cache_has_capacity(staged_bytes, true);
+    if (!staged_capacity_ok) {
+        log_message("Completed persistent list cache does not fit the flash safety limits; keeping the lists in runtime memory only", "warn");
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+
     if (file_exists_value(PERSISTENT_LIST_CACHE_DIR) && !fs.rename(PERSISTENT_LIST_CACHE_DIR, previous)) {
         command_success_from_args([ "rm", "-rf", stage ]);
         return false;
@@ -516,6 +624,12 @@ function persist_list_cache(timestamp) {
     }
     command_success_from_args([ "rm", "-rf", previous ]);
     return true;
+}
+
+function list_update_last_success() {
+    let persistent = int(trim(file_first_line_value(LIST_UPDATE_STATE_FILE)) || "0");
+    let runtime = int(trim(file_first_line_value(LIST_UPDATE_RUNTIME_STATE_FILE)) || "0");
+    return runtime > persistent ? runtime : persistent;
 }
 
 function copy_file(source, target) {
@@ -2264,10 +2378,25 @@ function record_mirror_download_failure(state) {
 function download_to_file_once(url, filepath, proxy_address) {
     // OpenWrt ships BusyBox wget, which has no GNU wget `-t` retry option.
     // Each call is already one explicit attempt inside download_fallback().
-    let command = command_from_args([ "wget", "--proxy=on", "-T", "20", "-O", filepath, url ]);
+    let target_dir = parent_dir(filepath);
+    if (target_dir == "")
+        target_dir = ".";
+    let output = trim(command_output_from_args([ "df", "-Pk", target_dir ]));
+    let lines = split(output, "\n");
+    let fields = length(lines) >= 2 ? split(trim(lines[length(lines) - 1]), /[ \t]+/) : [];
+    let available = length(fields) >= 4 ? int(fields[3]) * 1024 : -1;
+    if (available < 0 || available <= LIST_DOWNLOAD_MIN_FREE_BYTES) {
+        log_message("Not enough temporary storage to download " + as_string(url) + " safely", "warn");
+        return false;
+    }
+    // ash's file-size limit is enforced while bytes are written, including
+    // responses without Content-Length. Keep a reserve for the running router.
+    let max_blocks = int((available - LIST_DOWNLOAD_MIN_FREE_BYTES) / 512);
+    let download_command = command_from_args([ "wget", "--proxy=on", "-T", "20", "-O", filepath, url ]);
     if (as_string(proxy_address) != "")
-        command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
-            " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + command;
+        download_command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
+            " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + download_command;
+    let command = "ulimit -f " + max_blocks + "; " + download_command;
 
     let status = command_success(command);
     if (!status)
@@ -3025,6 +3154,8 @@ function reset_remote_plain_rulesets(sections) {
 }
 
 function apply_persistent_list_cache() {
+    if (runtime_list_cache_active())
+        return true;
     if (!restore_persistent_list_cache() || !load_persistent_list_sources())
         return false;
 
@@ -3194,18 +3325,22 @@ function list_update() {
         ok = false;
     }
 
-    let applied = ok && persist_list_cache(now_seconds());
-    if (applied) {
-        log_message("Lists update completed successfully", "info");
+    let completed_at = now_seconds();
+    let cache_persisted = ok && persist_list_cache(completed_at);
+    if (ok) {
+        ensure_parent_dir(LIST_UPDATE_RUNTIME_STATE_FILE);
+        write_file(LIST_UPDATE_RUNTIME_STATE_FILE, as_string(completed_at) + "\n");
+        write_file(LIST_UPDATE_RUNTIME_SIGNATURE_FILE, list_update_signature_at_start + "\n");
+        if (cache_persisted)
+            log_message("Lists update completed successfully and was saved to persistent cache", "info");
+        else
+            log_message("Lists update completed successfully in runtime memory; persistent cache was not changed", "warn");
     }
     else {
-        if (ok)
-            log_message("Lists were applied, but the persistent list cache could not be committed", "error");
-        ok = false;
         log_message("Lists update failed", "info");
     }
 
-    finish_list_update(ok ? 0 : 1, applied);
+    finish_list_update(ok ? 0 : 1, ok);
 }
 
 function list_update_after_start() {
@@ -3227,7 +3362,7 @@ function list_update_after_start() {
     let seconds = duration_to_seconds_value(interval);
     if (seconds == null)
         exit(1);
-    let status = update_due_status(now_seconds(), file_first_line_value(LIST_UPDATE_STATE_FILE), seconds);
+    let status = update_due_status(now_seconds(), list_update_last_success(), seconds);
     if (status == 0)
         list_update();
     run_deferred_ruleset_refresh();
@@ -3245,7 +3380,7 @@ function list_update_if_due() {
         exit(1);
     }
 
-    let status = update_due_status(now_seconds(), file_first_line_value(LIST_UPDATE_STATE_FILE), seconds);
+    let status = update_due_status(now_seconds(), list_update_last_success(), seconds);
     if (status == 0)
         list_update();
     if (status == 1)
@@ -3621,6 +3756,14 @@ else if (mode == "restore-list-cache")
     exit(restore_persistent_list_cache() ? 0 : 1);
 else if (mode == "list-cache-valid")
     exit(persistent_list_cache_valid() ? 0 : 1);
+else if (mode == "list-cache-capacity")
+    exit(list_cache_has_capacity(int(ARGV[1]), false) ? 0 : 1);
+else if (mode == "runtime-list-cache-active")
+    exit(runtime_list_cache_active() ? 0 : 1);
+else if (mode == "persist-list-cache")
+    exit(persist_list_cache(int(ARGV[1])) ? 0 : 1);
+else if (mode == "download-list-file")
+    exit(download_to_file_network(ARGV[1], ARGV[2], ARGV[3]) ? 0 : 1);
 else if (mode == "apply-list-cache")
     exit(apply_persistent_list_cache() ? 0 : 1);
 else if (mode == "invalidate-list-cache")

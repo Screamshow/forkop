@@ -23,6 +23,8 @@ ops/deployed-nginx/
 !/tests/latency_reload_serialization.sh
 !/tests/list_update_reload_policy.sh
 !/tests/list_cache.sh
+!/tests/list_cache_space.sh
+!/tests/list_download_space.sh
 !/tests/ruleset_cache.sh
 /docs/releases/*
 !/docs/releases/1.3.8.md

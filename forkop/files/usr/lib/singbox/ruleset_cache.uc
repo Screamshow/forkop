@@ -7,8 +7,14 @@ let rulesets = require("singbox.rulesets");
 
 const CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const MANIFEST_PATH = getenv("FORKOP_RULESET_CACHE_MANIFEST") || CACHE_DIR + "/manifest.json";
+const LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forkop/list-cache";
+const RUNTIME_CACHE_DIR = getenv("FORKOP_RULESET_RUNTIME_CACHE_DIR") || "/tmp/sing-box/ruleset-cache";
+const RUNTIME_MANIFEST_PATH = getenv("FORKOP_RULESET_RUNTIME_MANIFEST") || "/var/run/forkop/ruleset-cache-runtime.json";
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
 const TEMPORARY_FILE_MAX_AGE = int(getenv("FORKOP_RULESET_CACHE_TEMP_MAX_AGE") || "3600");
+const PERSISTENT_CACHE_MAX_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MAX_BYTES") || "8388608");
+const PERSISTENT_CACHE_MIN_FREE_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MIN_FREE_BYTES") || "8388608");
+const DOWNLOAD_MIN_FREE_BYTES = int(getenv("FORKOP_LIST_DOWNLOAD_MIN_FREE_BYTES") || "8388608");
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -29,13 +35,69 @@ function command_success(args) {
     return system(command_from_args(args) + " >/dev/null 2>&1") == 0;
 }
 
-function ensure_cache_dir() {
-    return command_success([ "mkdir", "-p", CACHE_DIR ]) &&
-        command_success([ "chmod", "0700", CACHE_DIR ]);
+function command_output(args) {
+    let pipe = fs.popen(command_from_args(args) + " 2>/dev/null", "r");
+    if (!pipe)
+        return "";
+    let data = pipe.read("all");
+    let status = pipe.close();
+    return status == 0 && data != null ? as_string(data) : "";
 }
 
-function cleanup_stale_temporary_file(path, now, max_age) {
-    let name = substr(path, length(CACHE_DIR) + 1);
+function file_md5(path) {
+    if (fs.stat(path) == null)
+        return "";
+    let fields = split(trim(command_output([ "md5sum", path ])), /[ \t\r\n]+/);
+    return length(fields) > 0 ? as_string(fields[0]) : "";
+}
+
+function parent_dir(path) {
+    path = as_string(path);
+    let slash = rindex(path, "/");
+    return slash >= 0 ? substr(path, 0, slash) : ".";
+}
+
+function allocated_bytes(path) {
+    if (fs.stat(path) == null)
+        return 0;
+    let output = trim(command_output([ "du", "-sk", path ]));
+    if (output == "")
+        return -1;
+    let fields = split(output, /[ \t\r\n]+/);
+    return length(fields) > 0 ? int(fields[0]) * 1024 : -1;
+}
+
+function available_bytes(path, persistent) {
+    let override = persistent ? getenv("FORKOP_PERSISTENT_LIST_CACHE_AVAILABLE_BYTES") : null;
+    if (override != null && as_string(override) != "")
+        return int(override);
+    let output = trim(command_output([ "df", "-Pk", path ]));
+    let lines = split(output, "\n");
+    let fields = length(lines) >= 2 ? split(trim(lines[length(lines) - 1]), /[ \t]+/) : [];
+    return length(fields) >= 4 ? int(fields[3]) * 1024 : -1;
+}
+
+function persistent_cache_can_store(target, new_bytes) {
+    let list_bytes = allocated_bytes(LIST_CACHE_DIR);
+    let ruleset_bytes = allocated_bytes(CACHE_DIR);
+    let old_bytes = allocated_bytes(target);
+    if (list_bytes < 0 || ruleset_bytes < 0 || old_bytes < 0)
+        return false;
+    let final_bytes = list_bytes + ruleset_bytes - old_bytes + new_bytes;
+    let free_bytes = available_bytes(CACHE_DIR, true);
+    return final_bytes <= PERSISTENT_CACHE_MAX_BYTES && free_bytes >= 0 &&
+        free_bytes - new_bytes >= PERSISTENT_CACHE_MIN_FREE_BYTES;
+}
+
+function ensure_cache_dir() {
+    return command_success([ "mkdir", "-p", CACHE_DIR ]) &&
+        command_success([ "chmod", "0700", CACHE_DIR ]) &&
+        command_success([ "mkdir", "-p", RUNTIME_CACHE_DIR ]) &&
+        command_success([ "chmod", "0700", RUNTIME_CACHE_DIR ]);
+}
+
+function cleanup_stale_temporary_file(path, base, now, max_age) {
+    let name = substr(path, length(base) + 1);
     let managed = match(name, /^[0-9a-f]{12}\.(srs|json)\.download\.[0-9]+\.[0-9]+(\.validated)?$/) != null ||
         match(name, /^manifest\.json\.[0-9]+\.[0-9]+\.tmp$/) != null ||
         match(name, /^\.validate-[0-9a-f]{12}\.json$/) != null;
@@ -53,10 +115,14 @@ function cleanup_stale_temporary_files() {
     let max_age = TEMPORARY_FILE_MAX_AGE >= 0 ? TEMPORARY_FILE_MAX_AGE : 3600;
 
     for (let path in fs.glob(CACHE_DIR + "/*"))
-        cleanup_stale_temporary_file(path, now, max_age);
+        cleanup_stale_temporary_file(path, CACHE_DIR, now, max_age);
     // BusyBox/ucode globbing does not include dotfiles in '*'.
     for (let path in fs.glob(CACHE_DIR + "/.*"))
-        cleanup_stale_temporary_file(path, now, max_age);
+        cleanup_stale_temporary_file(path, CACHE_DIR, now, max_age);
+    for (let path in fs.glob(RUNTIME_CACHE_DIR + "/*"))
+        cleanup_stale_temporary_file(path, RUNTIME_CACHE_DIR, now, max_age);
+    for (let path in fs.glob(RUNTIME_CACHE_DIR + "/.*"))
+        cleanup_stale_temporary_file(path, RUNTIME_CACHE_DIR, now, max_age);
 }
 
 function append_unique(values, value) {
@@ -105,6 +171,32 @@ function cache_path(url, format) {
     return CACHE_DIR + "/" + cache_key(url) + (format == "source" ? ".json" : ".srs");
 }
 
+function runtime_cache_path(url, format) {
+    return RUNTIME_CACHE_DIR + "/" + cache_key(url) + (format == "source" ? ".json" : ".srs");
+}
+
+function read_runtime_manifest() {
+    return common.object_or_empty(common.read_json_file(RUNTIME_MANIFEST_PATH));
+}
+
+function write_runtime_manifest(manifest) {
+    let dir = parent_dir(RUNTIME_MANIFEST_PATH);
+    if (!command_success([ "mkdir", "-p", dir ]))
+        return false;
+    let stamp = clock();
+    let temporary = RUNTIME_MANIFEST_PATH + "." + as_string(stamp[0]) + "." + as_string(stamp[1]) + ".tmp";
+    fs.unlink(temporary);
+    if (common.write_json_file(temporary, manifest) == null || !command_success([ "chmod", "0600", temporary ])) {
+        fs.unlink(temporary);
+        return false;
+    }
+    if (!fs.rename(temporary, RUNTIME_MANIFEST_PATH)) {
+        fs.unlink(temporary);
+        return false;
+    }
+    return true;
+}
+
 function valid_source(path) {
     let value = common.read_json_file(path);
     return type(value) == "object" && type(value.rules) == "array";
@@ -136,7 +228,7 @@ function valid_binary(path) {
     if (trim(as_string(fs.readfile(validation_path))) == signature)
         return true;
 
-    let output = CACHE_DIR + "/.validate-" + cache_key(path) + ".json";
+    let output = parent_dir(path) + "/.validate-" + cache_key(path) + ".json";
     fs.unlink(output);
     let ok = command_success([ "sing-box", "rule-set", "decompile", path, "-o", output ]) && valid_source(output);
     fs.unlink(output);
@@ -149,6 +241,20 @@ function valid_binary(path) {
 
 function valid_cache(path, format) {
     return format == "source" ? valid_source(path) : valid_binary(path);
+}
+
+function valid_runtime_entry(runtime_manifest, url, format) {
+    let entry = common.object_or_empty(common.object_or_empty(runtime_manifest)[cache_key(url)]);
+    let path = as_string(entry.path);
+    return as_string(entry.url) == as_string(url) && as_string(entry.format) == format &&
+        path == runtime_cache_path(url, format) && valid_cache(path, format) ? entry : null;
+}
+
+function active_cache_path(runtime_manifest, url, format) {
+    let runtime = valid_runtime_entry(runtime_manifest, url, format);
+    if (runtime != null)
+        return as_string(runtime.path);
+    return cache_path(url, format);
 }
 
 function duration_seconds(value) {
@@ -167,12 +273,14 @@ function duration_seconds(value) {
     return total > 0 ? total : 86400;
 }
 
-function entry_is_due(entry) {
+function entry_is_due(entry, runtime_manifest) {
     entry = common.object_or_empty(entry);
     let format = as_string(entry.format) == "source" ? "source" : "binary";
-    if (!valid_cache(cache_path(entry.url, format), format))
+    let runtime = valid_runtime_entry(runtime_manifest, entry.url, format);
+    let path = runtime != null ? as_string(runtime.path) : cache_path(entry.url, format);
+    if (!valid_cache(path, format))
         return true;
-    let last = int(entry.last_success || "0");
+    let last = runtime != null ? int(runtime.last_success || "0") : int(entry.last_success || "0");
     let now = int(clock()[0]);
     let interval = duration_seconds(entry.update_interval);
     if (last <= 0)
@@ -186,7 +294,10 @@ function write_manifest(manifest) {
     let stamp = clock();
     let temporary = MANIFEST_PATH + "." + as_string(stamp[0]) + "." + as_string(stamp[1]) + ".tmp";
     fs.unlink(temporary);
-    if (common.write_json_file(temporary, manifest) == null || !command_success([ "chmod", "0600", temporary ])) {
+    let text = sprintf("%J\n", manifest);
+    let bytes = length(text) + 4095;
+    if (!persistent_cache_can_store(MANIFEST_PATH, bytes) || fs.writefile(temporary, text) == null ||
+        !command_success([ "chmod", "0600", temporary ])) {
         fs.unlink(temporary);
         return false;
     }
@@ -202,16 +313,38 @@ function download_candidate(url, target, proxy_address) {
     if (as_string(proxy_address) != "")
         push(args, "--proxy", "http://" + as_string(proxy_address));
     push(args, "--output", target, url);
-    return command_success(args);
+    let free_bytes = available_bytes(parent_dir(target), false);
+    if (free_bytes < 0 || free_bytes <= DOWNLOAD_MIN_FREE_BYTES)
+        return false;
+    let max_blocks = int((free_bytes - DOWNLOAD_MIN_FREE_BYTES) / 512);
+    return system("ulimit -f " + max_blocks + "; " + command_from_args(args) + " >/dev/null 2>&1") == 0;
 }
 
-function refresh_entry(entry, proxy_address) {
+function commit_persistent_candidate(source, target, format) {
+    let stamp = clock();
+    let staged = target + ".download." + as_string(stamp[0]) + "." + as_string(stamp[1]);
+    fs.unlink(staged);
+    fs.unlink(binary_validation_path(staged));
+    if (!command_success([ "cp", source, staged ]) || !valid_cache(staged, format) || !fs.rename(staged, target)) {
+        fs.unlink(staged);
+        fs.unlink(binary_validation_path(staged));
+        return false;
+    }
+    fs.unlink(binary_validation_path(staged));
+    if (format == "binary")
+        mark_binary_valid(target);
+    command_success([ "chmod", "0600", target ]);
+    return true;
+}
+
+function refresh_entry(entry, proxy_address, runtime_manifest) {
     entry = common.object_or_empty(entry);
     let url = as_string(entry.url);
     let format = as_string(entry.format) == "source" ? "source" : "binary";
-    let target = cache_path(url, format);
+    let persistent_target = cache_path(url, format);
+    let runtime_target = runtime_cache_path(url, format);
     let stamp = clock();
-    let temporary = target + ".download." + as_string(stamp[0]) + "." + as_string(stamp[1]);
+    let temporary = runtime_target + ".download." + as_string(stamp[0]) + "." + as_string(stamp[1]);
     fs.unlink(temporary);
     fs.unlink(binary_validation_path(temporary));
 
@@ -226,29 +359,65 @@ function refresh_entry(entry, proxy_address) {
             fs.unlink(binary_validation_path(temporary));
             continue;
         }
-        let old_data = fs.readfile(target);
-        let new_data = fs.readfile(temporary);
-        if (old_data != null && new_data != null && old_data == new_data) {
+        let current = active_cache_path(runtime_manifest, url, format);
+        let old_md5 = file_md5(current);
+        let new_md5 = file_md5(temporary);
+        if (old_md5 != "" && old_md5 == new_md5) {
+            let new_bytes = allocated_bytes(temporary);
+            if (current == runtime_target && new_bytes >= 0 && persistent_cache_can_store(persistent_target, new_bytes) &&
+                commit_persistent_candidate(temporary, persistent_target, format)) {
+                fs.unlink(temporary);
+                fs.unlink(binary_validation_path(temporary));
+                fs.unlink(runtime_target);
+                fs.unlink(binary_validation_path(runtime_target));
+                delete runtime_manifest[cache_key(url)];
+                return { ok: true, changed: false, persisted: true };
+            }
             fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
-            mark_binary_valid(target);
-            return { ok: true, changed: false };
+            if (format == "binary")
+                mark_binary_valid(current);
+            return { ok: true, changed: false, persisted: current == persistent_target };
         }
-        if (fs.rename(temporary, target)) {
+
+        let new_bytes = allocated_bytes(temporary);
+        let persisted = new_bytes >= 0 && persistent_cache_can_store(persistent_target, new_bytes);
+        let target = persisted ? persistent_target : runtime_target;
+        let committed = persisted ? commit_persistent_candidate(temporary, target, format) : fs.rename(temporary, target);
+        if (committed) {
+            if (persisted)
+                fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
-            mark_binary_valid(target);
-            command_success([ "chmod", "0600", target ]);
-            return { ok: true, changed: true };
+            if (!persisted && format == "binary")
+                mark_binary_valid(target);
+            if (!persisted)
+                command_success([ "chmod", "0600", target ]);
+            let key = cache_key(url);
+            if (persisted) {
+                fs.unlink(runtime_target);
+                fs.unlink(binary_validation_path(runtime_target));
+                delete runtime_manifest[key];
+            }
+            else {
+                runtime_manifest[key] = {
+                    url,
+                    format,
+                    update_interval: as_string(entry.update_interval),
+                    last_success: int(clock()[0]),
+                    path: runtime_target
+                };
+            }
+            return { ok: true, changed: true, persisted };
         }
         fs.unlink(temporary);
         fs.unlink(binary_validation_path(temporary));
         return { ok: false, changed: false };
     }
-    return { ok: false, changed: false };
+    return { ok: false, changed: false, persisted: false };
 }
 
 function empty_ruleset_path(url) {
-    let path = CACHE_DIR + "/empty-" + cache_key(url) + ".json";
+    let path = RUNTIME_CACHE_DIR + "/empty-" + cache_key(url) + ".json";
     if (!valid_source(path))
         common.write_json_file(path, { version: 1, rules: [] });
     command_success([ "chmod", "0600", path ]);
@@ -275,7 +444,27 @@ function prune_stale_cache(manifest) {
     }
 }
 
-function local_rule_set(rule_set, manifest, previous_manifest, allow_download) {
+function prune_runtime_cache(manifest, runtime_manifest) {
+    let keep = {};
+    for (let key, entry in common.object_or_empty(manifest))
+        keep[RUNTIME_CACHE_DIR + "/empty-" + key + ".json"] = true;
+    for (let key, entry in common.object_or_empty(runtime_manifest)) {
+        let path = as_string(common.object_or_empty(entry).path);
+        if (path != "") {
+            keep[path] = true;
+            keep[binary_validation_path(path)] = true;
+        }
+    }
+    for (let path in fs.glob(RUNTIME_CACHE_DIR + "/*")) {
+        let name = substr(path, length(RUNTIME_CACHE_DIR) + 1);
+        let managed = match(name, /^[0-9a-f]{12}\.(srs|json)(\.validated)?$/) != null ||
+            match(name, /^empty-[0-9a-f]{12}\.json$/) != null;
+        if (managed && !keep[path])
+            fs.unlink(path);
+    }
+}
+
+function local_rule_set(rule_set, manifest, previous_manifest, runtime_manifest, allow_download) {
     let url = as_string(rule_set.url);
     let format = as_string(rule_set.format) == "source" ? "source" : "binary";
     let key = cache_key(url);
@@ -290,11 +479,12 @@ function local_rule_set(rule_set, manifest, previous_manifest, allow_download) {
         entry.last_success = int(previous.last_success || "0");
     manifest[key] = entry;
 
-    let path = cache_path(url, format);
+    let path = active_cache_path(runtime_manifest, url, format);
     if (allow_download && !valid_cache(path, format)) {
-        let result = refresh_entry(entry, "");
-        if (result.ok)
+        let result = refresh_entry(entry, "", runtime_manifest);
+        if (result.ok && result.persisted)
             entry.last_success = int(clock()[0]);
+        path = active_cache_path(runtime_manifest, url, format);
     }
 
     let local_format = format;
@@ -322,17 +512,33 @@ function materialize_config(config_path, allow_download) {
     let route = common.object_or_empty(config.route);
     let values = common.array_or_empty(route.rule_set);
     let previous_manifest = common.object_or_empty(common.read_json_file(MANIFEST_PATH));
+    let runtime_manifest = read_runtime_manifest();
     let manifest = {};
     for (let i = 0; i < length(values); i++)
         if (type(values[i]) == "object" && values[i].type == "remote")
-            values[i] = local_rule_set(values[i], manifest, previous_manifest, allow_download);
+            values[i] = local_rule_set(values[i], manifest, previous_manifest, runtime_manifest, allow_download);
     route.rule_set = values;
     config.route = route;
     if (!common.write_json_file(config_path, config))
         return false;
-    if (!write_manifest(manifest))
+    let persistent_manifest_written = write_manifest(manifest);
+    for (let key, entry in runtime_manifest)
+        if (manifest[key] == null)
+            delete runtime_manifest[key];
+    for (let key, entry in manifest) {
+        let runtime = common.object_or_empty(runtime_manifest[key]);
+        if (!persistent_manifest_written) {
+            if (as_string(runtime.path) == "")
+                runtime_manifest[key] = entry;
+        }
+        else if (as_string(runtime.path) == "")
+            delete runtime_manifest[key];
+    }
+    if (!write_runtime_manifest(runtime_manifest))
         return false;
-    prune_stale_cache(manifest);
+    prune_runtime_cache(manifest, runtime_manifest);
+    if (persistent_manifest_written)
+        prune_stale_cache(manifest);
     return true;
 }
 
@@ -341,23 +547,36 @@ function refresh_manifest(proxy_address, due_only) {
         return false;
     cleanup_stale_temporary_files();
     let manifest = common.object_or_empty(common.read_json_file(MANIFEST_PATH));
+    let runtime_manifest = read_runtime_manifest();
+    // A manifest that could not safely be written to flash is retained in
+    // /var/run. Merge its declarations for this boot.
+    for (let key, entry in runtime_manifest)
+        if (as_string(common.object_or_empty(entry).url) != "")
+            manifest[key] = entry;
     let changed = false;
     let failed = false;
     let attempted = false;
+    let persistent_changed = false;
     for (let key, entry in manifest) {
-        if (due_only && !entry_is_due(entry))
+        if (due_only && !entry_is_due(entry, runtime_manifest))
             continue;
         attempted = true;
-        let result = refresh_entry(entry, proxy_address);
+        let result = refresh_entry(entry, proxy_address, runtime_manifest);
         if (!result.ok) {
             failed = true;
             continue;
         }
-        entry.last_success = int(clock()[0]);
+        if (result.persisted) {
+            delete entry.path;
+            entry.last_success = int(clock()[0]);
+            persistent_changed = true;
+        }
         if (result.changed)
             changed = true;
     }
-    if (attempted && !write_manifest(manifest))
+    if (!write_runtime_manifest(runtime_manifest))
+        failed = true;
+    if (attempted && persistent_changed && !write_manifest(manifest))
         failed = true;
     // Entries are independent and each refresh is atomically renamed over its
     // own last-known-good file. Apply successful changes even if another entry

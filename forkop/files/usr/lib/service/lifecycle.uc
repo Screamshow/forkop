@@ -874,7 +874,11 @@ function stop_main() {
     module_success(SUBSCRIPTION_CACHE_UC, [ "stop-deferred-bootstrap-worker" ]);
     module_success(UPDATES_UC, [ "stop-list-update" ]);
     remove_cron_jobs();
-    command_success_from_args([ "find", TMP_RULESET_FOLDER, "-mindepth", "1", "-maxdepth", "1", "-type", "f", "-delete" ]);
+    // A newer list generation may intentionally live only in /tmp because
+    // flash space was below the persistent-cache reserve. Keep it across an
+    // in-boot service reload; a real reboot clears both /tmp and its marker.
+    if (!module_success(UPDATES_UC, [ "runtime-list-cache-active" ]))
+        command_success_from_args([ "find", TMP_RULESET_FOLDER, "-mindepth", "1", "-maxdepth", "1", "-type", "f", "-delete" ]);
 
     module_success(ZAPRET_UC, [ "stop-runtime" ]);
     module_success(ZAPRET2_UC, [ "stop-runtime" ]);

@@ -108,6 +108,12 @@ grep -Fq 'if (failed && !changed)' "$ROOT_DIR/forkop/files/usr/lib/singbox/rules
 
 grep -Fq 'PERSISTENT_LIST_CACHE_DIR + "/last-success.timestamp"' "$UPDATES_UC" ||
   fail "successful list update time must survive a reboot"
+grep -Fq 'finish_list_update(ok ? 0 : 1, ok)' "$UPDATES_UC" ||
+  fail "a persistent cache failure must not roll back successfully applied runtime lists"
+grep -Fq 'LIST_UPDATE_RUNTIME_STATE_FILE' "$UPDATES_UC" ||
+  fail "a RAM-only successful update must suppress duplicate downloads during the same boot"
+grep -Fq 'runtime-list-cache-active' "$LIFECYCLE_UC" ||
+  fail "service reload must preserve a newer RAM-only list generation"
 grep -Fq 'function prepare_list_downloads(sections, proxy_address)' "$UPDATES_UC" ||
   fail "all remote list sources must pass preflight before active state changes"
 grep -Fq 'function restore_list_nft_snapshot()' "$UPDATES_UC" ||
