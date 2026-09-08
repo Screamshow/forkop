@@ -1133,6 +1133,25 @@ function start() {
         return status;
     }
 
+    // Latency values live in sing-box's runtime and are lost on a real reboot.
+    // Queue a fresh pass only after the complete Forkop runtime has passed its
+    // startup verification.  schedule-automatic-latency-test coalesces an
+    // existing marker, so this also safely continues a test interrupted by a
+    // reboot instead of starting a competing worker.
+    let config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
+    let proxy_signature = trim(module_output(DIAGNOSTICS_UC, [
+        "proxy-outbounds-signature", config_path
+    ]));
+    if (proxy_signature == "") {
+        log_message("Automatic latency test was not scheduled at startup because no testable proxy outbounds were found", "info");
+    }
+    else if (!module_success(UPDATES_UC, [ "schedule-automatic-latency-test", proxy_signature ])) {
+        log_message("Automatic latency test could not be scheduled at startup", "warn");
+    }
+    else {
+        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "new" ]);
+    }
+
     return 0;
 }
 
