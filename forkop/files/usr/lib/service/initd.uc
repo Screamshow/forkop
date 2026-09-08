@@ -26,6 +26,11 @@ const START_RETRY_FILE = getenv("FORKOP_START_RETRY_FILE") || RUNTIME_STATE_DIR 
 const START_RETRY_PID_FILE = getenv("FORKOP_START_RETRY_PID_FILE") || RUNTIME_STATE_DIR + "/start-retry.pid";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
 const START_RETRY_DELAY_SECONDS = getenv("FORKOP_START_RETRY_DELAY_SECONDS") || "30";
+// A package upgrade can start Forkop while the previous process is still
+// completing a list-content reload.  Use the same inter-process lock as
+// reload_service() so that start never classifies that expected transient as
+// an orphaned sing-box process.
+const START_RUNTIME_LOCK_WAIT_SECONDS = getenv("FORKOP_START_RUNTIME_LOCK_WAIT_SECONDS") || "30";
 const SERVICE_TRIGGER_SYNC_FILE = getenv("FORKOP_SERVICE_TRIGGER_SYNC_FILE") || RUNTIME_STATE_DIR + "/service-triggers.sync";
 const INTERNAL_CONFIG_TRIGGER_GUARD = getenv("FORKOP_INTERNAL_CONFIG_TRIGGER_GUARD") || "/var/run/forkop.internal-config-change";
 const CONFIG_CHANGE_REASON = getenv("FORKOP_CONFIG_CHANGE_REASON") || "on_config_change";
@@ -209,6 +214,20 @@ function acquire_runtime_dir_lock(lock_dir, owner_pid) {
 
     release_runtime_dir_lock(lock_dir);
     return false;
+}
+
+function acquire_runtime_dir_lock_wait(lock_dir, owner_pid, timeout) {
+    timeout = int(timeout || 0);
+    let started_at = int(current_epoch(), 10) || 0;
+
+    while (!acquire_runtime_dir_lock(lock_dir, owner_pid)) {
+        let now = int(current_epoch(), 10) || started_at;
+        if (now - started_at >= timeout)
+            return false;
+        command_success_from_args([ "sleep", "1" ]);
+    }
+
+    return true;
 }
 
 function release_runtime_dir_lock(lock_dir) {
@@ -564,11 +583,20 @@ function start_plan(reason, owner_pid, settings, bin_ok) {
 
 function start_service(reason, owner_pid) {
     print("Start Forkop\n");
-    let plan = start_plan_value(reason, owner_pid, uci_settings(), null);
-    if (!plan.bin_ok)
+    let runtime_lock_owner = owner_pid || owner_pid_value();
+    if (!acquire_runtime_dir_lock_wait(RELOAD_LOCK_DIR, runtime_lock_owner, START_RUNTIME_LOCK_WAIT_SECONDS)) {
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[warn] Forkop start deferred because a runtime reload did not finish in time" ]);
         return 1;
+    }
+
+    let plan = start_plan_value(reason, owner_pid, uci_settings(), null);
+    if (!plan.bin_ok) {
+        release_runtime_dir_lock(RELOAD_LOCK_DIR);
+        return 1;
+    }
 
     let status = command_status_from_args([ BIN_PATH, "start" ]);
+    release_runtime_dir_lock(RELOAD_LOCK_DIR);
     if (status == 0) {
         clear_start_retry(START_RETRY_FILE);
         cancel_scheduled_start_retry(START_RETRY_PID_FILE);
