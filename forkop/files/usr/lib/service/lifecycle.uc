@@ -855,13 +855,14 @@ function start_main() {
         return start_phase_failed("subscription-caches", status);
     }
 
-    // Materialized list data is an explicit generation.  A source-backed
-    // policy may not start from missing or invalid list data: that would
-    // silently turn protected IP traffic into final/direct traffic.
+    // Materialized list data is an explicit generation.  Never restore an
+    // invalid cache, but let a missing generation proceed to the existing
+    // post-start recovery worker. It downloads, validates, and atomically
+    // publishes a replacement before reloading the runtime. This keeps the
+    // upgrade path from releases that predate the persistent cache working.
     let has_list_sources = module_success(STATE_UC, [ "has-list-update-sources" ]);
     if (has_list_sources && !module_success(UPDATES_UC, [ "restore-list-cache" ])) {
-        log_message("No valid active list generation is available. Aborted rather than starting a partial routing policy.", "fatal");
-        return 1;
+        log_message("No valid active list generation is available; continuing with a one-time bootstrap update for legacy list cache migration", "warn");
     }
 
     if (!nft_candidate_begin())
