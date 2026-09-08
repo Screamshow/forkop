@@ -86,10 +86,10 @@ Installs or updates Forkop packages:
   - luci-app-forkop
   - luci-i18n-forkop-ru when requested or when LuCI language is Russian
 
-Can also install or switch sing-box variant:
-  - sing-box-tiny from the mirrored OpenWrt feeds (default)
-  - stable sing-box from the mirrored OpenWrt feeds
-  - sing-box-extended from GitHub OpenWrt packages (for xHTTP support)
+sing-box policy:
+  - preserve the currently installed sing-box variant
+  - install sing-box-tiny when sing-box is absent
+  - offer a switch to tiny only when the flash-space preflight requires it
 
 Automation options (must be explicitly requested):
   --allow-low-space-tiny       Allow stable/extended sing-box to be replaced
@@ -2300,9 +2300,6 @@ sing_box_is_present() {
 }
 
 select_sing_box_installation() {
-    answer=""
-    default_choice=1
-
     if legacy_binary_managed_sing_box_present; then
         SING_BOX_INSTALL_VARIANT="extended-compressed"
         msg "The legacy binary-managed sing-box variant will be reinstalled for Forkop"
@@ -2314,36 +2311,8 @@ select_sing_box_installation() {
         return 0
     fi
 
-    if ! interactive_terminal_available; then
-        SING_BOX_INSTALL_VARIANT="tiny"
-        msg "$(installer_text sing_box_prompt): $default_choice ($(installer_text sing_box_tiny), non-interactive)"
-        return 0
-    fi
-
-    while :; do
-        printf '\n%s\n' "$(installer_text sing_box_prompt)"
-        printf '  1) %s\n' "$(installer_text sing_box_tiny)"
-        printf '  2) %s\n' "$(installer_text sing_box_stable)"
-        printf '  3) %s\n' "$(installer_text sing_box_extended)"
-        printf '%s [%s]: ' "$(installer_text select)" "$default_choice"
-        read -r answer </dev/tty || return 1
-        [ -n "$answer" ] || answer="$default_choice"
-
-        if [ "$answer" = "1" ]; then
-            SING_BOX_INSTALL_VARIANT="tiny"
-            return 0
-        fi
-        if [ "$answer" = "2" ]; then
-            SING_BOX_INSTALL_VARIANT="stable"
-            return 0
-        fi
-        if [ "$answer" = "3" ]; then
-            SING_BOX_INSTALL_VARIANT="extended"
-            return 0
-        fi
-
-        warn "$(installer_text invalid_choice)"
-    done
+    SING_BOX_INSTALL_VARIANT="tiny"
+    msg "sing-box is not installed; sing-box-tiny will be installed"
 }
 
 install_selected_sing_box() {
@@ -2519,13 +2488,7 @@ decide_i18n_installation() {
             ;;
     esac
 
-    if numbered_yes_no_prompt "$(installer_text i18n_prompt)"; then
-        FORKOP_I18N_REQUESTED=1
-        INSTALLER_LANG="ru"
-        return 0
-    fi
-
-    warn "$(installer_text i18n_skip)"
+    msg "$(installer_text i18n_skip)"
 }
 
 download_forkop_packages() {
