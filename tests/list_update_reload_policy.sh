@@ -50,12 +50,11 @@ plan_output="$(ucode "$RELOAD_UC" plan \
   0 0 1 1 0)"
 printf '%s\n' "$plan_output" | awk -F '\t' '$1 == "needs_nft_rebuild" && $2 == "1" { found = 1 } END { exit found ? 0 : 1 }' ||
   fail "local nft change did not request an nft rebuild"
-printf '%s\n' "$plan_output" | awk -F '\t' '$1 == "needs_list_update" && $2 == "0" { found = 1 } END { exit found ? 0 : 1 }' ||
-  fail "local nft change requested a list update"
+printf '%s\n' "$plan_output" | awk -F '\t' '$1 == "needs_list_update" && $2 == "1" { found = 1 } END { exit found ? 0 : 1 }' ||
+  fail "local nft change did not request restoration of downloaded subnet sets"
 
-if grep -Fq 'needs.nft_rebuild && context.has_nft_list_update_sources' "$RELOAD_UC"; then
-  fail "an nft rebuild must not imply a network list update"
-fi
+grep -Fq 'needs.nft_rebuild && context.has_nft_list_update_sources' "$RELOAD_UC" ||
+  fail "an nft rebuild must refill downloaded subnet sets"
 
 for local_key in '.action"' '.ports"' '.source_ip_cidr"' '.excluded_source_ip_cidr"' '.interfaces"'; do
   if awk -v needle="$local_key" '
@@ -86,8 +85,11 @@ grep -Fq '[ "cp", "-R", "-p", TMP_RULESET_FOLDER + "/.", list_ruleset_snapshot_d
   fail "list updates must preserve metadata for unchanged materialized rule sets"
 [ "$(grep -Fc 'SERVICE_INIT, "reload", "list-content"' "$UPDATES_UC")" -eq 1 ] ||
   fail "changed list content must request exactly one final reload"
-grep -Fq 'applied && (reload_deferred || rulesets_changed || ruleset_changed)' "$UPDATES_UC" ||
-  fail "list worker must coalesce deferred and committed-content reloads"
+grep -Fq 'let reload_result = command_capture(command_from_args([ SERVICE_INIT, "reload", "list-content" ])' "$UPDATES_UC" &&
+grep -Fq 'write_file(LIST_UPDATE_RELOAD_FILE, "apply-pending\n")' "$UPDATES_UC" &&
+grep -Fq 'trim(reload_result.output) == "queued"' "$UPDATES_UC" &&
+grep -Fq 'write_file(LIST_UPDATE_RELOAD_FILE, "apply-failed\n")' "$UPDATES_UC" ||
+  fail "committed content must receive one final reload and retain a local retry on apply failure"
 grep -Fq 'if (!applied)' "$UPDATES_UC" &&
   grep -Fq 'write_file(LIST_UPDATE_RELOAD_FILE, "1\n")' "$UPDATES_UC" ||
   fail "failed source transactions must preserve rather than execute a deferred reload"
@@ -108,7 +110,7 @@ grep -Fq 'if (failed && !changed)' "$ROOT_DIR/forkop/files/usr/lib/singbox/rules
 
 grep -Fq 'PERSISTENT_LIST_CACHE_DIR + "/last-success.timestamp"' "$UPDATES_UC" ||
   fail "successful list update time must survive a reboot"
-grep -Fq 'finish_list_update(ok ? 0 : 1, ok)' "$UPDATES_UC" ||
+grep -Fq 'finish_list_update(ok ? 0 : 1, ok, generation_changed)' "$UPDATES_UC" ||
   fail "a persistent cache failure must not roll back successfully applied runtime lists"
 grep -Fq 'LIST_UPDATE_RUNTIME_STATE_FILE' "$UPDATES_UC" ||
   fail "a RAM-only successful update must suppress duplicate downloads during the same boot"
@@ -127,7 +129,9 @@ grep -Fq 'if (status == 0)' "$UPDATES_UC" ||
   fail "list_update_if_due scheduling contract is missing"
 grep -Fq 'if (ok && subscription_outbounds_changed)' "$UPDATES_UC" ||
   fail "subscription updates must warm latency only after outbounds changed"
-grep -Fq 'subscription_outbounds_changed = true' "$UPDATES_UC" ||
-  fail "successful changed subscriptions must retain automatic latency warm-up"
+grep -Fq 'final_proxy_set_changed = proxy_signature_after != "" && proxy_signature_after != proxy_signature_before' "$UPDATES_UC" ||
+  fail "subscription latency warm-up must use the final canonical proxy signature"
+grep -Fq 'schedule_automatic_latency_test(proxy_signature_after)' "$UPDATES_UC" ||
+  fail "changed proxy sets must persist pending latency work before launch"
 
 printf 'list update/reload policy checks passed\n'

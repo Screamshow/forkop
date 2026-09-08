@@ -74,7 +74,17 @@ reload_service() {
     status="$?"
     trap - INT TERM
 
-    [ "$result" = "sync" ] && sync_service_triggers
+    case "$result" in
+        sync)
+            sync_service_triggers
+            ;;
+        # Keep the queue acknowledgement visible to the list worker.  It
+        # distinguishes accepted-but-not-applied list-content from a completed
+        # lifecycle and retains its durable local apply marker accordingly.
+        queued)
+            printf '%s\n' queued
+            ;;
+    esac
     return "$status"
 }
 

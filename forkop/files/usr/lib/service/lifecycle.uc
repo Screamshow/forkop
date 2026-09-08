@@ -124,6 +124,7 @@ let subscription_caches_prepared = getenv("FORKOP_SUBSCRIPTION_CACHES_PREPARED")
 let subscription_runtime_no_refresh = getenv("FORKOP_SUBSCRIPTION_RUNTIME_NO_REFRESH") || "0";
 let subscription_deferred_sections = "";
 let nft_populate_enabled = NFT_POPULATE_ENABLED_DEFAULT;
+let nft_candidate_batch_file = "";
 let rule_condition_cache_enabled = 0;
 let startup_config_fingerprint = "";
 
@@ -289,6 +290,13 @@ function lifecycle_env() {
         FORKOP_SUBSCRIPTION_UPDATE_LOCK_DIR: SUBSCRIPTION_UPDATE_LOCK_DIR,
         FORKOP_PENDING_RELOAD_FILE: PENDING_RELOAD_FILE,
         FORKOP_RELOAD_LOCK_DIR: RELOAD_LOCK_DIR,
+        FORKOP_NFT_BATCH_FILE: nft_candidate_batch_file,
+        FORKOP_NFT_CANDIDATE_FAIL_PHASE: getenv("FORKOP_NFT_CANDIDATE_FAIL_PHASE") || "",
+        FORKOP_SINGBOX_CONFIG_FAIL_PHASE: getenv("FORKOP_SINGBOX_CONFIG_FAIL_PHASE") || "",
+        // Test-only bounded readiness fault injection is forwarded to the
+        // state module. Empty in production, where its normal timeout stays
+        // unchanged.
+        FORKOP_SING_BOX_RELOAD_PID_TIMEOUT: getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "",
         TMP_SING_BOX_FOLDER: TMP_SING_BOX_FOLDER,
         TMP_RULESET_FOLDER: TMP_RULESET_FOLDER,
         TMP_SUBSCRIPTION_FOLDER: TMP_SUBSCRIPTION_FOLDER,
@@ -626,6 +634,42 @@ function nft_rebuild_runtime() {
     ]);
 }
 
+function nft_candidate_begin() {
+    nft_candidate_batch_file = trim(command_output_from_args([ "mktemp" ]));
+    if (nft_candidate_batch_file == "") {
+        log_message("Failed to create nft candidate batch: mktemp returned no path", "fatal");
+        return false;
+    }
+    remove_file(nft_candidate_batch_file);
+    // fs.writefile() returns the byte count on OpenWrt. An empty seed is a
+    // successful zero-byte write but is falsey, so keep a harmless nft comment
+    // as the first line of every candidate transaction.
+    let created = write_file(nft_candidate_batch_file, "# Forkop nft candidate\n");
+    if (!created)
+        log_message("Failed to create nft candidate batch: ucode write_file returned false", "fatal");
+    return created;
+}
+
+function nft_candidate_validate() {
+    return nft_candidate_batch_file != "" && module_success(NFT_UC, [
+        "nft-validate-candidate-batch",
+        nft_candidate_batch_file
+    ]);
+}
+
+function nft_candidate_finish(commit, validated) {
+    let path = nft_candidate_batch_file;
+    nft_candidate_batch_file = "";
+    if (path == "")
+        return !commit;
+    let status = !commit || module_success(NFT_UC, [
+        validated ? "nft-commit-candidate-batch" : "nft-apply-candidate-batch",
+        path
+    ]);
+    remove_file(path);
+    return status;
+}
+
 function nft_populate_runtime_sets() {
     return module_status(NFT_UC, [
         "nft-populate-runtime-sets-from-uci",
@@ -657,6 +701,71 @@ function singbox_init_config() {
         subscription_caches_prepared = "1";
     }
     return result.status;
+}
+
+function singbox_prepare_config_stage(stage_path) {
+    let result = module_capture(SINGBOX_UC, [
+        "prepare-config-stage",
+        "0",
+        subscription_caches_prepared,
+        subscription_runtime_no_refresh,
+        subscription_deferred_sections,
+        stage_path
+    ]);
+    if (result.status == 0) {
+        subscription_deferred_sections = trim(result.output);
+        subscription_caches_prepared = "1";
+    }
+    return result.status;
+}
+
+function discard_singbox_config_stage(stage_path) {
+    if (as_string(stage_path) != "")
+        module_success(SINGBOX_UC, [ "discard-config-stage", stage_path ]);
+}
+
+function restore_guarded_singbox_runtime(backup_path, guard_active) {
+    if (as_string(backup_path) == "" || !module_success(SINGBOX_UC, [ "restore-config-stage", backup_path ]))
+        return false;
+
+    let pid_result = module_capture(STATE_UC, [ "sing-box-service-runtime-pid" ]);
+    let pid_before = pid_result.status == 0 ? trim(pid_result.output) : "";
+    let config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
+    if (module_status(STATE_UC, [
+        "reload-sing-box-runtime",
+        pid_before,
+        "transition-new",
+        file_md5(config_path),
+        "1"
+    ]) != 0)
+        return false;
+
+    if (module_status(STATE_UC, [
+        "wait-forkop-stable-start",
+        RT_TABLE_NAME,
+        NFT_TABLE_NAME,
+        NFT_FAKEIP_MARK,
+        as_string(SING_BOX_START_STABLE_MIN_AGE),
+        as_string(SING_BOX_START_VERIFY_TIMEOUT)
+    ]) != 0)
+        return false;
+
+    return !guard_active || module_success(NFT_UC, [
+        "remove-transition-guard",
+        NFT_TABLE_NAME,
+        NFT_FAKEIP_MARK
+    ]);
+}
+
+function transition_guard_checkpoint() {
+    // Test-only observability for the cross-component ordering contract. Both
+    // values are absent in normal service execution.
+    let marker = as_string(getenv("FORKOP_TRANSITION_GUARD_MARKER") || "");
+    if (marker != "")
+        write_file(marker, "guard-active\n");
+    let pause = int(getenv("FORKOP_TRANSITION_GUARD_PAUSE_SECONDS") || "0");
+    if (pause > 0 && pause <= 30)
+        command_success_from_args([ "sleep", as_string(pause) ]);
 }
 
 function refresh_cron() {
@@ -709,6 +818,12 @@ function start_sing_box_and_wait() {
     ]);
 }
 
+function start_phase_failed(phase, status) {
+    if (status != 0)
+        log_message("Startup phase '" + phase + "' failed with exit status " + as_string(status), "fatal");
+    return status;
+}
+
 function start_main() {
     let status;
 
@@ -723,13 +838,13 @@ function start_main() {
 
     status = module_status(NFT_UC, [ "ensure-bridge-netfilter-disabled" ]);
     if (status != 0)
-        return status;
+        return start_phase_failed("bridge-netfilter", status);
 
     module_success(STATE_UC, [ "sync-time-if-needed" ]);
 
     status = module_status(SUBSCRIPTION_CACHE_UC, [ "ensure-runtime-dirs" ]);
     if (status != 0)
-        return status;
+        return start_phase_failed("runtime-dirs", status);
 
     if (!acquire_start_subscription_update_lock())
         return 1;
@@ -737,41 +852,62 @@ function start_main() {
     status = prepare_subscription_caches("startup");
     if (status != 0) {
         log_message("Subscription caches are not ready. Aborted.", "fatal");
-        return status;
+        return start_phase_failed("subscription-caches", status);
     }
 
-    // Materialized plain lists live under /tmp at runtime. Restore the last
-    // fully validated generation before nftables and sing-box are built so a
-    // normal reboot is network-free and never starts with half-built lists.
-    module_success(UPDATES_UC, [ "restore-list-cache" ]);
+    // Materialized list data is an explicit generation.  A source-backed
+    // policy may not start from missing or invalid list data: that would
+    // silently turn protected IP traffic into final/direct traffic.
+    let has_list_sources = module_success(STATE_UC, [ "has-list-update-sources" ]);
+    if (has_list_sources && !module_success(UPDATES_UC, [ "restore-list-cache" ])) {
+        log_message("No valid active list generation is available. Aborted rather than starting a partial routing policy.", "fatal");
+        return 1;
+    }
 
+    if (!nft_candidate_begin())
+        return start_phase_failed("nft-candidate-begin", 1);
     status = nft_rebuild_runtime();
-    if (status != 0)
-        return status;
+    if (status != 0) {
+        nft_candidate_finish(false);
+        return start_phase_failed("nft-rebuild", status);
+    }
 
     status = module_status(SINGBOX_UC, [ "configure-service" ]);
-    if (status != 0)
-        return status;
+    if (status != 0) {
+        nft_candidate_finish(false);
+        return start_phase_failed("sing-box-service-configure", status);
+    }
 
     // The generator rebuilds local file references. Re-apply the complete
     // cached generation to both rule-set files and the freshly-created nft
     // table before sing-box validates/starts. A corrupt cache is fatal here;
     // silently starting with a partial routing policy is less safe.
-    if (module_success(UPDATES_UC, [ "list-cache-valid" ])) {
+    if (has_list_sources && (module_success(UPDATES_UC, [ "runtime-list-cache-active" ]) ||
+        module_success(UPDATES_UC, [ "list-cache-valid" ]))) {
         status = module_status(UPDATES_UC, [ "apply-list-cache" ]);
         if (status != 0) {
+            nft_candidate_finish(false);
             log_message("Persistent list cache could not be applied. Aborted.", "fatal");
-            return status;
+            return start_phase_failed("active-list-generation", status);
         }
+    }
+    status = nft_populate_runtime_sets();
+    if (status != 0) {
+        nft_candidate_finish(false);
+        return start_phase_failed("nft-runtime-sets", status);
+    }
+    if (!nft_candidate_finish(true)) {
+        log_message("Candidate nftables policy could not be applied; the active policy was left unchanged", "fatal");
+        return start_phase_failed("nft-candidate-apply", 1);
     }
 
     status = singbox_init_config();
     if (status != 0)
-        return status;
+        return start_phase_failed("sing-box-config", status);
 
     status = refresh_cron();
     if (status != 0)
-        return status;
+        return start_phase_failed("cron-refresh", status);
 
     module_success(BYEDPI_UC, [ "start-runtime" ]);
 
@@ -862,6 +998,10 @@ function start_impl() {
         module_background(LIFECYCLE_UC, [ "refresh-rulesets-after-start" ]);
     }
     module_background(DIAGNOSTICS_UC, [ "get-system-info" ]);
+    // The worker exits immediately when no persistent pending marker exists.
+    // Scheduling it here guarantees that a reboot-interrupted test resumes
+    // only after sing-box, Clash API, and the rest of Forkop are ready.
+    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "resume" ]);
     return 0;
 }
 
@@ -940,7 +1080,35 @@ function abort_reload(status, runtime_changed) {
     return status;
 }
 
+function abort_guarded_transition(status, stage_path, backup_path, guard_active) {
+    nft_candidate_finish(false);
+    discard_singbox_config_stage(stage_path);
+
+    if (!guard_active)
+        return abort_reload(status, false);
+
+    if (fs.stat(backup_path) != null && restore_guarded_singbox_runtime(backup_path, true))
+        return abort_reload(status, false);
+
+    // Do not call cleanup_failed_runtime here. The guard intentionally stays
+    // in the old table and drops classified traffic until an operator/retry can
+    // restore a coherent pair; tearing down the table would create a direct
+    // leak window.
+    log_message("Cross-component transition rollback failed; retaining the fail-closed nft guard", "fatal");
+    remove_file(RELOAD_STATE_SNAPSHOT_FILE);
+    return status == 0 ? 1 : status;
+}
+
 function start() {
+    // A second sing-box is not safely attributable from its executable name.
+    // Do not turn this detection into a stop/restart cycle: that could remove
+    // the old working nft policy while an orphan remains alive.
+    if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
+        log_message("Refusing Forkop start: sing-box process ownership is ambiguous; preserving the existing runtime", "fatal");
+        release_start_subscription_update_lock();
+        return 1;
+    }
+
     let status = start_impl();
     release_start_subscription_update_lock();
 
@@ -1177,8 +1345,20 @@ function dns_failover_apply(candidate_state_path) {
 }
 
 function reload(reason) {
+    reason = as_string(reason || "");
+    // A completed list generation whose final runtime apply failed is safe to
+    // retry locally. Never let a later generic/pending reload skip that
+    // generation or trigger a second network update.
+    if (reason != "list-content" && fs.stat(LIST_UPDATE_RELOAD_FILE) != null) {
+        log_message("A committed list generation is pending runtime apply; performing a local list-content reload", "info");
+        reason = "list-content";
+    }
     let status;
-    let force_runtime_reload = as_string(reason || "") == "on_config_change" ? 0 : 1;
+    // This remains false until a complete nft transaction was accepted or a
+    // sing-box process reload was requested. Candidate preparation and its
+    // check/apply failures have not changed the live policy.
+    let runtime_changed = false;
+    let force_runtime_reload = reason == "on_config_change" ? 0 : 1;
     let reload_config_fingerprint = external_config_fingerprint();
     rule_condition_cache_enabled = force_runtime_reload;
 
@@ -1193,6 +1373,10 @@ function reload(reason) {
         return status;
 
     if (!module_success(STATE_UC, [ "forkop-running", RT_TABLE_NAME, NFT_TABLE_NAME, NFT_FAKEIP_MARK ])) {
+        if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
+            log_message("Reload refused: multiple or non-procd sing-box processes were detected; preserving the existing runtime", "fatal");
+            return finish_reload_status(1, reload_config_fingerprint);
+        }
         log_message("Runtime state is incomplete; restarting Forkop runtime", "info");
         return finish_reload_status(restart_runtime_for_reload(), reload_config_fingerprint);
     }
@@ -1253,6 +1437,14 @@ function reload(reason) {
     }
 
     let plan = parse_reload_plan(plan_result.output);
+    // A changed source must first become a complete active generation. Do not
+    // publish a freshly rebuilt table without its replacement list data.
+    if (reason == "list-content") {
+        plan.has_work = 1;
+        plan.needs_nft_rebuild = 1;
+        plan.needs_list_update = 0;
+        plan.changed_list = 0;
+    }
     write_service_trigger_sync_state(plan.changed_service_triggers);
 
     if (plan.has_work == 0) {
@@ -1281,33 +1473,107 @@ function reload(reason) {
     if (plan.needs_byedpi_restart == 1)
         module_success(BYEDPI_UC, [ "stop-runtime" ]);
 
-    if (plan.needs_nft_rebuild == 1) {
-        log_message("Rebuilding nftables rules", "info");
-        status = nft_rebuild_runtime();
-        if (status != 0)
-            return abort_reload(status, true);
-    }
-
-    if (plan.needs_sing_box_reload == 1 && plan.needs_list_update == 1) {
-        // The list worker owns one final reload after every source has been
-        // processed. Avoid applying an intermediate config with stale files.
-        write_file(LIST_UPDATE_RELOAD_FILE, "1\n");
-    }
-    else if (plan.needs_sing_box_reload == 1) {
+    // A staged config and a checked nft batch must both exist before the
+    // first live transition. The old sing-box process keeps its in-memory
+    // config while this preparation runs.
+    let staged_singbox_config = "";
+    let staged_singbox_backup = "";
+    let transition_guard_active = false;
+    let needs_singbox_transition = plan.needs_sing_box_reload == 1 &&
+        !(plan.needs_list_update == 1 && plan.changed_list == 1);
+    let sing_box_config_path = "";
+    let sing_box_config_hash_before = "";
+    let sing_box_pid_before = "";
+    if (needs_singbox_transition) {
         module_success(DNS_FAILOVER_UC, [ "stop-runtime" ]);
         module_success(PRIORITY_UC, [ "stop-runtime" ]);
         status = module_status(SINGBOX_UC, [ "configure-service" ]);
         if (status != 0)
-            return abort_reload(status, true);
-        let sing_box_config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
-        let sing_box_config_hash_before = file_md5(sing_box_config_path);
-        let sing_box_pid_result = module_capture(STATE_UC, [ "sing-box-service-runtime-pid" ]);
-        let sing_box_pid_before = sing_box_pid_result.status == 0 ? trim(sing_box_pid_result.output) : "";
-        nft_populate_enabled = plan.needs_nft_rebuild == 1 ? 1 : 0;
-        status = singbox_init_config();
-        if (status != 0)
-            return abort_reload(status, true);
-        nft_populate_enabled = NFT_POPULATE_ENABLED_DEFAULT;
+            return abort_reload(status, false);
+        sing_box_config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
+        sing_box_config_hash_before = file_md5(sing_box_config_path);
+        sing_box_pid_before = sing_box_runtime_pid();
+        staged_singbox_config = trim(command_output_from_args([ "mktemp" ]));
+        staged_singbox_backup = trim(command_output_from_args([ "mktemp" ]));
+        if (staged_singbox_config == "" || staged_singbox_backup == "") {
+            discard_singbox_config_stage(staged_singbox_config);
+            remove_file(staged_singbox_backup);
+            return abort_reload(1, false);
+        }
+        // mktemp creates the backup path, while commit-config-stage requires
+        // copying the live config itself before it is changed.
+        remove_file(staged_singbox_backup);
+        status = singbox_prepare_config_stage(staged_singbox_config);
+        if (status != 0) {
+            discard_singbox_config_stage(staged_singbox_config);
+            return abort_reload(status, false);
+        }
+    }
+
+    if (plan.needs_nft_rebuild == 1 && !(plan.changed_list == 1 && plan.needs_list_update == 1)) {
+        log_message("Rebuilding nftables rules", "info");
+        if (!nft_candidate_begin())
+            return abort_reload(1, false);
+        status = nft_rebuild_runtime();
+        if (status != 0) {
+            nft_candidate_finish(false);
+            return abort_reload(status, runtime_changed);
+        }
+        // A local policy change must reconstruct downloaded subnet data from
+        // the already active generation.  It is deliberately synchronous and
+        // offline: list_update is reserved for a changed source signature.
+        if ((plan.needs_list_update == 1 && plan.changed_list == 0) || reason == "list-content") {
+            status = module_status(UPDATES_UC, [ "apply-list-cache" ]);
+            if (status != 0) {
+                nft_candidate_finish(false);
+                log_message("Active list generation could not be restored after nft rebuild. Aborted to preserve fail-safe policy.", "fatal");
+                return abort_reload(status, runtime_changed);
+            }
+        }
+        // Inline/source-aware sets are part of the same candidate, not a
+        // post-commit append. List-derived elements above use the active
+        // generation and are recorded in this very batch as well.
+        status = nft_populate_runtime_sets();
+        if (status != 0) {
+            nft_candidate_finish(false);
+            discard_singbox_config_stage(staged_singbox_config);
+            if (status == 0)
+                log_message("Candidate nftables policy failed validation or apply; active policy was left unchanged", "fatal");
+            return abort_reload(status == 0 ? 1 : status, runtime_changed);
+        }
+        // When sing-box also changes, retain this checked candidate until the
+        // new process is ready behind the temporary fail-closed guard.
+        if (needs_singbox_transition && !nft_candidate_validate()) {
+            nft_candidate_finish(false);
+            discard_singbox_config_stage(staged_singbox_config);
+            log_message("Candidate nftables policy failed validation; active policy was left unchanged", "fatal");
+            return abort_reload(1, runtime_changed);
+        }
+        if (!needs_singbox_transition && !nft_candidate_finish(true, false)) {
+            if (status == 0)
+                log_message("Candidate nftables policy failed validation or apply; active policy was left unchanged", "fatal");
+            return abort_reload(status == 0 ? 1 : status, runtime_changed);
+        }
+        if (!needs_singbox_transition)
+            runtime_changed = true;
+    }
+
+    if (plan.needs_sing_box_reload == 1 && plan.needs_list_update == 1 && plan.changed_list == 1) {
+        // The list worker owns one final reload after every source has been
+        // processed. Avoid applying an intermediate config with stale files.
+        write_file(LIST_UPDATE_RELOAD_FILE, "1\n");
+    }
+    else if (needs_singbox_transition) {
+        // The guard is installed atomically in the existing table after
+        // mangle marking and before TPROXY. It is the only unavoidable
+        // cross-component window: protected packets are dropped, never sent
+        // to a process with a different routing generation.
+        if (!module_success(NFT_UC, [ "install-transition-guard", NFT_TABLE_NAME, NFT_FAKEIP_MARK ]))
+            return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, false);
+        transition_guard_active = true;
+        transition_guard_checkpoint();
+        if (!module_success(SINGBOX_UC, [ "commit-config-stage", staged_singbox_config, staged_singbox_backup ]))
+            return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
         status = module_status(STATE_UC, [
             "reload-sing-box-runtime",
             sing_box_pid_before,
@@ -1316,7 +1582,7 @@ function reload(reason) {
             as_string(force_runtime_reload)
         ]);
         if (status != 0)
-            return abort_reload(status, true);
+            return abort_guarded_transition(status, staged_singbox_config, staged_singbox_backup, transition_guard_active);
         status = module_status(STATE_UC, [
             "wait-forkop-stable-start",
             RT_TABLE_NAME,
@@ -1326,10 +1592,16 @@ function reload(reason) {
             as_string(SING_BOX_START_VERIFY_TIMEOUT)
         ]);
         if (status != 0) {
-            log_message("Reload verification failed after sing-box was reloaded; stopping Forkop runtime", "fatal");
-            cleanup_failed_runtime();
-            return status;
+            log_message("Reload verification failed after sing-box was reloaded; restoring the previous coherent runtime", "fatal");
+            return abort_guarded_transition(status, staged_singbox_config, staged_singbox_backup, transition_guard_active);
         }
+        if (nft_candidate_batch_file != "" && !nft_candidate_finish(true, true))
+            return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
+        if (nft_candidate_batch_file == "" && !module_success(NFT_UC, [ "remove-transition-guard", NFT_TABLE_NAME, NFT_FAKEIP_MARK ]))
+            return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
+        transition_guard_active = false;
+        remove_file(staged_singbox_backup);
+        runtime_changed = true;
         status = module_status(PRIORITY_UC, [ "start-runtime" ]);
         if (status != 0) {
             log_message("Failed to start Priority runtime after sing-box reload", "fatal");
@@ -1342,11 +1614,6 @@ function reload(reason) {
             cleanup_failed_runtime();
             return status;
         }
-    }
-    else if (plan.needs_nft_rebuild == 1 && nft_populate_enabled == 1) {
-        status = nft_populate_runtime_sets();
-        if (status != 0)
-            return abort_reload(status, true);
     }
 
     if (plan.needs_zapret_restart == 1)
@@ -1387,13 +1654,19 @@ function reload(reason) {
     if (status != 0)
         return status;
 
+    // Clear the durable retry request only after the complete local apply
+    // committed its reload state. A failed candidate/guarded transition
+    // returns above and deliberately leaves the marker intact.
+    if (reason == "list-content")
+        remove_file(LIST_UPDATE_RELOAD_FILE);
+
     // Background workers may update UCI selector state or materialized list
     // files immediately. Start them only after the reload snapshot and config
     // fingerprint have been committed, otherwise Forkop mistakes its own
     // runtime updates for a concurrent user edit and queues another reload.
     if (plan.changed_list == 1 && plan.needs_list_update == 1)
         write_file(RULESET_REFRESH_AFTER_LIST_FILE, "force\n");
-    if (plan.needs_list_update == 1)
+    if (plan.needs_list_update == 1 && plan.changed_list == 1)
         module_background(UPDATES_UC, [ "list-update" ]);
 
     // Refresh persistent remote rule sets only when their source signature
@@ -1426,6 +1699,13 @@ function reload_tracked(reason) {
         module_success(UI_UC, [ "service-action-finish-after-command", "reload", job_id, as_string(status) ]);
 
     return status;
+}
+
+function reload_reason_fixture(reason) {
+    reason = as_string(reason || "");
+    if (reason != "list-content" && fs.stat(LIST_UPDATE_RELOAD_FILE) != null)
+        reason = "list-content";
+    print(reason, "\n");
 }
 
 function restart() {
@@ -1531,6 +1811,10 @@ else if (mode == "stop")
     status = stop();
 else if (mode == "reload")
     status = reload_tracked(ARGV[1] || "");
+else if (mode == "reload-reason-fixture") {
+    reload_reason_fixture(ARGV[1] || "");
+    status = 0;
+}
 else if (mode == "dns-failover-apply")
     status = dns_failover_apply(ARGV[1] || "");
 else if (mode == "restart")

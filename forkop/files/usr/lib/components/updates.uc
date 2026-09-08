@@ -9,15 +9,23 @@ const STATE_UC = getenv("FORKOP_STATE_UC") || LIB_DIR + "/service/state.uc";
 const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
 const TMP_SING_BOX_FOLDER = getenv("TMP_SING_BOX_FOLDER") || "/tmp/sing-box";
 const TMP_RULESET_FOLDER = getenv("TMP_RULESET_FOLDER") || TMP_SING_BOX_FOLDER + "/rulesets";
+const RUNTIME_LIST_GENERATION_DIR = getenv("FORKOP_RUNTIME_LIST_GENERATION_DIR") || TMP_SING_BOX_FOLDER + "/list-generation";
 const TMP_SUBSCRIPTION_FOLDER = getenv("TMP_SUBSCRIPTION_FOLDER") || TMP_SING_BOX_FOLDER + "/subscriptions";
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const PERSISTENT_LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forkop/list-cache";
 const PERSISTENT_RULESET_CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const PERSISTENT_LIST_CACHE_MANIFEST = getenv("FORKOP_PERSISTENT_LIST_CACHE_MANIFEST") || PERSISTENT_LIST_CACHE_DIR + "/manifest.json";
-const PERSISTENT_LIST_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_LIST_CACHE_FORMAT") || "1";
+const PERSISTENT_LIST_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_LIST_CACHE_FORMAT") || "2";
+const LEGACY_PERSISTENT_LIST_CACHE_FORMAT = "1";
+// Test-only failure injection. Empty in production; each value names one
+// publication phase and is deliberately checked before that phase mutates state.
+const LIST_GENERATION_FAIL_PHASE = getenv("FORKOP_LIST_GENERATION_FAIL_PHASE") || "";
 const LIST_UPDATE_STATE_FILE = getenv("FORKOP_LIST_UPDATE_STATE_FILE") || PERSISTENT_LIST_CACHE_DIR + "/last-success.timestamp";
 const LIST_UPDATE_RUNTIME_STATE_FILE = getenv("FORKOP_LIST_UPDATE_RUNTIME_STATE_FILE") || RUNTIME_STATE_DIR + "/list-update-last-success.timestamp";
 const LIST_UPDATE_RUNTIME_SIGNATURE_FILE = getenv("FORKOP_LIST_UPDATE_RUNTIME_SIGNATURE_FILE") || RUNTIME_STATE_DIR + "/list-update-signature";
+const LIST_CACHE_LOG_STATE_FILE = getenv("FORKOP_LIST_CACHE_LOG_STATE_FILE") || RUNTIME_STATE_DIR + "/list-cache-restore.log-state";
+const AUTOMATIC_LATENCY_PENDING_FILE = getenv("FORKOP_AUTOMATIC_LATENCY_PENDING_FILE") || "/etc/forkop/automatic-latency-test.pending";
+const AUTOMATIC_LATENCY_PENDING_FORMAT = "1";
 const PERSISTENT_LIST_CACHE_MAX_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MAX_BYTES") || "8388608");
 const PERSISTENT_LIST_CACHE_MIN_FREE_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MIN_FREE_BYTES") || "8388608");
 const PERSISTENT_LIST_CACHE_MANIFEST_ALLOWANCE = 65536;
@@ -91,12 +99,14 @@ let singbox_rulesets_module_value = null;
 let list_mirror_download_state = {};
 let list_ruleset_snapshot_dir = "";
 let list_nft_snapshot_file = "";
+let list_nft_candidate_file = "";
 let list_download_staging_dir = "";
 let list_download_cache = {};
 let list_download_metadata = [];
 let list_download_sequence = 0;
 let list_update_signature_at_start = "";
 let subscription_outbounds_changed = false;
+let runtime_generation_commit_changed = false;
 
 function routing_rulesets_module() {
     if (routing_rulesets_module_value == null)
@@ -445,83 +455,430 @@ function persistent_list_cache_manifest() {
     return type(manifest) == "object" ? manifest : null;
 }
 
-function runtime_list_cache_active() {
-    let runtime = int(trim(file_first_line_value(LIST_UPDATE_RUNTIME_STATE_FILE)) || "0");
-    let persistent = int(trim(file_first_line_value(LIST_UPDATE_STATE_FILE)) || "0");
-    let runtime_signature = trim(file_first_line_value(LIST_UPDATE_RUNTIME_SIGNATURE_FILE));
-    return runtime > persistent && runtime_signature != "" && runtime_signature == current_list_update_signature();
+function parent_dir(path) {
+    path = as_string(path);
+    let slash = rindex(path, "/");
+    return slash >= 0 ? substr(path, 0, slash) : "";
 }
 
-function recover_persistent_list_cache_transaction() {
-    let stage = PERSISTENT_LIST_CACHE_DIR + ".stage";
-    let previous = PERSISTENT_LIST_CACHE_DIR + ".previous";
-
-    // A power loss can occur after the active generation was renamed to
-    // .previous but before the staged generation became active. Prefer the
-    // last complete generation; an incomplete stage is never trusted.
-    if (!file_exists_value(PERSISTENT_LIST_CACHE_DIR) && file_exists_value(previous))
-        fs.rename(previous, PERSISTENT_LIST_CACHE_DIR);
-    if (file_exists_value(PERSISTENT_LIST_CACHE_DIR))
-        command_success_from_args([ "rm", "-rf", previous ]);
-    command_success_from_args([ "rm", "-rf", stage ]);
+function ensure_parent_dir(path) {
+    let dir = parent_dir(path);
+    return dir == "" || dir == "." || ensure_dir(dir);
 }
 
-function persistent_list_cache_valid() {
-    recover_persistent_list_cache_transaction();
-    let manifest = persistent_list_cache_manifest();
-    if (manifest == null || as_string(manifest.format) != PERSISTENT_LIST_CACHE_FORMAT)
-        return false;
+function list_cache_log_once(key, message, level) {
+    key = as_string(key);
+    if (key != "" && trim(file_first_line_value(LIST_CACHE_LOG_STATE_FILE)) == key)
+        return;
 
-    let signature = current_list_update_signature();
-    if (signature == "" || as_string(manifest.signature) != signature || type(manifest.files) != "object")
-        return false;
-
-    for (let name, expected_md5 in manifest.files) {
-        if (!managed_list_ruleset_name(name))
-            return false;
-        let path = PERSISTENT_LIST_CACHE_DIR + "/" + name;
-        if (!valid_list_ruleset_file(path) || file_md5(path) != as_string(expected_md5))
-            return false;
+    log_message(message, level);
+    if (key != "") {
+        ensure_parent_dir(LIST_CACHE_LOG_STATE_FILE);
+        write_file(LIST_CACHE_LOG_STATE_FILE, key + "\n");
     }
-    for (let source in array_or_empty(manifest.sources)) {
-        source = object_or_empty(source);
-        let name = as_string(source.name);
-        let url = as_string(source.url);
-        if (url == "" || match(name, /^source-[0-9]+$/) == null)
+}
+
+function generation_phase_failed(phase) {
+    return LIST_GENERATION_FAIL_PHASE == phase;
+}
+
+function validate_staged_list_download(path, format) {
+    if (!file_nonempty(path))
+        return false;
+    if (format == "json")
+        return valid_list_ruleset_file(path);
+    if (format != "srs")
+        return true;
+
+    let output = path + ".json";
+    remove_file(output);
+    let ok = command_success_from_args([ "sing-box", "rule-set", "decompile", path, "-o", output ]) &&
+        valid_list_ruleset_file(output);
+    remove_file(output);
+    return ok;
+}
+
+function owner_pid() {
+    let pid = trim(command_output_from_args([ "sh", "-c", "echo $PPID" ]));
+    return match(pid, /^[0-9]+$/) != null ? pid : "0";
+}
+
+function generation_identity(signature) {
+    let stamp = clock();
+    return "gen-" + as_string(stamp[0]) + "-" + as_string(stamp[1]) + "-" + owner_pid() + "-" + substr(as_string(signature), 0, 12);
+}
+
+function generation_file_valid(root, entry) {
+    entry = object_or_empty(entry);
+    let name = as_string(entry.name);
+    let kind = as_string(entry.kind);
+    let path = root + "/" + name;
+    if (kind != "ruleset" && kind != "source")
+        return { valid: false, reason: "manifest contains an unknown generation file kind", key: "kind-" + name };
+    if ((kind == "ruleset" && !managed_list_ruleset_name(name)) ||
+        (kind == "source" && match(name, /^source-[0-9]+$/) == null))
+        return { valid: false, reason: "manifest contains an invalid " + kind + " file name", key: "invalid-name-" + name };
+    if (!file_nonempty(path))
+        return { valid: false, reason: "generation file '" + name + "' is missing or empty", key: "missing-" + name };
+    let stat = fs.stat(path);
+    if (int(entry.size || -1) != int(object_or_empty(stat).size || 0))
+        return { valid: false, reason: "size verification failed for generation file '" + name + "'", key: "size-" + name };
+    if (file_md5(path) != as_string(entry.md5))
+        return { valid: false, reason: "checksum verification failed for generation file '" + name + "'", key: "md5-" + name };
+    if (kind == "ruleset" && !valid_list_ruleset_file(path))
+        return { valid: false, reason: "rule-set file '" + name + "' is not valid JSON", key: "json-" + name };
+    if (kind == "source" && as_string(entry.url) == "")
+        return { valid: false, reason: "source file '" + name + "' has no identity", key: "source-identity-" + name };
+    if (kind == "source" && !validate_staged_list_download(path, as_string(entry.source_format)))
+        return { valid: false, reason: "source file '" + name + "' failed " + as_string(entry.source_format) + " validation", key: "source-schema-" + name };
+    return { valid: true, bytes: int(object_or_empty(stat).size || 0) };
+}
+
+function list_generation_validation(root, expected_signature) {
+    let manifest = read_json_file(root + "/manifest.json");
+    if (manifest == null || as_string(manifest.format) != PERSISTENT_LIST_CACHE_FORMAT)
+        return { valid: false, reason: "generation manifest is missing, invalid, or incompatible", key: "manifest" };
+    if (match(as_string(manifest.generation), /^gen-[A-Za-z0-9_.-]+$/) == null)
+        return { valid: false, reason: "generation identity is invalid", key: "generation" };
+    if (expected_signature == "" || as_string(manifest.signature) != expected_signature)
+        return { valid: false, reason: "generation signature is stale for the current list configuration", key: "signature" };
+    if (type(manifest.files) != "array" || length(manifest.files) == 0)
+        return { valid: false, reason: "generation file list is invalid", key: "files" };
+    let names = {};
+    let sources = 0;
+    let rulesets = 0;
+    let bytes = 0;
+    for (let entry in manifest.files) {
+        entry = object_or_empty(entry);
+        let name = as_string(entry.name);
+        if (name == "" || names[name])
+            return { valid: false, reason: "generation contains duplicate file names", key: "duplicate-" + name };
+        names[name] = true;
+        let checked = generation_file_valid(root, entry);
+        if (!checked.valid)
+            return checked;
+        bytes += checked.bytes;
+        if (as_string(entry.kind) == "source") sources++;
+        if (as_string(entry.kind) == "ruleset") rulesets++;
+    }
+    return { valid: true, manifest, signature: expected_signature, source_count: sources, file_count: rulesets, total_bytes: bytes };
+}
+
+// Generation identities are deliberately unique publication labels, not a
+// content comparison mechanism.  A no-op source refresh therefore compares
+// the validated manifest payload (including source identity) and ignores the
+// identity itself.
+function list_generation_manifest_content_equal(left, right) {
+    left = object_or_empty(left);
+    right = object_or_empty(right);
+    let left_files = type(left.files) == "array" ? left.files : [];
+    let right_files = type(right.files) == "array" ? right.files : [];
+    if (as_string(left.signature) != as_string(right.signature) || length(left_files) != length(right_files))
+        return false;
+
+    let right_by_name = {};
+    for (let entry in right_files) {
+        entry = object_or_empty(entry);
+        let name = as_string(entry.name);
+        if (name == "" || right_by_name[name] != null)
             return false;
-        let path = PERSISTENT_LIST_CACHE_DIR + "/" + name;
-        if (!file_nonempty(path) || file_md5(path) != as_string(source.md5))
+        right_by_name[name] = entry;
+    }
+    for (let entry in left_files) {
+        entry = object_or_empty(entry);
+        let name = as_string(entry.name);
+        let other = object_or_empty(right_by_name[name]);
+        if (name == "" || type(right_by_name[name]) != "object" ||
+            as_string(entry.kind) != as_string(other.kind) ||
+            int(entry.size || 0) != int(other.size || 0) ||
+            as_string(entry.md5) != as_string(other.md5))
+            return false;
+        if (as_string(entry.kind) == "source" &&
+            (as_string(entry.url) != as_string(other.url) ||
+             as_string(entry.source_format) != as_string(other.source_format)))
             return false;
     }
     return true;
+}
+
+// 1.3.8 stored a checked ruleset map and source metadata separately.  It is
+// deliberately not accepted by v2 validation: it must first be copied into a
+// fully described v2 generation and pass the ordinary v2 validator.
+function legacy_v1_list_cache_validation(root, expected_signature) {
+    let manifest = read_json_file(root + "/manifest.json");
+    if (manifest == null || as_string(manifest.format) != LEGACY_PERSISTENT_LIST_CACHE_FORMAT)
+        return { valid: false, reason: "legacy cache manifest is missing or incompatible", key: "legacy-manifest" };
+    if (expected_signature == "" || as_string(manifest.signature) != expected_signature)
+        return { valid: false, reason: "legacy cache signature is stale for the current list configuration", key: "legacy-signature" };
+    if (type(manifest.files) != "object" || type(manifest.sources) != "array")
+        return { valid: false, reason: "legacy cache file metadata is invalid", key: "legacy-files" };
+
+    let names = {};
+    let files = [];
+    let bytes = 0;
+    for (let name, md5 in manifest.files) {
+        name = as_string(name);
+        let path = root + "/" + name;
+        if (names[name] || !managed_list_ruleset_name(name) || !file_nonempty(path) ||
+            file_md5(path) != as_string(md5) || !valid_list_ruleset_file(path))
+            return { valid: false, reason: "legacy cache rule-set validation failed", key: "legacy-ruleset-" + name };
+        names[name] = true;
+        let stat = fs.stat(path);
+        let size = int(object_or_empty(stat).size || 0);
+        bytes += size;
+        push(files, { name, kind: "ruleset", size, md5: as_string(md5) });
+    }
+    for (let source in manifest.sources) {
+        source = object_or_empty(source);
+        let name = as_string(source.name);
+        let url = as_string(source.url);
+        let format = as_string(source.format);
+        let path = root + "/" + name;
+        if (names[name] || url == "" || match(name, /^source-[0-9]+$/) == null ||
+            !file_nonempty(path) || file_md5(path) != as_string(source.md5) ||
+            !validate_staged_list_download(path, format))
+            return { valid: false, reason: "legacy cache source validation failed", key: "legacy-source-" + name };
+        names[name] = true;
+        let stat = fs.stat(path);
+        let size = int(object_or_empty(stat).size || 0);
+        bytes += size;
+        push(files, { name, kind: "source", url, source_format: format, size, md5: as_string(source.md5) });
+    }
+    if (length(files) == 0)
+        return { valid: false, reason: "legacy cache has no generation files", key: "legacy-empty" };
+    return { valid: true, signature: expected_signature, files, total_bytes: bytes };
+}
+
+function migrate_legacy_v1_persistent_list_cache() {
+    let signature = current_list_update_signature();
+    let legacy = legacy_v1_list_cache_validation(PERSISTENT_LIST_CACHE_DIR, signature);
+    if (!legacy.valid)
+        return false;
+
+    let stage = PERSISTENT_LIST_CACHE_DIR + ".stage";
+    let previous = PERSISTENT_LIST_CACHE_DIR + ".previous";
+    command_success_from_args([ "rm", "-rf", stage ]);
+    if (!list_cache_has_capacity(legacy.total_bytes + PERSISTENT_LIST_CACHE_MANIFEST_ALLOWANCE, false) || !ensure_dir(stage))
+        return false;
+
+    for (let entry in legacy.files) {
+        entry = object_or_empty(entry);
+        let name = as_string(entry.name);
+        if (!cache_copy_file(PERSISTENT_LIST_CACHE_DIR + "/" + name, stage + "/" + name)) {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+    }
+    let manifest = {
+        format: PERSISTENT_LIST_CACHE_FORMAT,
+        generation: generation_identity(signature),
+        signature,
+        files: legacy.files
+    };
+    if (!write_file(stage + "/manifest.json", json_text(manifest)) ||
+        !list_generation_validation(stage, signature).valid) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    if (!cache_copy_file(PERSISTENT_LIST_CACHE_DIR + "/last-success.timestamp", stage + "/last-success.timestamp"))
+        write_file(stage + "/last-success.timestamp", "0\n");
+    command_success_from_args([ "chmod", "0700", stage ]);
+    for (let path in fs.glob(stage + "/*"))
+        command_success_from_args([ "chmod", "0600", path ]);
+
+    command_success_from_args([ "rm", "-rf", previous ]);
+    if (!fs.rename(PERSISTENT_LIST_CACHE_DIR, previous)) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    if (!fs.rename(stage, PERSISTENT_LIST_CACHE_DIR)) {
+        fs.rename(previous, PERSISTENT_LIST_CACHE_DIR);
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    command_success_from_args([ "rm", "-rf", previous ]);
+    list_cache_log_once("migrated-v1-" + signature, "Migrated a validated legacy list cache to generation format 2 without network access", "info");
+    return true;
+}
+
+function recover_list_generation_transaction(root, signature) {
+    let stage = root + ".stage";
+    let previous = root + ".previous";
+    let active = list_generation_validation(root, signature);
+    let old = list_generation_validation(previous, signature);
+
+    // A stage has no publication marker, so it is never a recovery source.
+    // If active is corrupt, only a fully validated previous generation may
+    // replace it. This also handles interruption after active -> previous.
+    if (!active.valid && old.valid) {
+        if (file_exists_value(root))
+            command_success_from_args([ "rm", "-rf", root ]);
+        if (!fs.rename(previous, root))
+            return false;
+        active = list_generation_validation(root, signature);
+    }
+    if (active.valid && file_exists_value(previous))
+        command_success_from_args([ "rm", "-rf", previous ]);
+    command_success_from_args([ "rm", "-rf", stage ]);
+    return active.valid;
+}
+
+function recover_persistent_list_cache_transaction() {
+    return recover_list_generation_transaction(PERSISTENT_LIST_CACHE_DIR, current_list_update_signature());
+}
+
+function recover_runtime_list_generation_transaction() {
+    return recover_list_generation_transaction(RUNTIME_LIST_GENERATION_DIR, current_list_update_signature());
+}
+
+function persistent_list_cache_validation() {
+    let signature = current_list_update_signature();
+    let manifest = persistent_list_cache_manifest();
+    if (manifest != null && as_string(manifest.format) == LEGACY_PERSISTENT_LIST_CACHE_FORMAT)
+        migrate_legacy_v1_persistent_list_cache();
+    recover_list_generation_transaction(PERSISTENT_LIST_CACHE_DIR, signature);
+    return list_generation_validation(PERSISTENT_LIST_CACHE_DIR, signature);
+}
+
+function runtime_list_cache_active() {
+    let signature = current_list_update_signature();
+    recover_list_generation_transaction(RUNTIME_LIST_GENERATION_DIR, signature);
+    return list_generation_validation(RUNTIME_LIST_GENERATION_DIR, signature).valid;
+}
+
+function activate_persistent_list_generation(validation) {
+    let stage = RUNTIME_LIST_GENERATION_DIR + ".stage";
+    let previous = RUNTIME_LIST_GENERATION_DIR + ".previous";
+    command_success_from_args([ "rm", "-rf", stage ]);
+    if (!ensure_dir(stage))
+        return false;
+    for (let entry in validation.manifest.files) {
+        let name = as_string(object_or_empty(entry).name);
+        if (!cache_copy_file(PERSISTENT_LIST_CACHE_DIR + "/" + name, stage + "/" + name)) {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+    }
+    if (!write_file(stage + "/manifest.json", json_text(validation.manifest)) ||
+        !list_generation_validation(stage, validation.signature).valid) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    command_success_from_args([ "rm", "-rf", previous ]);
+    if (file_exists_value(RUNTIME_LIST_GENERATION_DIR) && !fs.rename(RUNTIME_LIST_GENERATION_DIR, previous)) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    if (!fs.rename(stage, RUNTIME_LIST_GENERATION_DIR)) {
+        if (file_exists_value(previous))
+            fs.rename(previous, RUNTIME_LIST_GENERATION_DIR);
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    command_success_from_args([ "rm", "-rf", previous ]);
+    return true;
+}
+
+function persistent_list_cache_valid() {
+    return persistent_list_cache_validation().valid;
 }
 
 function restore_persistent_list_cache() {
     // A successful RAM-only update is newer than the flash cache. Preserve it
     // across service reloads during this boot; /var/run and /tmp disappear on
     // a real reboot, when the last persistent cache becomes the fallback.
-    if (runtime_list_cache_active())
+    if (runtime_list_cache_active()) {
+        let runtime_timestamp = trim(file_first_line_value(LIST_UPDATE_RUNTIME_STATE_FILE));
+        let runtime_signature = trim(file_first_line_value(LIST_UPDATE_RUNTIME_SIGNATURE_FILE));
+        let runtime = list_generation_validation(RUNTIME_LIST_GENERATION_DIR, current_list_update_signature());
+        let persistent = persistent_list_cache_validation();
+        // A normal successful update leaves a runtime copy of the same
+        // generation.  It is not RAM-only; reserve that diagnostic for a
+        // missing or older persistent LKG.
+        if (runtime_timestamp != "" && runtime_signature == current_list_update_signature() && runtime.valid &&
+            (!persistent.valid || as_string(persistent.manifest.generation) != as_string(runtime.manifest.generation)))
+            list_cache_log_once(
+                "ram-" + runtime_timestamp + "-" + runtime_signature,
+                "Using the newer RAM-only list generation from this boot; the older persistent cache was not restored",
+                "info"
+            );
         return true;
-    if (!persistent_list_cache_valid())
-        return false;
+    }
 
-    let manifest = persistent_list_cache_manifest();
-    if (!ensure_dir(TMP_RULESET_FOLDER))
+    let validation = persistent_list_cache_validation();
+    if (!validation.valid) {
+        list_cache_log_once(
+            "rejected-" + as_string(validation.key),
+            "Persistent list cache was not restored: " + as_string(validation.reason),
+            "warn"
+        );
         return false;
+    }
+
+    let manifest = validation.manifest;
+    let generation_root = PERSISTENT_LIST_CACHE_DIR;
+    if (!ensure_dir(TMP_RULESET_FOLDER)) {
+        list_cache_log_once("restore-runtime-dir", "Persistent list cache was not restored: runtime rule-set directory could not be created", "warn");
+        return false;
+    }
 
     let keep = {};
-    for (let name, expected_md5 in manifest.files) {
-        let source = PERSISTENT_LIST_CACHE_DIR + "/" + name;
+    for (let entry in manifest.files) {
+        entry = object_or_empty(entry);
+        if (as_string(entry.kind) != "ruleset")
+            continue;
+        let name = as_string(entry.name);
+        let source = generation_root + "/" + name;
         let target = TMP_RULESET_FOLDER + "/" + name;
         let temporary = target + ".restore." + as_string(now_seconds());
         keep[name] = true;
         remove_file(temporary);
-        if (!cache_copy_file(source, temporary) || file_md5(temporary) != as_string(expected_md5) || !fs.rename(temporary, target)) {
+        if (!cache_copy_file(source, temporary) || file_md5(temporary) != as_string(entry.md5) || !fs.rename(temporary, target)) {
             remove_file(temporary);
+            list_cache_log_once("restore-copy-" + name, "Persistent list cache was not restored: failed to copy and verify rule-set file '" + name + "'", "warn");
             return false;
         }
     }
 
+    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
+        if (managed_list_ruleset_name(name) && !keep[name])
+            remove_file(path);
+    }
+    if (!activate_persistent_list_generation(validation))
+        return false;
+    list_cache_log_once(
+        "restored-" + as_string(validation.signature) + "-" + as_string(validation.total_bytes),
+        "Restored " + validation.source_count + " list sources and " + validation.file_count +
+            " rule-set files from persistent cache (" + validation.total_bytes +
+            " bytes); network access was not required",
+        "info"
+    );
+    return true;
+}
+
+function restore_runtime_list_generation() {
+    let validation = list_generation_validation(RUNTIME_LIST_GENERATION_DIR, current_list_update_signature());
+    if (!validation.valid)
+        return false;
+    if (!ensure_dir(TMP_RULESET_FOLDER))
+        return false;
+    let keep = {};
+    for (let entry in validation.manifest.files) {
+        entry = object_or_empty(entry);
+        if (as_string(entry.kind) != "ruleset")
+            continue;
+        let name = as_string(entry.name);
+        let target = TMP_RULESET_FOLDER + "/" + name;
+        let temporary = target + ".restore." + as_string(now_seconds());
+        keep[name] = true;
+        remove_file(temporary);
+        if (!cache_copy_file(RUNTIME_LIST_GENERATION_DIR + "/" + name, temporary) ||
+            file_md5(temporary) != as_string(entry.md5) || !fs.rename(temporary, target)) {
+            remove_file(temporary);
+            return false;
+        }
+    }
     for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
         let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
         if (managed_list_ruleset_name(name) && !keep[name])
@@ -540,63 +897,124 @@ function invalidate_persistent_list_cache() {
     return true;
 }
 
+function runtime_list_generation_has_capacity(required) {
+    if (!ensure_dir(TMP_SING_BOX_FOLDER))
+        return false;
+    let output = trim(command_output_from_args([ "df", "-Pk", TMP_SING_BOX_FOLDER ]));
+    let lines = split(output, "\n");
+    let fields = length(lines) >= 2 ? split(trim(lines[length(lines) - 1]), /[ \t]+/) : [];
+    let available = length(fields) >= 4 ? int(fields[3]) * 1024 : -1;
+    return required >= 0 && available >= required + LIST_DOWNLOAD_MIN_FREE_BYTES;
+}
+
+function commit_runtime_list_generation(signature) {
+    signature = as_string(signature);
+    runtime_generation_commit_changed = false;
+    if (signature == "")
+        return false;
+    // The old active directory remains in place until the staged directory is
+    // complete, so reserve space for the new generation before publication.
+    if (!runtime_list_generation_has_capacity(persistent_list_cache_estimated_bytes())) {
+        log_message("Not enough runtime storage to stage a complete list generation; keeping the active generation", "error");
+        return false;
+    }
+    let stage = RUNTIME_LIST_GENERATION_DIR + ".stage";
+    let previous = RUNTIME_LIST_GENERATION_DIR + ".previous";
+    recover_list_generation_transaction(RUNTIME_LIST_GENERATION_DIR, signature);
+    command_success_from_args([ "rm", "-rf", stage ]);
+    if (generation_phase_failed("runtime-stage-create") || !ensure_dir(stage))
+        return false;
+    let files = [];
+    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
+        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
+        let target = stage + "/" + name;
+        if (generation_phase_failed("runtime-file-write") || !managed_list_ruleset_name(name) || !valid_list_ruleset_file(path) || !cache_copy_file(path, target)) {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+        let stat = fs.stat(target);
+        push(files, { name, kind: "ruleset", size: int(object_or_empty(stat).size || 0), md5: file_md5(target) });
+    }
+    for (let source in list_download_metadata) {
+        source = object_or_empty(source);
+        let name = as_string(source.name);
+        let origin = as_string(list_download_cache[as_string(source.url)]);
+        let target = stage + "/" + name;
+        if (generation_phase_failed("runtime-file-write") || origin == "" || match(name, /^source-[0-9]+$/) == null || !cache_copy_file(origin, target)) {
+            command_success_from_args([ "rm", "-rf", stage ]);
+            return false;
+        }
+        let stat = fs.stat(target);
+        push(files, { name, kind: "source", url: as_string(source.url), source_format: as_string(source.format), size: int(object_or_empty(stat).size || 0), md5: file_md5(target) });
+    }
+    let manifest = { format: PERSISTENT_LIST_CACHE_FORMAT, generation: generation_identity(signature), signature, files };
+    if (generation_phase_failed("runtime-manifest-write") || !write_file(stage + "/manifest.json", json_text(manifest)) ||
+        generation_phase_failed("runtime-validate")) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    let staged_validation = list_generation_validation(stage, signature);
+    if (!staged_validation.valid) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    let active_validation = list_generation_validation(RUNTIME_LIST_GENERATION_DIR, signature);
+    // Failure injection deliberately exercises every publication phase even
+    // for equal data. It is test-only; normal runtime never sets this switch.
+    let failure_injection_enabled = as_string(getenv("FORKOP_LIST_GENERATION_FAIL_PHASE")) != "";
+    if (!failure_injection_enabled && active_validation.valid && list_generation_manifest_content_equal(staged_validation.manifest, active_validation.manifest)) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        log_message("Validated list generation is unchanged; runtime policy reload is not needed", "info");
+        return true;
+    }
+    command_success_from_args([ "rm", "-rf", previous ]);
+    if (generation_phase_failed("runtime-rename-previous") ||
+        (file_exists_value(RUNTIME_LIST_GENERATION_DIR) && !fs.rename(RUNTIME_LIST_GENERATION_DIR, previous))) {
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    if (generation_phase_failed("runtime-rename-active"))
+        return false;
+    if (!fs.rename(stage, RUNTIME_LIST_GENERATION_DIR)) {
+        if (file_exists_value(previous))
+            fs.rename(previous, RUNTIME_LIST_GENERATION_DIR);
+        command_success_from_args([ "rm", "-rf", stage ]);
+        return false;
+    }
+    runtime_generation_commit_changed = true;
+    if (!generation_phase_failed("runtime-cleanup-previous"))
+        command_success_from_args([ "rm", "-rf", previous ]);
+    return true;
+}
+
 function persist_list_cache(timestamp) {
     let signature = current_list_update_signature();
-    if (signature == "")
+    recover_list_generation_transaction(RUNTIME_LIST_GENERATION_DIR, signature);
+    recover_list_generation_transaction(PERSISTENT_LIST_CACHE_DIR, signature);
+    let runtime = list_generation_validation(RUNTIME_LIST_GENERATION_DIR, signature);
+    if (!runtime.valid)
         return false;
 
     let stage = PERSISTENT_LIST_CACHE_DIR + ".stage";
     let previous = PERSISTENT_LIST_CACHE_DIR + ".previous";
     command_success_from_args([ "rm", "-rf", stage ]);
-    command_success_from_args([ "rm", "-rf", previous ]);
-    let estimated = persistent_list_cache_estimated_bytes();
+    let estimated = runtime.total_bytes + PERSISTENT_LIST_CACHE_MANIFEST_ALLOWANCE;
     if (!list_cache_has_capacity(estimated, false))
         return false;
-    if (!ensure_dir(stage))
+    if (generation_phase_failed("persistent-stage-create") || !ensure_dir(stage))
         return false;
 
-    let files = {};
-    for (let path in fs.glob(TMP_RULESET_FOLDER + "/*")) {
-        let name = substr(path, length(TMP_RULESET_FOLDER) + 1);
-        if (!managed_list_ruleset_name(name))
-            continue;
-        let target = stage + "/" + name;
-        if (!valid_list_ruleset_file(path) || !cache_copy_file(path, target) || !valid_list_ruleset_file(target)) {
-            command_success_from_args([ "rm", "-rf", stage ]);
-            return false;
-        }
-        files[name] = file_md5(target);
-        if (files[name] == "") {
+    for (let entry in runtime.manifest.files) {
+        entry = object_or_empty(entry);
+        let name = as_string(entry.name);
+        if (generation_phase_failed("persistent-file-write") || !cache_copy_file(RUNTIME_LIST_GENERATION_DIR + "/" + name, stage + "/" + name)) {
             command_success_from_args([ "rm", "-rf", stage ]);
             return false;
         }
     }
-
-    let sources = [];
-    for (let source in list_download_metadata) {
-        source = object_or_empty(source);
-        let cached = as_string(list_download_cache[as_string(source.url)]);
-        let name = as_string(source.name);
-        let target = stage + "/" + name;
-        if (cached == "" || match(name, /^source-[0-9]+$/) == null ||
-            !cache_copy_file(cached, target) || !file_nonempty(target)) {
-            command_success_from_args([ "rm", "-rf", stage ]);
-            return false;
-        }
-        push(sources, {
-            name,
-            url: as_string(source.url),
-            format: as_string(source.format),
-            md5: file_md5(target)
-        });
-    }
-
-    if (!write_file(stage + "/manifest.json", json_text({
-        format: PERSISTENT_LIST_CACHE_FORMAT,
-        signature,
-        files,
-        sources
-    })) || !write_file(stage + "/last-success.timestamp", as_string(timestamp) + "\n")) {
+    if (generation_phase_failed("persistent-manifest-write") || !write_file(stage + "/manifest.json", json_text(runtime.manifest)) ||
+        !write_file(stage + "/last-success.timestamp", as_string(timestamp) + "\n") ||
+        generation_phase_failed("persistent-validate") || !list_generation_validation(stage, runtime.signature).valid) {
         command_success_from_args([ "rm", "-rf", stage ]);
         return false;
     }
@@ -612,17 +1030,21 @@ function persist_list_cache(timestamp) {
         return false;
     }
 
-    if (file_exists_value(PERSISTENT_LIST_CACHE_DIR) && !fs.rename(PERSISTENT_LIST_CACHE_DIR, previous)) {
+    if (generation_phase_failed("persistent-rename-previous") ||
+        (file_exists_value(PERSISTENT_LIST_CACHE_DIR) && !fs.rename(PERSISTENT_LIST_CACHE_DIR, previous))) {
         command_success_from_args([ "rm", "-rf", stage ]);
         return false;
     }
+    if (generation_phase_failed("persistent-rename-active"))
+        return false;
     if (!fs.rename(stage, PERSISTENT_LIST_CACHE_DIR)) {
         if (file_exists_value(previous))
             fs.rename(previous, PERSISTENT_LIST_CACHE_DIR);
         command_success_from_args([ "rm", "-rf", stage ]);
         return false;
     }
-    command_success_from_args([ "rm", "-rf", previous ]);
+    if (!generation_phase_failed("persistent-cleanup-previous"))
+        command_success_from_args([ "rm", "-rf", previous ]);
     return true;
 }
 
@@ -639,17 +1061,6 @@ function copy_file(source, target) {
     return write_file(target, data);
 }
 
-function parent_dir(path) {
-    path = as_string(path);
-    let slash = rindex(path, "/");
-    return slash >= 0 ? substr(path, 0, slash) : "";
-}
-
-function ensure_parent_dir(path) {
-    let dir = parent_dir(path);
-    return dir == "" || dir == "." || ensure_dir(dir);
-}
-
 function temp_path() {
     return trim(command_output_from_args([ "mktemp" ]));
 }
@@ -658,11 +1069,6 @@ function remove_files(paths) {
     for (let path in paths)
         if (as_string(path) != "")
             remove_file(path);
-}
-
-function owner_pid() {
-    let pid = trim(command_output_from_args([ "sh", "-c", "echo $PPID" ]));
-    return match(pid, /^[0-9]+$/) != null ? pid : "0";
 }
 
 function runtime_pid_running(pid) {
@@ -727,6 +1133,46 @@ function module_background(args) {
     return command_success("sh -c " + shell_quote(command));
 }
 
+function current_proxy_outbounds_signature(config_path) {
+    config_path = as_string(config_path);
+    if (config_path == "")
+        config_path = option(uci_settings(), "config_path", "");
+    if (config_path == "")
+        return "";
+    return trim(module_output([ DIAGNOSTICS_UC, "proxy-outbounds-signature", config_path ]));
+}
+
+function automatic_latency_pending_marker() {
+    let marker = read_json_file(AUTOMATIC_LATENCY_PENDING_FILE);
+    return type(marker) == "object" ? marker : null;
+}
+
+function schedule_automatic_latency_test(signature) {
+    signature = as_string(signature);
+    if (signature == "")
+        return false;
+
+    let existing = automatic_latency_pending_marker();
+    if (existing != null && as_string(existing.format) == AUTOMATIC_LATENCY_PENDING_FORMAT &&
+        as_string(existing.signature) == signature) {
+        log_message("Automatic latency test is already pending for the current proxy set; coalescing the request", "info");
+        return true;
+    }
+
+    if (!ensure_parent_dir(AUTOMATIC_LATENCY_PENDING_FILE) || !write_state_file(AUTOMATIC_LATENCY_PENDING_FILE, {
+        format: AUTOMATIC_LATENCY_PENDING_FORMAT,
+        signature,
+        scheduled_at: now_seconds(),
+        failures: 0,
+        retry_after: 0
+    }))
+        return false;
+
+    command_success_from_args([ "chmod", "0600", AUTOMATIC_LATENCY_PENDING_FILE ]);
+    log_message("Automatic latency test scheduled because the final proxy set changed", "info");
+    return true;
+}
+
 function validation_failure_message(result) {
     for (let line in split(as_string(result.output), "\n")) {
         line = trim(line);
@@ -741,6 +1187,8 @@ function nft_module_success(args) {
     let command_args = [ LIB_DIR + "/nft/apply.uc" ];
     for (let arg in args)
         push(command_args, arg);
+    if (list_nft_candidate_file != "")
+        return command_success(command_env({ FORKOP_NFT_BATCH_FILE: list_nft_candidate_file }) + " " + module_command(command_args));
     return module_success(command_args);
 }
 
@@ -2386,7 +2834,7 @@ function download_to_file_once(url, filepath, proxy_address) {
     let fields = length(lines) >= 2 ? split(trim(lines[length(lines) - 1]), /[ \t]+/) : [];
     let available = length(fields) >= 4 ? int(fields[3]) * 1024 : -1;
     if (available < 0 || available <= LIST_DOWNLOAD_MIN_FREE_BYTES) {
-        log_message("Not enough temporary storage to download " + as_string(url) + " safely", "warn");
+        log_message("Not enough temporary storage to download a remote source safely", "warn");
         return false;
     }
     // ash's file-size limit is enforced while bytes are written, including
@@ -2410,7 +2858,7 @@ function download_fallback(url, filepath, proxy_address) {
         if (download_to_file_once(url, filepath, proxy_address))
             return true;
 
-        log_message("Attempt " + attempt + "/3 to download " + as_string(url) + " failed", "warn");
+        log_message("Attempt " + attempt + "/3 to download a remote source failed", "warn");
         if (attempt < 3)
             command_success_from_args([ "sleep", "2" ]);
         attempt++;
@@ -2423,7 +2871,7 @@ function download_to_file_network(url, filepath, proxy_address) {
     let fallbacks = fallback_urls(url);
     let mirror_state = mirror_download_state(url);
     if (mirror_state != null && mirror_state.fallback_active) {
-        log_message("Mirror source is unavailable; trying fallback sources for " + as_string(url), "info");
+        log_message("Mirror source is unavailable; trying fallback sources", "info");
         for (let fallback in fallbacks)
             if (download_fallback(fallback, filepath, proxy_address))
                 return true;
@@ -2437,7 +2885,7 @@ function download_to_file_network(url, filepath, proxy_address) {
             return true;
         }
 
-        log_message("Attempt " + attempt + "/3 to download " + as_string(url) + " failed", "warn");
+        log_message("Attempt " + attempt + "/3 to download a remote source failed", "warn");
         let mirror_fallback_activated = record_mirror_download_failure(mirror_state);
         if (mirror_fallback_activated)
             break;
@@ -2502,22 +2950,6 @@ function list_preflight_entries(sections) {
     return entries;
 }
 
-function validate_staged_list_download(path, format) {
-    if (!file_nonempty(path))
-        return false;
-    if (format == "json")
-        return valid_list_ruleset_file(path);
-    if (format != "srs")
-        return true;
-
-    let output = path + ".json";
-    remove_file(output);
-    let ok = command_success_from_args([ "sing-box", "rule-set", "decompile", path, "-o", output ]) &&
-        valid_list_ruleset_file(output);
-    remove_file(output);
-    return ok;
-}
-
 function prepare_list_downloads(sections, proxy_address) {
     list_download_cache = {};
     list_download_metadata = [];
@@ -2535,7 +2967,7 @@ function prepare_list_downloads(sections, proxy_address) {
         let path = list_download_staging_dir + "/source-" + as_string(list_download_sequence);
         if (!download_to_file_network(entry.url, path, proxy_address) ||
             !validate_staged_list_download(path, entry.format)) {
-            log_message("Failed to preflight list source " + entry.url + "; keeping the active generation", "error");
+            log_message("Failed to preflight a list source; keeping the active generation", "error");
             command_success_from_args([ "rm", "-rf", list_download_staging_dir ]);
             list_download_staging_dir = "";
             list_download_cache = {};
@@ -2560,15 +2992,19 @@ function cleanup_list_downloads() {
 }
 
 function load_persistent_list_sources() {
-    if (!persistent_list_cache_valid())
+    let root = runtime_list_cache_active() ? RUNTIME_LIST_GENERATION_DIR : PERSISTENT_LIST_CACHE_DIR;
+    let validation = list_generation_validation(root, current_list_update_signature());
+    if (!validation.valid)
         return false;
-    let manifest = persistent_list_cache_manifest();
     list_download_cache = {};
     list_download_metadata = [];
-    for (let source in array_or_empty(manifest.sources)) {
-        source = object_or_empty(source);
-        let path = PERSISTENT_LIST_CACHE_DIR + "/" + as_string(source.name);
-        list_download_cache[as_string(source.url)] = path;
+    for (let entry in validation.manifest.files) {
+        entry = object_or_empty(entry);
+        if (as_string(entry.kind) != "source")
+            continue;
+        let source = { name: as_string(entry.name), url: as_string(entry.url), format: as_string(entry.source_format) };
+        let path = root + "/" + as_string(entry.name);
+        list_download_cache[source.url] = path;
         push(list_download_metadata, source);
     }
     return true;
@@ -2702,7 +3138,7 @@ function import_domain_ip_list_reference_into_rulesets(reference, section, setti
         ok = import_domain_ip_list_file_into_rulesets(tmpfile, section);
     }
     else {
-        log_message("Failed to download remote domain/IP list " + reference + "; skipping it until the next successful update", "error");
+        log_message("Failed to download a remote domain/IP list; skipping it until the next successful update", "error");
         ok = false;
     }
 
@@ -2822,7 +3258,7 @@ function import_custom_ruleset_subnets_from_remote(url, format, section, label, 
     }
 
     if (!download_to_file(url, remote_tmpfile, service_proxy_address(settings, "lists")) || !file_nonempty(remote_tmpfile)) {
-        log_message("Failed to download remote rule set " + as_string(url) + "; skipping it until the next successful update", "error");
+        log_message("Failed to download a remote rule set; skipping it until the next successful update", "error");
         remove_files([ remote_tmpfile, json_tmpfile ]);
         return false;
     }
@@ -2830,12 +3266,12 @@ function import_custom_ruleset_subnets_from_remote(url, format, section, label, 
     let ok = true;
     if (as_string(format) == "binary") {
         if (!command_success_from_args([ "sing-box", "rule-set", "decompile", remote_tmpfile, "-o", json_tmpfile ])) {
-            log_message("Failed to decompile rule set " + as_string(url), "error");
+            log_message("Failed to decompile a remote rule set", "error");
             ok = false;
         }
     }
     else if (!copy_file(remote_tmpfile, json_tmpfile)) {
-        log_message("Failed to copy downloaded source rule set " + as_string(url), "error");
+        log_message("Failed to copy a downloaded remote rule set", "error");
         ok = false;
     }
 
@@ -2861,7 +3297,7 @@ function import_rule_sets_with_subnets_from_rule(section, settings) {
 
     for (let reference in references) {
         reference = as_string(reference);
-        log_message("Importing subnets from rule set reference for '" + section_name(section) + "': " + reference, "info");
+        log_message("Importing subnets from a rule set reference for '" + section_name(section) + "' section", "info");
 
         let extension = singbox_rulesets_module().file_extension(reference);
         if (match(reference, /^\/.*\.srs$/) != null) {
@@ -2878,7 +3314,7 @@ function import_rule_sets_with_subnets_from_rule(section, settings) {
                 ok = false;
         }
         else {
-            log_message("Unsupported rule set reference for subnet import: " + reference, "error");
+            log_message("Unsupported rule set reference for subnet import", "error");
             ok = false;
         }
     }
@@ -2892,7 +3328,7 @@ function import_domains_from_remote_plain_file(url, section, settings) {
         return false;
 
     if (!download_to_file(url, tmpfile, service_proxy_address(settings, "lists")) || !file_nonempty(tmpfile)) {
-        log_message("Failed to download remote domain list " + as_string(url) + "; skipping it until the next successful update", "error");
+        log_message("Failed to download a remote domain list; skipping it until the next successful update", "error");
         remove_file(tmpfile);
         return false;
     }
@@ -2916,7 +3352,7 @@ function import_domains_from_remote_domain_lists(section, settings) {
     log_message("Importing domains from remote domain lists for '" + section_name(section) + "' section", "info");
     let ok = true;
     for (let url in references) {
-        log_message("Importing domains from URL: " + as_string(url), "info");
+        log_message("Importing domains from a configured remote source", "info");
         let extension = singbox_rulesets_module().file_extension(url);
         log_message("Detected file extension: '" + extension + "'", "debug");
         if (extension == "json" || extension == "srs") {
@@ -2936,14 +3372,14 @@ function import_subnets_from_remote_json_file(url, section, settings) {
         return false;
 
     if (!download_to_file(url, json_tmpfile, service_proxy_address(settings, "lists")) || !file_nonempty(json_tmpfile)) {
-        log_message("Failed to download remote JSON subnet list " + as_string(url) + "; skipping it until the next successful update", "error");
+        log_message("Failed to download a remote JSON subnet list; skipping it until the next successful update", "error");
         remove_file(json_tmpfile);
         return false;
     }
 
     let ok = add_json_ruleset_subnets_to_nft_for_section(section, json_tmpfile, "Remote JSON rule set " + as_string(url));
     if (!ok)
-        log_message("Failed to add subnets from remote JSON list " + as_string(url) + " to nftables", "error");
+        log_message("Failed to add subnets from a remote JSON list to nftables", "error");
     remove_file(json_tmpfile);
     return ok;
 }
@@ -2957,7 +3393,7 @@ function import_subnets_from_remote_srs_file(url, section, settings) {
     }
 
     if (!download_to_file(url, binary_tmpfile, service_proxy_address(settings, "lists")) || !file_nonempty(binary_tmpfile)) {
-        log_message("Failed to download remote SRS subnet list " + as_string(url) + "; skipping it until the next successful update", "error");
+        log_message("Failed to download a remote SRS subnet list; skipping it until the next successful update", "error");
         remove_files([ binary_tmpfile, json_tmpfile ]);
         return false;
     }
@@ -2966,7 +3402,7 @@ function import_subnets_from_remote_srs_file(url, section, settings) {
     if (!ok)
         log_message("Failed to decompile binary rule set file", "error");
     if (ok && !add_json_ruleset_subnets_to_nft_for_section(section, json_tmpfile, "Remote SRS rule set " + as_string(url))) {
-        log_message("Failed to add subnets from remote SRS list " + as_string(url) + " to nftables", "error");
+        log_message("Failed to add subnets from a remote SRS list to nftables", "error");
         ok = false;
     }
 
@@ -2980,7 +3416,7 @@ function import_subnets_from_remote_plain_file(url, section, settings) {
         return false;
 
     if (!download_to_file(url, tmpfile, service_proxy_address(settings, "lists")) || !file_nonempty(tmpfile)) {
-        log_message("Failed to download remote plain subnet list " + as_string(url) + "; skipping it until the next successful update", "error");
+        log_message("Failed to download a remote plain subnet list; skipping it until the next successful update", "error");
         remove_file(tmpfile);
         return false;
     }
@@ -3006,7 +3442,7 @@ function import_subnets_from_remote_subnet_lists(section, settings) {
     log_message("Importing subnets from remote subnet lists for '" + section_name(section) + "' section", "info");
     let ok = true;
     for (let url in references) {
-        log_message("Importing subnets from URL: " + as_string(url), "info");
+        log_message("Importing subnets from a configured remote source", "info");
         let extension = singbox_rulesets_module().file_extension(url);
         log_message("Detected file extension: '" + extension + "'", "debug");
         if (extension == "json") {
@@ -3062,32 +3498,29 @@ function begin_list_ruleset_snapshot() {
 }
 
 function begin_list_nft_snapshot() {
-    list_nft_snapshot_file = temp_path();
-    if (list_nft_snapshot_file == "")
+    list_nft_candidate_file = temp_path();
+    if (list_nft_candidate_file == "")
         return false;
-    let command = command_from_args([ "nft", "-j", "list", "table", "inet", NFT_TABLE_NAME ]) +
-        " >" + shell_quote(list_nft_snapshot_file);
-    if (command_status(command) != 0 || !file_nonempty(list_nft_snapshot_file)) {
-        remove_file(list_nft_snapshot_file);
-        list_nft_snapshot_file = "";
+    remove_file(list_nft_candidate_file);
+    if (!write_file(list_nft_candidate_file, "")) {
+        list_nft_candidate_file = "";
         return false;
     }
     return true;
 }
 
 function restore_list_nft_snapshot() {
-    if (list_nft_snapshot_file == "")
-        return false;
-    command_success_from_args([ "nft", "delete", "table", "inet", NFT_TABLE_NAME ]);
-    return command_success_from_args([ "nft", "-j", "-f", list_nft_snapshot_file ]);
+    // Candidate preparation has not touched the active table, so rollback is
+    // only disposal of the uncommitted batch.
+    return true;
 }
 
 function finish_list_nft_snapshot(commit) {
-    if (list_nft_snapshot_file == "")
-        return true;
+    // Preflight can fail before a candidate is created. In that case the
+    // active nft table was never touched and there is nothing to roll back.
     let ok = true;
-    if (!commit)
-        ok = restore_list_nft_snapshot();
+    remove_file(list_nft_candidate_file);
+    list_nft_candidate_file = "";
     remove_file(list_nft_snapshot_file);
     list_nft_snapshot_file = "";
     return ok;
@@ -3154,9 +3587,14 @@ function reset_remote_plain_rulesets(sections) {
 }
 
 function apply_persistent_list_cache() {
-    if (runtime_list_cache_active())
-        return true;
-    if (!restore_persistent_list_cache() || !load_persistent_list_sources())
+    // The runtime generation is authoritative for this boot, including a
+    // successful RAM-only update.  Reloads must rebuild from it locally and
+    // never replace it with an older flash generation.
+    if (runtime_list_cache_active()) {
+        if (!restore_runtime_list_generation() || !load_persistent_list_sources())
+            return false;
+    }
+    else if (!restore_persistent_list_cache() || !load_persistent_list_sources())
         return false;
 
     let settings = uci_settings();
@@ -3195,16 +3633,17 @@ function run_deferred_ruleset_refresh() {
     ]);
 }
 
-function finish_list_update(status, applied) {
+function finish_list_update(status, applied, generation_changed) {
     if (applied == null)
         applied = status == 0;
+    if (generation_changed == null)
+        generation_changed = applied;
     let rulesets_changed = finish_list_ruleset_snapshot(applied);
     let nft_restored = finish_list_nft_snapshot(applied);
     cleanup_list_downloads();
     let reload_deferred = file_exists_value(LIST_UPDATE_RELOAD_FILE);
     let ruleset_request = trim(file_first_line_value(RULESET_REFRESH_AFTER_LIST_FILE));
     let ruleset_changed = false;
-    remove_file(LIST_UPDATE_RELOAD_FILE);
     remove_file(RULESET_REFRESH_AFTER_LIST_FILE);
 
     // When both list families changed, refresh remote sing-box rule sets while
@@ -3232,14 +3671,53 @@ function finish_list_update(status, applied) {
     list_update_pid_end();
     release_runtime_lock(RELOAD_LOCK_DIR);
 
-    // Reloading sing-box tears down the service proxy used by list downloads.
-    // A reload requested while this worker owns the runtime lock is queued by
-    // init.d and is only safe to run after every download has finished.
-    service_state_success([ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
+    // A successful generation reload reads the newest UCI state itself, so it
+    // subsumes a queued reload instead of launching pending + list-content as
+    // two competing reloads. Do not consume that request until the final
+    // runtime apply actually succeeds: the generation may be complete while
+    // its corresponding nft/sing-box transition still fails.
+    let pending_reload = applied ? fs.readfile(PENDING_RELOAD_FILE) : null;
+    if (!applied)
+        service_state_success([ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
     if (!applied && !nft_restored)
         log_message("Failed to restore nftables after an aborted list update", "fatal");
-    if (applied && (reload_deferred || rulesets_changed || ruleset_changed))
-        command_status(command_from_args([ SERVICE_INIT, "reload", "list-content" ]) + " >/dev/null 2>&1 1000>&-");
+    // nft list mutations were only candidate data. Publish the committed
+    // generation through lifecycle, which rebuilds the full nft table in one
+    // transaction; never append those elements to the active table here.
+    let needs_runtime_apply = applied && (generation_changed || rulesets_changed || ruleset_changed || reload_deferred || pending_reload != null);
+    if (needs_runtime_apply) {
+        // The init wrapper may accept this request while another lifecycle
+        // owns reload.lock and return success after only queuing it. Persist
+        // the local-apply intent before that call; lifecycle removes it only
+        // after a real list-content transition commits.
+        if (!write_file(LIST_UPDATE_RELOAD_FILE, "apply-pending\n")) {
+            log_message("Unable to persist the committed list generation's local runtime-apply request", "error");
+            exit(1);
+        }
+        // Avoid a competing pending reload while this synchronous apply owns
+        // the transition. Restore the exact request if the apply fails.
+        if (pending_reload != null)
+            service_state_success([ "consume-pending-reload", PENDING_RELOAD_FILE ]);
+
+        let reload_result = command_capture(command_from_args([ SERVICE_INIT, "reload", "list-content" ]) + " 2>/dev/null 1000>&-");
+        let reload_status = reload_result.status;
+        if (reload_status != 0) {
+            // The generation is valid and remains active. Retain an explicit
+            // local-only apply request; lifecycle turns the next ordinary
+            // reload into list-content, so it never has to download again.
+            write_file(LIST_UPDATE_RELOAD_FILE, "apply-failed\n");
+            if (pending_reload != null)
+                write_file(PENDING_RELOAD_FILE, pending_reload);
+            log_message("List generation was committed, but applying it to the runtime policy failed; retaining it for a local retry", "error");
+            exit(reload_status);
+        }
+        if (trim(reload_result.output) == "queued") {
+            log_message("List generation was committed and its runtime apply was queued; retaining the local list-content request", "info");
+            exit(status == 0 ? 0 : 1);
+        }
+
+        exit(status == 0 ? 0 : 1);
+    }
     exit(status == 0 ? 0 : 1);
 }
 
@@ -3326,6 +3804,10 @@ function list_update() {
     }
 
     let completed_at = now_seconds();
+    let runtime_committed = ok && commit_runtime_list_generation(list_update_signature_at_start);
+    if (!runtime_committed)
+        ok = false;
+    let generation_changed = ok && runtime_generation_commit_changed;
     let cache_persisted = ok && persist_list_cache(completed_at);
     if (ok) {
         ensure_parent_dir(LIST_UPDATE_RUNTIME_STATE_FILE);
@@ -3340,7 +3822,7 @@ function list_update() {
         log_message("Lists update failed", "info");
     }
 
-    finish_list_update(ok ? 0 : 1, ok);
+    finish_list_update(ok ? 0 : 1, ok, generation_changed);
 }
 
 function list_update_after_start() {
@@ -3487,6 +3969,8 @@ function run_pending_reload_if_requested() {
 
 function subscription_update_common_locked(force, target_section, target_source_index) {
     subscription_outbounds_changed = false;
+    let sing_box_config_path = option(uci_settings(), "config_path", "");
+    let proxy_signature_before = current_proxy_outbounds_signature(sing_box_config_path);
     let result = subscription_cache_capture([
         "update-request",
         force ? "1" : "0",
@@ -3529,7 +4013,6 @@ function subscription_update_common_locked(force, target_section, target_source_
 
     if (!singbox_runtime_success([ "configure-service" ]))
         return false;
-    let sing_box_config_path = option(uci_settings(), "config_path", "");
     let sing_box_config_hash_before = file_md5(sing_box_config_path);
     let sing_box_pid_before = trim(module_output([ LIB_DIR + "/service/state.uc", "sing-box-service-runtime-pid" ]));
     module_success([ DNS_FAILOVER_UC, "stop-runtime" ]);
@@ -3560,7 +4043,17 @@ function subscription_update_common_locked(force, target_section, target_source_
     if (!write_current_reload_state_clean())
         return false;
 
-    subscription_outbounds_changed = true;
+    let proxy_signature_after = current_proxy_outbounds_signature(sing_box_config_path);
+    let final_proxy_set_changed = proxy_signature_after != "" && proxy_signature_after != proxy_signature_before;
+    if (final_proxy_set_changed) {
+        if (schedule_automatic_latency_test(proxy_signature_after))
+            subscription_outbounds_changed = true;
+        else
+            log_message("The proxy set changed, but the persistent automatic latency pending marker could not be written", "warn");
+    }
+    else {
+        log_message("Subscription data was refreshed, but the final usable proxy set is unchanged; automatic latency test was not scheduled", "info");
+    }
 
     if (failed > 0)
         log_message("Subscription update applied for changed rules; failed rules kept their previous cache", "info");
@@ -3594,7 +4087,7 @@ function subscription_update_common(force, target_section, target_source_index) 
     release_runtime_lock(SUBSCRIPTION_UPDATE_LOCK_DIR);
     run_pending_reload_if_requested();
     if (ok && subscription_outbounds_changed)
-        module_background([ DIAGNOSTICS_UC, "automatic-latency-test" ]);
+        module_background([ DIAGNOSTICS_UC, "automatic-latency-test", "new" ]);
     return ok ? 0 : 1;
 }
 
@@ -3752,6 +4245,8 @@ else if (mode == "list-update-if-due")
     list_update_if_due();
 else if (mode == "list-update-after-start")
     list_update_after_start();
+else if (mode == "finish-list-update-fixture")
+    finish_list_update(int(ARGV[1]), ARGV[2] == "1", ARGV[3] == null ? null : ARGV[3] == "1");
 else if (mode == "restore-list-cache")
     exit(restore_persistent_list_cache() ? 0 : 1);
 else if (mode == "list-cache-valid")
@@ -3760,6 +4255,10 @@ else if (mode == "list-cache-capacity")
     exit(list_cache_has_capacity(int(ARGV[1]), false) ? 0 : 1);
 else if (mode == "runtime-list-cache-active")
     exit(runtime_list_cache_active() ? 0 : 1);
+else if (mode == "commit-runtime-list-generation")
+    exit(commit_runtime_list_generation(current_list_update_signature()) ? 0 : 1);
+else if (mode == "schedule-automatic-latency-test")
+    exit(schedule_automatic_latency_test(ARGV[1]) ? 0 : 1);
 else if (mode == "persist-list-cache")
     exit(persist_list_cache(int(ARGV[1])) ? 0 : 1);
 else if (mode == "download-list-file")

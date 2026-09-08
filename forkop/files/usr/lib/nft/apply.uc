@@ -12,6 +12,10 @@ let runtime_constants = require("singbox.constants");
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const DNS_SOURCE_SET = "forkop_dns_sources";
 const DNS_SOURCE6_SET = "forkop_dns_sources6";
+const NFT_BATCH_FILE = getenv("FORKOP_NFT_BATCH_FILE") || "";
+// Test-only candidate failure injection. Empty in production.
+const NFT_CANDIDATE_FAIL_PHASE = getenv("FORKOP_NFT_CANDIDATE_FAIL_PHASE") || "";
+const NFT_TRANSITION_GUARD_CHAIN = "forkop_transition_guard";
 
 let common_read_json_file = common.read_json_file;
 let list_option = common.list_option;
@@ -103,6 +107,18 @@ function command_from_args(args) {
 }
 
 function run_args(args) {
+    // nft -f submits a complete file as one netlink transaction. Candidate
+    // preparation records mutations instead of exposing partial live state.
+    if (NFT_BATCH_FILE != "" && length(args) > 2 && args[0] == "nft" &&
+        (args[1] == "add" || args[1] == "insert" || args[1] == "delete" || args[1] == "flush")) {
+        if (NFT_CANDIDATE_FAIL_PHASE == "prepare")
+            return false;
+        let words = [];
+        for (let i = 1; i < length(args); i++)
+            push(words, args[i]);
+        let line = join(" ", words);
+        return fs.writefile(NFT_BATCH_FILE, (fs.readfile(NFT_BATCH_FILE) || "") + line + "\n") != null;
+    }
     return system(command_from_args(args)) == 0;
 }
 
@@ -615,6 +631,7 @@ function section_has_fully_routed_ips(section) {
 
 function section_has_subnet_update_sources(section) {
     return rule_config.has_community_subnet_list(connections.community_lists_value(section)) ||
+        option(section, "remote_subnet_lists", "") != "" ||
         length(connections.rule_sets_with_subnets(section)) > 0 ||
         option(section, "domain_ip_lists", "") != "";
 }
@@ -1551,6 +1568,67 @@ function nft_delete_table(table) {
     return run_args([ "nft", "delete", "table", "inet", table ]);
 }
 
+function nft_validate_candidate_batch(path) {
+    path = as_string(path);
+    let stat = fs.stat(path);
+    if (path == "" || stat == null || int(stat.size || 0) <= 0)
+        return false;
+    if (NFT_CANDIDATE_FAIL_PHASE == "check")
+        return false;
+    return run_args([ "nft", "-c", "-f", path ]);
+}
+
+function nft_commit_candidate_batch(path) {
+    path = as_string(path);
+    let stat = fs.stat(path);
+    if (path == "" || stat == null || int(stat.size || 0) <= 0)
+        return false;
+    if (NFT_CANDIDATE_FAIL_PHASE == "apply")
+        return false;
+    return run_args([ "nft", "-f", path ]);
+}
+
+function nft_apply_candidate_batch(path) {
+    // Backward-compatible one-shot candidate application for paths which do
+    // not also transition sing-box. Cross-component transitions validate via
+    // nft_validate_candidate_batch() before any live state changes, then call
+    // nft_commit_candidate_batch() only after sing-box is ready.
+    return nft_validate_candidate_batch(path) && nft_commit_candidate_batch(path);
+}
+
+function nft_transition_guard_batch(table, mark, remove) {
+    let path = trim(command_output_from_args([ "mktemp" ]));
+    if (path == "")
+        return false;
+
+    let data = remove
+        ? "delete chain inet " + as_string(table) + " " + NFT_TRANSITION_GUARD_CHAIN + "\n"
+        : "add chain inet " + as_string(table) + " " + NFT_TRANSITION_GUARD_CHAIN +
+            " { type filter hook prerouting priority -101; policy accept; }\n" +
+            "add rule inet " + as_string(table) + " " + NFT_TRANSITION_GUARD_CHAIN +
+            " meta mark & " + as_string(mark) + " == " + as_string(mark) + " counter drop\n";
+    let ok = fs.writefile(path, data) != null && run_args([ "nft", "-c", "-f", path ]) &&
+        run_args([ "nft", "-f", path ]);
+    fs.unlink(path);
+    return ok;
+}
+
+function nft_install_transition_guard(table, mark) {
+    // This hook is after mangle marking (-149) but before TPROXY (-100).
+    // During a cross-component transition it drops only traffic Forkop has
+    // classified as protected, preventing a new config/table mismatch from
+    // reaching route.final/direct.
+    if (run_args_quiet([ "nft", "list", "chain", "inet", table, NFT_TRANSITION_GUARD_CHAIN ]))
+        return false;
+    return nft_transition_guard_batch(table, mark, false);
+}
+
+function nft_remove_transition_guard(table, mark) {
+    if (!run_args_quiet([ "nft", "list", "chain", "inet", table, NFT_TRANSITION_GUARD_CHAIN ]))
+        return true;
+    return nft_transition_guard_batch(table, mark, true);
+}
+
 function nft_rebuild_runtime_from_uci(rt_table, table, localv4_set, common_set, port_set, ip_port_set, interface_set, fakeip_mark, outbound_mark, fakeip_range, tproxy_port, zapret_bin, zapret_route_mark_base, zapret_queue_base, zapret_desync_mark, zapret_desync_mark_postnat, zapret2_bin, zapret2_route_mark_base, zapret2_queue_base, zapret2_desync_mark, zapret2_desync_mark_postnat, localv6_set, common6_set, ip_port6_set, fakeip6_range, tproxy6_address) {
     log_debug("Applying nftables runtime rules");
 
@@ -1873,6 +1951,8 @@ else if (mode == "nft-create-full-runtime-from-uci")
     exit(nft_create_full_runtime_from_uci(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9], ARGV[10], ARGV[11], ARGV[12], ARGV[13], ARGV[14], ARGV[15], ARGV[16], ARGV[17], ARGV[18], ARGV[19], ARGV[20], ARGV[21], ARGV[22], ARGV[23], ARGV[24], ARGV[25], ARGV[26]) ? 0 : 1);
 else if (mode == "nft-rebuild-runtime-from-uci")
     exit(nft_rebuild_runtime_from_uci(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7], ARGV[8], ARGV[9], ARGV[10], ARGV[11], ARGV[12], ARGV[13], ARGV[14], ARGV[15], ARGV[16], ARGV[17], ARGV[18], ARGV[19], ARGV[20], ARGV[21], ARGV[22], ARGV[23], ARGV[24], ARGV[25], ARGV[26]) ? 0 : 1);
+else if (mode == "nft-apply-candidate-batch")
+    exit(nft_apply_candidate_batch(ARGV[1]) ? 0 : 1);
 else if (mode == "nft-prepare-chunks")
     nft_prepare_chunks(ARGV[1], ARGV[2], ARGV[3] || "", ARGV[4], ARGV[5], ARGV[6]);
 else if (mode == "nft-add-file-chunks-to-set")
@@ -1915,6 +1995,14 @@ else if (mode == "tproxy-marking-rule6-present")
     exit(tproxy_marking_rule6_present(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "tproxy-route-rule-present")
     exit(tproxy_route_rule_present(ARGV[1], ARGV[2]) ? 0 : 1);
+else if (mode == "nft-validate-candidate-batch")
+    exit(nft_validate_candidate_batch(ARGV[1]) ? 0 : 1);
+else if (mode == "nft-commit-candidate-batch")
+    exit(nft_commit_candidate_batch(ARGV[1]) ? 0 : 1);
+else if (mode == "install-transition-guard")
+    exit(nft_install_transition_guard(ARGV[1], ARGV[2]) ? 0 : 1);
+else if (mode == "remove-transition-guard")
+    exit(nft_remove_transition_guard(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "ensure-bridge-netfilter-disabled")
     exit(ensure_bridge_netfilter_disabled() ? 0 : 1);
 else {

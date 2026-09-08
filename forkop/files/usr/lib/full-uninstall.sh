@@ -116,8 +116,12 @@ run() {
         /usr/share/forkop /www/luci-static/resources/view/forkop; do
         rm -rf "$ROOT$directory"
     done
-    for file in /etc/config/forkop /etc/config/sing-box /etc/config/forkop-opkg \
-        /etc/config/sing-box-opkg /usr/bin/forkop /usr/bin/sing-box /usr/lib/libcronet.so \
+    for file in /etc/config/forkop /etc/config/forkop.apk-new /etc/config/forkop.apk-old \
+        /etc/config/forkop-opkg /etc/config/forkop.opkg-new /etc/config/forkop.opkg-old \
+        /etc/config/forkop.opkg-dist /etc/config/sing-box /etc/config/sing-box.apk-new \
+        /etc/config/sing-box.apk-old /etc/config/sing-box-opkg /etc/config/sing-box.opkg-new \
+        /etc/config/sing-box.opkg-old /etc/config/sing-box.opkg-dist \
+        /usr/bin/forkop /usr/bin/sing-box /usr/lib/libcronet.so \
         /etc/init.d/forkop /etc/init.d/sing-box /etc/uci-defaults/50_luci-forkop \
         /usr/share/luci/menu.d/luci-app-forkop.json /usr/share/rpcd/acl.d/luci-app-forkop.json; do
         rm -f "$ROOT$file"

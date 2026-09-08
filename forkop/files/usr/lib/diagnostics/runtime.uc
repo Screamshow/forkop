@@ -48,12 +48,17 @@ const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/fo
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
 const AUTOMATIC_LATENCY_BATCH_SIZE = int(getenv("FORKOP_AUTOMATIC_LATENCY_BATCH_SIZE") || "4");
 const AUTOMATIC_LATENCY_BATCH_PAUSE = getenv("FORKOP_AUTOMATIC_LATENCY_BATCH_PAUSE") || "1";
+const AUTOMATIC_LATENCY_PENDING_FILE = getenv("FORKOP_AUTOMATIC_LATENCY_PENDING_FILE") || "/etc/forkop/automatic-latency-test.pending";
+const AUTOMATIC_LATENCY_PENDING_FORMAT = "1";
+const AUTOMATIC_LATENCY_RETRY_BASE_SECONDS = int(getenv("FORKOP_AUTOMATIC_LATENCY_RETRY_BASE_SECONDS") || "300");
+const AUTOMATIC_LATENCY_MAX_FAILURES = int(getenv("FORKOP_AUTOMATIC_LATENCY_MAX_FAILURES") || "5");
+const AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS = int(getenv("FORKOP_AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS") || "15");
 
 const STATUS_UC = LIB_DIR + "/diagnostics/status.uc";
 const HELPERS_UC = LIB_DIR + "/core/helpers.uc";
 const PACKAGES_UC = LIB_DIR + "/core/packages.uc";
 const DNS_APPLY_UC = LIB_DIR + "/dns/apply.uc";
-const SERVICE_STATE_UC = LIB_DIR + "/service/state.uc";
+const SERVICE_STATE_UC = getenv("FORKOP_SERVICE_STATE_UC") || LIB_DIR + "/service/state.uc";
 const SERVICE_UI_UC = LIB_DIR + "/service/ui.uc";
 const SUBSCRIPTION_CACHE_UC = LIB_DIR + "/subscription/cache.uc";
 const PROVIDERS_STATUS_UC = LIB_DIR + "/providers/status.uc";
@@ -1535,8 +1540,11 @@ function clash_proxy_type_map(base_url, auth) {
         value = json(command_output(command_from_args(args)));
     }
     catch (e) {
-        return {};
+        return null;
     }
+
+    if (type(value) != "object" || type(value.proxies) != "object")
+        return null;
 
     let result = {};
     for (let tag, proxy in object_or_empty(value.proxies))
@@ -1544,11 +1552,117 @@ function clash_proxy_type_map(base_url, auth) {
     return result;
 }
 
+function clash_api_ready() {
+    return clash_proxy_type_map(clash_api_url(), clash_auth_args()) != null;
+}
+
 function latency_testable_proxy_type(proxy_type) {
     proxy_type = lc(as_string(proxy_type));
     return proxy_type != "" && proxy_type != "direct" && proxy_type != "selector" &&
         proxy_type != "urltest" && proxy_type != "fallback" && proxy_type != "block" &&
         proxy_type != "dns";
+}
+
+function canonical_runtime_value(value) {
+    if (type(value) == "array") {
+        let result = [];
+        for (let item in value)
+            push(result, canonical_runtime_value(item));
+        return result;
+    }
+    if (type(value) == "object") {
+        let result = {};
+        let names = keys(value);
+        sort(names, function(a, b) { return a < b ? -1 : (a > b ? 1 : 0); });
+        for (let name in names)
+            result[name] = canonical_runtime_value(value[name]);
+        return result;
+    }
+    return value;
+}
+
+function proxy_outbounds_signature_value(path) {
+    let config = read_json_file(path);
+    if (type(config) != "object" || type(config.outbounds) != "array")
+        return "";
+
+    let outbounds = [];
+    for (let outbound in config.outbounds) {
+        outbound = object_or_empty(outbound);
+        if (latency_testable_proxy_type(outbound.type))
+            push(outbounds, sprintf("%J", canonical_runtime_value(outbound)));
+    }
+    sort(outbounds, function(a, b) { return a < b ? -1 : (a > b ? 1 : 0); });
+    if (length(outbounds) == 0)
+        return "";
+
+    let tmp = trim(command_output_from_args([ "mktemp" ]));
+    if (tmp == "" || !fs.writefile(tmp, sprintf("%J", outbounds))) {
+        if (tmp != "") fs.unlink(tmp);
+        return "";
+    }
+    let fields = split(trim(command_output_from_args([ "md5sum", tmp ])), /[ \t\r\n]+/);
+    fs.unlink(tmp);
+    return length(fields) > 0 ? as_string(fields[0]) : "";
+}
+
+function print_proxy_outbounds_signature(path) {
+    let signature = proxy_outbounds_signature_value(path);
+    if (signature == "")
+        return 1;
+    print(signature, "\n");
+    return 0;
+}
+
+function automatic_latency_pending_marker() {
+    let marker = read_json_file(AUTOMATIC_LATENCY_PENDING_FILE);
+    if (type(marker) != "object" || as_string(marker.format) != AUTOMATIC_LATENCY_PENDING_FORMAT ||
+        match(as_string(marker.signature), /^[0-9a-f]{32}$/) == null)
+        return null;
+    return marker;
+}
+
+function automatic_latency_discard_invalid_marker() {
+    if (fs.stat(AUTOMATIC_LATENCY_PENDING_FILE) == null)
+        return true;
+    remove_file(AUTOMATIC_LATENCY_PENDING_FILE);
+    return fs.stat(AUTOMATIC_LATENCY_PENDING_FILE) == null;
+}
+
+function automatic_latency_write_marker(marker) {
+    let slash = rindex(AUTOMATIC_LATENCY_PENDING_FILE, "/");
+    let dir = slash >= 0 ? substr(AUTOMATIC_LATENCY_PENDING_FILE, 0, slash) : "";
+    if (dir != "" && !ensure_dir(dir))
+        return false;
+    let stamp = clock();
+    let tmp = sprintf("%s.%d.%d.tmp", AUTOMATIC_LATENCY_PENDING_FILE, stamp[0], stamp[1]);
+    if (!fs.writefile(tmp, sprintf("%J\n", marker)) || !fs.rename(tmp, AUTOMATIC_LATENCY_PENDING_FILE)) {
+        remove_file(tmp);
+        return false;
+    }
+    command_success_from_args([ "chmod", "0600", AUTOMATIC_LATENCY_PENDING_FILE ]);
+    return true;
+}
+
+function automatic_latency_remove_marker(signature) {
+    let marker = automatic_latency_pending_marker();
+    if (marker != null && as_string(marker.signature) == as_string(signature))
+        remove_file(AUTOMATIC_LATENCY_PENDING_FILE);
+}
+
+function automatic_latency_record_failure(signature) {
+    let marker = automatic_latency_pending_marker();
+    if (marker == null || as_string(marker.signature) != as_string(signature))
+        return;
+    let failures = int(marker.failures || 0) + 1;
+    let delay = AUTOMATIC_LATENCY_RETRY_BASE_SECONDS > 0 ? AUTOMATIC_LATENCY_RETRY_BASE_SECONDS : 300;
+    for (let i = 1; i < failures && i < AUTOMATIC_LATENCY_MAX_FAILURES; i++)
+        delay *= 2;
+    if (failures >= AUTOMATIC_LATENCY_MAX_FAILURES)
+        delay = 21600;
+    marker.failures = failures;
+    marker.retry_after = int(clock()[0]) + delay;
+    automatic_latency_write_marker(marker);
 }
 
 function clash_latency_endpoint(base_url, proxy_tag, proxy_type) {
@@ -1697,35 +1811,82 @@ function clash_api(action, arg1, arg2, arg3) {
     return 1;
 }
 
-function automatic_latency_test() {
+function automatic_latency_test(start_kind) {
+    let marker = automatic_latency_pending_marker();
+    if (marker == null) {
+        if (fs.stat(AUTOMATIC_LATENCY_PENDING_FILE) != null) {
+            if (automatic_latency_discard_invalid_marker())
+                log_message("Discarded invalid automatic latency test pending marker; no test was started", "warn");
+            else
+                log_message("Automatic latency test pending marker is invalid and could not be discarded; no test was started", "warn");
+        }
+        return 0;
+    }
+
+    let pending_signature = as_string(marker.signature);
+    let config_path = option(settings(), "config_path", "");
+    let current_signature = proxy_outbounds_signature_value(config_path);
+    if (current_signature == "" || current_signature != pending_signature) {
+        automatic_latency_remove_marker(pending_signature);
+        log_message("Discarded stale automatic latency test pending marker because the proxy set no longer matches", "info");
+        return 0;
+    }
+
     let stat = as_string(fs.readfile("/proc/self/stat"));
     let separator = index(stat, " ");
     let owner_pid = separator > 0 ? substr(stat, 0, separator) : "";
     if (owner_pid == "" || !module_success(SERVICE_STATE_UC, [
         "acquire-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR, owner_pid
     ])) {
-        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test is already scheduled or running; skipping duplicate" ]);
+        log_message("Automatic latency test is already scheduled or running; coalescing the duplicate request", "info");
         return 0;
+    }
+
+    let retry_delay = int(marker.retry_after || 0) - int(clock()[0]);
+    if (retry_delay > 0) {
+        log_message("Automatic latency test is deferred for " + retry_delay + " seconds by its retry pause; it will continue automatically", "info");
+        command_success_from_args([ "sleep", as_string(retry_delay) ]);
+        marker = automatic_latency_pending_marker();
+        current_signature = proxy_outbounds_signature_value(config_path);
+        if (marker == null || as_string(marker.signature) != pending_signature || current_signature != pending_signature) {
+            module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+            return 0;
+        }
     }
 
     if (!module_success(SERVICE_STATE_UC, [
         "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid, "300"
     ])) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
-        command_success_from_args([ "logger", "-t", "forkop", "[warn] Automatic latency test skipped because Forkop did not finish reloading" ]);
+        log_message("Automatic latency test deferred because Forkop did not finish reloading; the pending marker was retained", "warn");
         return 0;
     }
 
     if (!module_success(SERVICE_STATE_UC, [ "single-ready-sing-box-runtime" ])) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
-        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test skipped: sing-box is not ready or multiple processes are running" ]);
+        log_message("Automatic latency test deferred because sing-box is not ready or multiple processes are running; the pending marker was retained", "info");
         return 0;
     }
 
     let sing_box_pid_before = trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]));
+    let proxy_types = null;
+    let readiness_attempts = AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS > 0 ? AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS : 15;
+    for (let readiness_attempt = 0; readiness_attempt < readiness_attempts; readiness_attempt++) {
+        proxy_types = clash_proxy_type_map(clash_api_url(), clash_auth_args());
+        if (proxy_types != null)
+            break;
+        if (readiness_attempt + 1 < readiness_attempts)
+            command_success_from_args([ "sleep", "1" ]);
+    }
+    if (proxy_types == null) {
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+        module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+        automatic_latency_record_failure(pending_signature);
+        log_message("Automatic latency test deferred because the Clash API is not ready; the pending marker was retained with a retry pause", "warn");
+        return 1;
+    }
 
-    let proxy_types = clash_proxy_type_map(clash_api_url(), clash_auth_args());
     let proxy_tags = [];
     for (let proxy_tag, proxy_type in proxy_types)
         if (latency_testable_proxy_type(proxy_type))
@@ -1734,11 +1895,13 @@ function automatic_latency_test() {
     if (length(proxy_tags) == 0) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
-        command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test skipped: no proxy outbounds available" ]);
-        return 0;
+        automatic_latency_record_failure(pending_signature);
+        log_message("Automatic latency test could not find the pending proxy set in the Clash API; the pending marker was retained with a retry pause", "warn");
+        return 1;
     }
 
-    command_success_from_args([ "logger", "-t", "forkop", "[info] Starting automatic latency test for " + length(proxy_tags) + " proxy outbounds" ]);
+    log_message((as_string(start_kind) == "resume" ? "Resuming interrupted" : "Starting new") +
+        " automatic latency test for " + length(proxy_tags) + " proxy outbounds", "info");
     let status = 0;
     let completed = 0;
     let batch_size = AUTOMATIC_LATENCY_BATCH_SIZE > 0 ? AUTOMATIC_LATENCY_BATCH_SIZE : 4;
@@ -1748,6 +1911,7 @@ function automatic_latency_test() {
         completed++;
 
         if (completed < length(proxy_tags) && completed % batch_size == 0) {
+            log_message("Automatic latency test progress: " + completed + "/" + length(proxy_tags) + " proxy outbounds completed", "info");
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
             module_success(SERVICE_STATE_UC, [ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
             command_success_from_args([ "sleep", AUTOMATIC_LATENCY_BATCH_PAUSE ]);
@@ -1759,16 +1923,28 @@ function automatic_latency_test() {
                 if (reacquired)
                     module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
                 module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
-                command_success_from_args([ "logger", "-t", "forkop", "[info] Automatic latency test cancelled because sing-box was reloaded" ]);
+                log_message("Automatic latency test was interrupted by reload; the pending marker was retained for the next start", "info");
                 return 0;
             }
         }
     }
     module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
     module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
-    command_success_from_args([ "logger", "-t", "forkop", status == 0 ?
-        "[info] Automatic latency test completed" :
-        "[warn] Automatic latency test completed with errors" ]);
+    // A reload is normally detected between batches through its PID/lock. A
+    // non-restarting config change can still replace the proxy set, so never
+    // acknowledge the old marker after its semantic generation changed.
+    if (proxy_outbounds_signature_value(config_path) != pending_signature) {
+        log_message("Automatic latency test finished against a stale proxy generation; the pending marker was retained", "info");
+        return 0;
+    }
+    if (status == 0) {
+        automatic_latency_remove_marker(pending_signature);
+        log_message("Automatic latency test completed successfully; the pending marker was removed", "info");
+    }
+    else {
+        automatic_latency_record_failure(pending_signature);
+        log_message("Automatic latency test completed with errors; the pending marker was retained with a retry pause", "warn");
+    }
     return status;
 }
 
@@ -2014,8 +2190,12 @@ else if (mode == "neutralize-zapret-defaults")
     exit(neutralize_zapret_defaults());
 else if (mode == "clash-api")
     exit(clash_api(ARGV[1], ARGV[2], ARGV[3], ARGV[4]));
+else if (mode == "clash-api-ready")
+    exit(clash_api_ready() ? 0 : 1);
+else if (mode == "proxy-outbounds-signature")
+    exit(print_proxy_outbounds_signature(ARGV[1]));
 else if (mode == "automatic-latency-test")
-    exit(automatic_latency_test());
+    exit(automatic_latency_test(ARGV[1]));
 else if (mode == "show-config")
     exit(show_config(ARGV[1] || "masked"));
 else if (mode == "show-version")

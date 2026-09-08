@@ -6,6 +6,8 @@ let common = require("core.common");
 let runtime_dns = require("singbox.dns");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
+// Test-only config preparation failure injection. Empty in production.
+const SINGBOX_CONFIG_FAIL_PHASE = getenv("FORKOP_SINGBOX_CONFIG_FAIL_PHASE") || "";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const TMP_SING_BOX_FOLDER = getenv("TMP_SING_BOX_FOLDER") || "/tmp/sing-box";
 const TMP_RULESET_FOLDER = getenv("TMP_RULESET_FOLDER") || TMP_SING_BOX_FOLDER + "/rulesets";
@@ -691,6 +693,20 @@ function save_config_file(temp_file_path, config_path) {
     return true;
 }
 
+function discard_config_stage(stage_path) {
+    stage_path = as_string(stage_path);
+    remove_file(stage_path);
+    command_success_from_args([ "rm", "-rf", stage_path + ".section-cache" ]);
+    return true;
+}
+
+function restore_config_stage(backup_path) {
+    let config_path = option(uci_settings(), "config_path", "");
+    backup_path = as_string(backup_path);
+    return config_path != "" && file_exists(backup_path) &&
+        command_success_from_args([ "mv", "-f", backup_path, config_path ]);
+}
+
 function publish_section_cache(temp_config_path) {
     let source_dir = as_string(temp_config_path) + ".section-cache";
     let entries = fs.lsdir(source_dir);
@@ -719,6 +735,24 @@ function publish_section_cache(temp_config_path) {
     }
 
     command_success_from_args([ "rmdir", source_dir ]);
+    return true;
+}
+
+function commit_config_stage(stage_path, backup_path) {
+    let config_path = option(uci_settings(), "config_path", "");
+    stage_path = as_string(stage_path);
+    backup_path = as_string(backup_path);
+    if (config_path == "" || !file_exists(stage_path) || backup_path == "")
+        return false;
+
+    // The reload lifecycle creates this backup before the first live config
+    // change. It is consumed only after nft and sing-box reach the same state.
+    if (!command_success_from_args([ "cp", "-p", config_path, backup_path ]))
+        return false;
+    if (!save_config_file(stage_path, config_path))
+        return false;
+    if (!publish_section_cache(stage_path))
+        return false;
     return true;
 }
 
@@ -798,7 +832,7 @@ function restore_dns_config(backup_path) {
     return command_success_from_args([ "mv", "-f", backup_path, config_path ]);
 }
 
-function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferred_sections) {
+function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferred_sections, stage_path) {
     let settings = uci_settings();
     let config_path = option(settings, "config_path", "");
     if (config_path == "") {
@@ -839,6 +873,8 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
             sing_box_version()
         ]) + " >" + shell_quote(runtime_log) + " 2>&1"
     );
+    if (SINGBOX_CONFIG_FAIL_PHASE == "generate")
+        generate_status = 1;
     if (generate_status != 0) {
         let reason = generator_failure_reason(runtime_log, generate_status);
         log_message("Failed to generate sing-box configuration: " + reason, "fatal");
@@ -856,7 +892,9 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
         exit(1);
     }
 
-    let check_result = sing_box_check(temp_config, runtime_log);
+    let check_result = SINGBOX_CONFIG_FAIL_PHASE == "check"
+        ? { status: 1, reason: "injected sing-box configuration check failure" }
+        : sing_box_check(temp_config, runtime_log);
     if (check_result.status != 0) {
         log_message("Generated sing-box configuration is invalid: " + check_result.reason + ". Aborted.", "fatal");
         remove_files([ temp_config, runtime_log ]);
@@ -884,6 +922,16 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
         exit(1);
     }
 
+    if (as_string(stage_path) != "") {
+        if (!ensure_parent_dir(stage_path) || !command_success_from_args([ "mv", "-f", temp_config, stage_path ])) {
+            remove_file(runtime_log);
+            exit(1);
+        }
+        remove_file(runtime_log);
+        print(deferred_sections, "\n");
+        return;
+    }
+
     if (!save_config_file(temp_config, config_path)) {
         remove_file(runtime_log);
         exit(1);
@@ -902,7 +950,15 @@ let mode = ARGV[0] || "";
 if (mode == "configure-service")
     configure_service();
 else if (mode == "init-config")
-    init_config(arg_bool(ARGV[1] || "1"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "");
+    init_config(arg_bool(ARGV[1] || "1"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "", "");
+else if (mode == "prepare-config-stage")
+    init_config(arg_bool(ARGV[1] || "0"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "", ARGV[5] || "");
+else if (mode == "commit-config-stage")
+    exit(commit_config_stage(ARGV[1] || "", ARGV[2] || "") ? 0 : 1);
+else if (mode == "restore-config-stage")
+    exit(restore_config_stage(ARGV[1] || "") ? 0 : 1);
+else if (mode == "discard-config-stage")
+    exit(discard_config_stage(ARGV[1] || "") ? 0 : 1);
 else if (mode == "save-config-file-fixture")
     exit(save_config_file(ARGV[1] || "", ARGV[2] || "") ? 0 : 1);
 else if (mode == "publish-section-cache-fixture")

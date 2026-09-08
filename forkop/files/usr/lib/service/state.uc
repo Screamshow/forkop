@@ -18,6 +18,7 @@ const BYEDPI_DEFAULT_CMD_OPTS = getenv("BYEDPI_DEFAULT_CMD_OPTS") || "";
 const SB_DNS_INBOUND_ADDRESS = getenv("SB_DNS_INBOUND_ADDRESS") || "127.0.0.42";
 const SB_TPROXY_INBOUND_PORT = getenv("SB_TPROXY_INBOUND_PORT") || "1602";
 const SB_TPROXY_INBOUND6_ADDRESS = getenv("SB_TPROXY_INBOUND6_ADDRESS") || "::1";
+const DIAGNOSTICS_RUNTIME_UC = LIB_DIR + "/diagnostics/runtime.uc";
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -578,6 +579,19 @@ function sing_box_process_count() {
     return count;
 }
 
+// A service PID on its own only proves that procd has one expected child. It
+// does not exclude an older or orphaned sing-box process which could still
+// own sockets or serve traffic. Require that the procd-owned process is the
+// sole sing-box executable before accepting the runtime as healthy. Do not
+// kill by executable name here: ownership of a non-procd process is unknown.
+function sing_box_single_owned_service_runtime() {
+    return sing_box_service_running() && sing_box_process_count() == 1;
+}
+
+function sing_box_process_conflict() {
+    return sing_box_process_count() > 0 && !sing_box_single_owned_service_runtime();
+}
+
 function sing_box_service_stable(min_age) {
     min_age = int(min_age || 2);
 
@@ -603,18 +617,27 @@ function sing_box_runtime_ports_ready() {
     );
 }
 
+function sing_box_clash_api_ready() {
+    // diagnostics/runtime owns address and authentication construction so a
+    // readiness probe never exposes the configured API secret in logs.
+    return command_success_from_args([
+        "ucode", "-L", LIB_DIR, DIAGNOSTICS_RUNTIME_UC, "clash-api-ready"
+    ]);
+}
+
 function single_ready_sing_box_runtime() {
-    return sing_box_process_count() == 1 &&
-        sing_box_service_running() && sing_box_runtime_ports_ready();
+    return sing_box_single_owned_service_runtime() &&
+        sing_box_runtime_ports_ready() && sing_box_clash_api_ready();
 }
 
 function forkop_running(rt_table, nft_table, mark) {
-    return sing_box_service_running() && sing_box_runtime_ports_ready() &&
+    return single_ready_sing_box_runtime() &&
         forkop_runtime_network_configured(rt_table, nft_table, mark);
 }
 
 function forkop_stably_running(rt_table, nft_table, mark, min_age) {
-    return sing_box_service_stable(min_age) && sing_box_runtime_ports_ready() &&
+    return sing_box_single_owned_service_runtime() && sing_box_service_stable(min_age) &&
+        sing_box_runtime_ports_ready() && sing_box_clash_api_ready() &&
         forkop_runtime_network_configured(rt_table, nft_table, mark);
 }
 
@@ -1758,6 +1781,12 @@ else if (mode == "sing-box-service-runtime-pid") {
 }
 else if (mode == "sing-box-service-running")
     exit(sing_box_service_running() ? 0 : 1);
+else if (mode == "sing-box-process-count")
+    print(sing_box_process_count(), "\n");
+else if (mode == "sing-box-single-owned-service-runtime")
+    exit(sing_box_single_owned_service_runtime() ? 0 : 1);
+else if (mode == "sing-box-process-conflict")
+    exit(sing_box_process_conflict() ? 0 : 1);
 else if (mode == "sing-box-service-stable")
     exit(sing_box_service_stable(ARGV[1]) ? 0 : 1);
 else if (mode == "process-age-seconds-fixture") {

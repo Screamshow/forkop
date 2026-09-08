@@ -7,12 +7,32 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") <version> [output-directory]
 
-Build Forkop IPK and APK packages. The version must use x.y.z format.
+Build Forkop IPK and APK packages. The version must use x.y.z or x.y.z-N,
+where N is a numeric package revision.
 EOF
+}
+
+validate_release_version() {
+  local version="$1"
+
+  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+    echo "Expected release version in the form x.y.z or x.y.z-N (numeric package revision)" >&2
+    return 1
+  fi
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
+  exit 0
+fi
+
+if [[ "${1:-}" == "--check-version" ]]; then
+  if (( $# != 2 )); then
+    usage >&2
+    exit 2
+  fi
+  validate_release_version "$2" || exit 2
+  printf '%s\n' "$2"
   exit 0
 fi
 
@@ -24,10 +44,7 @@ fi
 RELEASE_VERSION="$1"
 OUTPUT_DIR="${2:-$ROOT_DIR/dist/release-final}"
 
-if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-  echo "Expected release version in the form x.y.z or x.y.z-suffix" >&2
-  exit 2
-fi
+validate_release_version "$RELEASE_VERSION" || exit 2
 # APK package revisions use -r, while public and IPK versions retain -<revision>.
 APK_INTERNAL_VERSION="${RELEASE_VERSION/-/\-r}"
 

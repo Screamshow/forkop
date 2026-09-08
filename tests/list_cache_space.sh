@@ -6,6 +6,7 @@ FORKOP_LIB="$ROOT_DIR/forkop/files/usr/lib"
 UPDATES_UC="$FORKOP_LIB/components/updates.uc"
 WORK_DIR="$(mktemp -d)"
 FLASH_DIR="$WORK_DIR/flash"
+RUNTIME_GENERATION="$WORK_DIR/runtime-generation"
 
 cleanup() {
   umount "$FLASH_DIR" >/dev/null 2>&1 || true
@@ -18,7 +19,7 @@ fail() {
   exit 1
 }
 
-mkdir -p "$FLASH_DIR" "$WORK_DIR/runtime"
+mkdir -p "$FLASH_DIR" "$RUNTIME_GENERATION"
 mount -t tmpfs -o size=10m tmpfs "$FLASH_DIR" ||
   fail "could not create the constrained cache filesystem"
 
@@ -27,6 +28,7 @@ forkop.settings=settings
 forkop.alpha=section
 forkop.alpha.enabled=1
 forkop.alpha.action=connection
+forkop.alpha.remote_domain_lists=https://lists.test/alpha.txt
 EOF_UCI
 
 write_ruleset() {
@@ -40,29 +42,45 @@ write_ruleset() {
   fi
 }
 
+write_generation() {
+  bytes="$1"
+  rm -rf "$RUNTIME_GENERATION"
+  mkdir -p "$RUNTIME_GENERATION"
+  write_ruleset "$RUNTIME_GENERATION/alpha-remote-domains-ruleset.json" "$bytes"
+  printf 'cached.example\n' >"$RUNTIME_GENERATION/source-1"
+  signature="$(FORKOP_UCI_STATE_FILE="$WORK_DIR/uci.state" ucode -L "$FORKOP_LIB" "$FORKOP_LIB/service/state.uc" list-update-signature)"
+  ruleset_size="$(wc -c <"$RUNTIME_GENERATION/alpha-remote-domains-ruleset.json")"
+  source_size="$(wc -c <"$RUNTIME_GENERATION/source-1")"
+  ruleset_md5="$(md5sum "$RUNTIME_GENERATION/alpha-remote-domains-ruleset.json" | cut -d' ' -f1)"
+  source_md5="$(md5sum "$RUNTIME_GENERATION/source-1" | cut -d' ' -f1)"
+  cat >"$RUNTIME_GENERATION/manifest.json" <<EOF_MANIFEST
+{"format":"2","generation":"gen-space-$bytes","signature":"$signature","files":[{"name":"alpha-remote-domains-ruleset.json","kind":"ruleset","size":$ruleset_size,"md5":"$ruleset_md5"},{"name":"source-1","kind":"source","url":"https://lists.test/alpha.txt","source_format":"plain","size":$source_size,"md5":"$source_md5"}]}
+EOF_MANIFEST
+}
+
 persist() {
   FORKOP_UCI_STATE_FILE="$WORK_DIR/uci.state" \
   FORKOP_PERSISTENT_LIST_CACHE_DIR="$FLASH_DIR/list-cache" \
   FORKOP_RULESET_CACHE_DIR="$FLASH_DIR/ruleset-cache" \
   FORKOP_PERSISTENT_LIST_CACHE_MANIFEST="$FLASH_DIR/list-cache/manifest.json" \
   FORKOP_LIST_UPDATE_STATE_FILE="$FLASH_DIR/list-cache/last-success.timestamp" \
+  FORKOP_RUNTIME_LIST_GENERATION_DIR="$RUNTIME_GENERATION" \
   FORKOP_PERSISTENT_LIST_CACHE_MAX_BYTES=8388608 \
   FORKOP_PERSISTENT_LIST_CACHE_MIN_FREE_BYTES=8388608 \
-  TMP_RULESET_FOLDER="$WORK_DIR/runtime" \
   FORKOP_LIB="$FORKOP_LIB" \
     ucode -L "$FORKOP_LIB" "$UPDATES_UC" persist-list-cache "$1"
 }
 
-write_ruleset "$WORK_DIR/runtime/alpha-lists-ruleset.json" 1048576
+write_generation 1048576
 persist 100 || fail "1 MiB cache did not fit on a 10 MiB filesystem with an 8 MiB reserve"
-first_md5="$(md5sum "$FLASH_DIR/list-cache/alpha-lists-ruleset.json" | cut -d' ' -f1)"
+first_md5="$(md5sum "$FLASH_DIR/list-cache/alpha-remote-domains-ruleset.json" | cut -d' ' -f1)"
 
-write_ruleset "$WORK_DIR/runtime/alpha-lists-ruleset.json" 3145728
+write_generation 3145728
 if persist 200; then
   fail "3 MiB replacement was committed despite the 8 MiB free-space reserve"
 fi
 
-[ "$first_md5" = "$(md5sum "$FLASH_DIR/list-cache/alpha-lists-ruleset.json" | cut -d' ' -f1)" ] ||
+[ "$first_md5" = "$(md5sum "$FLASH_DIR/list-cache/alpha-remote-domains-ruleset.json" | cut -d' ' -f1)" ] ||
   fail "rejected replacement damaged the previous cache"
 [ "$(cat "$FLASH_DIR/list-cache/last-success.timestamp")" = 100 ] ||
   fail "rejected replacement changed the previous cache timestamp"

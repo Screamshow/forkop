@@ -1329,10 +1329,7 @@ function add_urltest_outbound(config, section, urltest_id, urltest_candidate_tag
     });
 
     if (length(urltest_outbounds) == 0)
-        return {
-            tag: "",
-            outbounds: []
-        };
+        runtime_generate_unsupported("URLTest group '" + display_name + "' in rule '" + section_name + "' has no usable proxy outbounds after filtering");
 
     push(config.outbounds, urltest_outbound);
     return {
@@ -1375,10 +1372,7 @@ function add_priority_group_outbound(config, section, group_id, urltest_candidat
     });
 
     if (length(outbounds) == 0)
-        return {
-            tag: "",
-            outbounds: []
-        };
+        runtime_generate_unsupported("Priority group '" + display_name + "' in rule '" + section_name + "' has no usable proxy outbounds after filtering");
 
     push(config.outbounds, outbound);
     return {
@@ -2368,6 +2362,72 @@ function domain_ip_list_ruleset_path(section_name) {
     return runtime_ruleset_folder + "/" + domain_ip_list_ruleset_tag(section_name) + ".json";
 }
 
+function remote_list_ruleset_tag(section_name, kind) {
+    return ruleset_tag(section_name, "remote", kind);
+}
+
+function remote_list_ruleset_path(section_name, kind) {
+    return runtime_ruleset_folder + "/" + remote_list_ruleset_tag(section_name, kind) + ".json";
+}
+
+function remote_list_is_singbox_managed(reference) {
+    let extension = runtime_rulesets.file_extension(reference);
+    return extension == "json" || extension == "srs";
+}
+
+function ensure_materialized_remote_list_ruleset(config, section_name, kind) {
+    let tag_name = remote_list_ruleset_tag(section_name, kind);
+    let path = remote_list_ruleset_path(section_name, kind);
+    let ruleset = read_json_file(path);
+
+    // Plain remote lists are downloaded and converted into this source rule-set
+    // by the transactional list generation.  Never publish an nft interception
+    // without the corresponding sing-box matcher: a missing or malformed
+    // materialized file is a generation/configuration failure, not an empty
+    // matcher that could fall through to final/direct.
+    if (type(ruleset) != "object" || type(ruleset.rules) != "array")
+        runtime_generate_unsupported("remote " + kind + " ruleset for '" + section_name + "' is missing or invalid");
+
+    if (!ruleset_registered(config, tag_name)) {
+        push(config.route.rule_set, {
+            type: "local",
+            tag: tag_name,
+            format: "source",
+            path
+        });
+    }
+    return tag_name;
+}
+
+function add_remote_list_rulesets(config, section, option_name, kind, route_tags, dns_tags) {
+    let section_name = as_string(section[".name"]);
+    let has_materialized_source = false;
+
+    for (let reference in list_option(section, option_name)) {
+        reference = as_string(reference);
+        if (reference == "")
+            continue;
+
+        if (!remote_list_is_singbox_managed(reference)) {
+            has_materialized_source = true;
+            continue;
+        }
+
+        let ensured = ensure_custom_ruleset(config, reference);
+        push(route_tags, ensured.tag);
+        if (kind == "domains" && dns_tags != null)
+            push(dns_tags, ensured.tag);
+    }
+
+    if (!has_materialized_source)
+        return;
+
+    let tag_name = ensure_materialized_remote_list_ruleset(config, section_name, kind);
+    push(route_tags, tag_name);
+    if (kind == "domains" && dns_tags != null)
+        push(dns_tags, tag_name);
+}
+
 function reference_is_local(reference) {
     return substr(as_string(reference), 0, 1) == "/";
 }
@@ -2578,12 +2638,12 @@ function add_source_dns_matchers(rule, source_ip_cidr) {
 
 function add_source_aware_bypass_dns_rules(config, matchers, rewrite_ttl) {
     if (runtime_supports_dns_response_matching) {
-        // sing-box 1.14 requires response matching to follow a top-level
-        // evaluate action. Evaluate the normal resolver, then preserve the
-        // existing address-filter behavior when choosing dnsmasq.
+        // sing-box 1.14 response matching must inspect the response from the
+        // same path that will be returned. Evaluate dnsmasq first, then
+        // respond with that accepted non-FakeIP answer below.
         let evaluate = copy_dns_matchers(matchers);
         evaluate.action = "evaluate";
-        evaluate.server = runtime_constants.DNS_SERVER_TAG;
+        evaluate.server = runtime_constants.DNSMASQ_DNS_SERVER_TAG;
         push_dns_matcher_rule(config, evaluate);
     }
 
@@ -2594,17 +2654,23 @@ function add_source_aware_bypass_dns_rules(config, matchers, rewrite_ttl) {
     if (runtime_supports_dns_response_matching)
         fakeip_matcher.match_response = true;
 
-    push_dns_matcher_rule(config, {
+    let filtered_dnsmasq = {
         type: "logical",
         mode: "and",
         rules: [
             copy_dns_matchers(matchers),
             fakeip_matcher
-        ],
-        action: "route",
-        server: runtime_constants.DNSMASQ_DNS_SERVER_TAG,
-        rewrite_ttl
-    });
+        ]
+    };
+    if (runtime_supports_dns_response_matching) {
+        filtered_dnsmasq.action = "respond";
+    }
+    else {
+        filtered_dnsmasq.action = "route";
+        filtered_dnsmasq.server = runtime_constants.DNSMASQ_DNS_SERVER_TAG;
+        filtered_dnsmasq.rewrite_ttl = rewrite_ttl;
+    }
+    push_dns_matcher_rule(config, filtered_dnsmasq);
 
     let fallback = copy_dns_matchers(matchers);
     fallback.action = "route";
@@ -2727,6 +2793,14 @@ function add_dns_action_rules_for_section(config, section) {
         if (ensured.kind == "domains")
             push(rule_set_tags, ensured.tag);
     }
+    add_remote_list_rulesets(
+        config,
+        section,
+        "remote_domain_lists",
+        "domains",
+        rule_set_tags,
+        rule_set_tags
+    );
     add_domain_ip_list_ruleset(
         config,
         section_name,
@@ -2889,6 +2963,22 @@ function add_combined_route_for_section(config, section) {
         if (ensured.kind == "domains")
             push(dns_rule_set_tags, ensured.tag);
     }
+    add_remote_list_rulesets(
+        config,
+        section,
+        "remote_domain_lists",
+        "domains",
+        rule_set_tags,
+        dns_rule_set_tags
+    );
+    add_remote_list_rulesets(
+        config,
+        section,
+        "remote_subnet_lists",
+        "subnets",
+        rule_set_tags,
+        null
+    );
     add_domain_ip_list_ruleset(
         config,
         section_name,
@@ -2961,8 +3051,7 @@ function add_combined_route_for_section(config, section) {
 function unsupported_matcher_key(section) {
     let unsupported_options = [
         "subnet", "subnet_text",
-        "local_domain_lists", "local_subnet_lists",
-        "remote_domain_lists", "remote_subnet_lists"
+        "local_domain_lists", "local_subnet_lists"
     ];
     for (let key in unsupported_options) {
         if (length(list_option(section, key)) > 0 || option(section, key, "") != "")

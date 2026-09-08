@@ -700,8 +700,15 @@ function reload_finish(reason, job_id, status) {
 
 function reload_service(reason, owner_pid) {
     let plan = reload_begin_value(reason, owner_pid, null, null);
-    if (plan.action != "run")
+    if (plan.action != "run") {
+        // A list worker must distinguish an accepted queued request from a
+        // completed lifecycle. The init.d shell intentionally ignores this
+        // token for ordinary callers, while the worker retains its durable
+        // list-content apply marker until lifecycle consumes it.
+        if (as_string(reason) == "list-content")
+            print("queued\n");
         return 0;
+    }
 
     let status = command_status(command_from_args([ "env", "FORKOP_UI_ACTION_TRACKED=1", BIN_PATH, "reload", reason ]) + " >/dev/null 2>&1");
     let finish = reload_finish_value(reason, plan.job_id, status);

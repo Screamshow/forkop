@@ -120,6 +120,13 @@ function emit_reload_plan(previous, current, context) {
     if (changed.list && context.has_list_update_sources)
         needs.list_update = true;
 
+    // Rebuilding nftables recreates its dynamic sets empty. Community subnet
+    // lists and other downloaded IP sources must refill those sets before the
+    // reload transaction is complete, even when their source signature did
+    // not change.
+    if (needs.nft_rebuild && context.has_nft_list_update_sources)
+        needs.list_update = true;
+
     if (context.runtime_cache_needs_rebuild) {
         changed.sing_box = true;
         needs.sing_box_reload = true;
