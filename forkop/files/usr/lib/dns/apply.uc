@@ -6,6 +6,8 @@ let uci = require("core.uci");
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const SB_DNS_INBOUND_ADDRESS = getenv("SB_DNS_INBOUND_ADDRESS") || "127.0.0.42";
 const DNSMASQ_INIT = getenv("DNSMASQ_INIT") || "/etc/init.d/dnsmasq";
+const SNAPSHOT_VERSION = "1";
+const SNAPSHOT_PREFIX = "dhcp.@dnsmasq[0].forkop_dns_";
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -89,27 +91,8 @@ function dnsmasq_default_has_forkop_dns() {
     return list_has(dnsmasq_default_servers(), SB_DNS_INBOUND_ADDRESS);
 }
 
-function dnsmasq_has_forkop_dns() {
-    return dnsmasq_default_has_forkop_dns() || dnsmasq_legacy_instance_exists();
-}
-
-function dnsmasq_has_forkop_managed_state() {
-    return uci_get("dhcp.@dnsmasq[0].forkop_server") != "" ||
-        uci_get("dhcp.@dnsmasq[0].forkop_noresolv") != "" ||
-        uci_get("dhcp.@dnsmasq[0].forkop_cachesize") != "" ||
-        uci_get("dhcp.@dnsmasq[0].forkop_notinterface") != "" ||
-        dnsmasq_legacy_instance_exists();
-}
-
 function dnsmasq_management_disabled() {
     return truthy(uci_get(CONFIG_NAME + ".settings.dont_touch_dhcp"));
-}
-
-function dnsmasq_default_config_is_complete() {
-    return dnsmasq_default_has_forkop_dns() &&
-        uci_get("dhcp.@dnsmasq[0].noresolv") == "1" &&
-        uci_get("dhcp.@dnsmasq[0].cachesize") == "0" &&
-        !dnsmasq_legacy_instance_exists();
 }
 
 function dnsmasq_legacy_interfaces() {
@@ -123,37 +106,175 @@ function dnsmasq_legacy_interfaces() {
     return legacy_interfaces;
 }
 
-function backup_dnsmasq_config_option(key, backup_key) {
-    if (uci_get("dhcp.@dnsmasq[0]." + backup_key) != "")
-        return;
-
-    let value = uci_get("dhcp.@dnsmasq[0]." + key);
-    if (value != "")
-        uci_set("dhcp.@dnsmasq[0]." + backup_key, value);
+function snapshot_path(key) {
+    return SNAPSHOT_PREFIX + key;
 }
 
-function backup_dnsmasq_server_list() {
-    if (uci_get("dhcp.@dnsmasq[0].forkop_server") != "")
-        return;
-
-    for (let server in words(dnsmasq_default_servers())) {
-        if (server != SB_DNS_INBOUND_ADDRESS)
-            uci_add_list("dhcp.@dnsmasq[0].forkop_server", server);
+function dnsmasq_snapshot_marker_present() {
+    for (let key in [ "version", "transaction_id", "server", "server_present", "server_kind", "noresolv", "noresolv_present", "cachesize", "cachesize_present" ]) {
+        if (uci_exists(snapshot_path(key)))
+            return true;
     }
+    return false;
 }
 
-function restore_dnsmasq_config_option(key, backup_key, default_value) {
-    let value = uci_get("dhcp.@dnsmasq[0]." + backup_key);
-    if (value != "") {
-        uci_set("dhcp.@dnsmasq[0]." + key, value);
-        uci_delete("dhcp.@dnsmasq[0]." + backup_key);
+function snapshot_presence_is_valid(key) {
+    let present = uci_get(snapshot_path(key + "_present"));
+    if (present != "0" && present != "1")
+        return false;
+    return present != "1" || uci_exists(snapshot_path(key));
+}
+
+function dnsmasq_snapshot_is_valid() {
+    if (uci_get(snapshot_path("version")) != SNAPSHOT_VERSION ||
+        uci_get(snapshot_path("transaction_id")) == "")
+        return false;
+
+    if (!snapshot_presence_is_valid("server") ||
+        !snapshot_presence_is_valid("noresolv") ||
+        !snapshot_presence_is_valid("cachesize"))
+        return false;
+
+    let server_present = uci_get(snapshot_path("server_present"));
+    if (server_present == "1") {
+        let kind = uci_get(snapshot_path("server_kind"));
+        if (kind != "scalar" && kind != "list")
+            return false;
     }
-    else if (as_string(default_value) != "") {
-        uci_set("dhcp.@dnsmasq[0]." + key, default_value);
+    else if (uci_exists(snapshot_path("server")) || uci_exists(snapshot_path("server_kind"))) {
+        return false;
+    }
+
+    return true;
+}
+
+function dnsmasq_option_value(option) {
+    let section = uci.get_all("dhcp", "@dnsmasq[0]");
+    return type(section) == "object" ? section[option] : null;
+}
+
+function dnsmasq_has_forkop_dns() {
+    return dnsmasq_snapshot_is_valid() || dnsmasq_legacy_instance_exists();
+}
+
+function dnsmasq_has_forkop_managed_state() {
+    return dnsmasq_snapshot_is_valid() || dnsmasq_legacy_instance_exists();
+}
+
+function dnsmasq_default_config_is_complete() {
+    return dnsmasq_snapshot_is_valid() &&
+        dnsmasq_default_has_forkop_dns() &&
+        uci_get("dhcp.@dnsmasq[0].noresolv") == "1" &&
+        uci_get("dhcp.@dnsmasq[0].cachesize") == "0" &&
+        !dnsmasq_legacy_instance_exists();
+}
+
+function snapshot_dnsmasq_server() {
+    let current_path = "dhcp.@dnsmasq[0].server";
+    let snapshot = snapshot_path("server");
+    let present = uci_exists(current_path);
+
+    uci_set(snapshot_path("server_present"), present ? "1" : "0");
+    uci_delete(snapshot);
+    uci_delete(snapshot_path("server_kind"));
+    if (!present)
+        return;
+
+    let value = dnsmasq_option_value("server");
+    if (type(value) == "array") {
+        uci_set(snapshot_path("server_kind"), "list");
+        for (let entry in value)
+            uci_add_list(snapshot, entry);
+        return;
+    }
+
+    uci_set(snapshot_path("server_kind"), "scalar");
+    uci_set(snapshot, as_string(value));
+}
+
+function snapshot_field(key) {
+    let path = "dhcp.@dnsmasq[0]." + key;
+    let snapshot = snapshot_path(key);
+    uci_set(snapshot_path(key + "_present"), uci_exists(path) ? "1" : "0");
+    if (uci_exists(path))
+        uci_set(snapshot, as_string(uci_get(path)));
+    else
+        uci_delete(snapshot);
+}
+
+function clear_dnsmasq_snapshot() {
+    for (let key in [ "version", "transaction_id", "server", "server_present", "server_kind", "noresolv", "noresolv_present", "cachesize", "cachesize_present" ])
+        uci_delete(snapshot_path(key));
+}
+
+function snapshot_dnsmasq_default_instance() {
+    if (dnsmasq_snapshot_is_valid())
+        return true;
+
+    if (dnsmasq_snapshot_marker_present()) {
+        log("Refusing to replace an invalid Forkop DNS transaction snapshot", "warn");
+        return false;
+    }
+
+    snapshot_dnsmasq_server();
+    snapshot_field("noresolv");
+    snapshot_field("cachesize");
+    let stamp = clock();
+    uci_set(snapshot_path("transaction_id"), sprintf("%d-%d", stamp[0], stamp[1]));
+    uci_set(snapshot_path("version"), SNAPSHOT_VERSION);
+    return true;
+}
+
+function current_field_matches_forkop_value(key) {
+    if (key == "server")
+        return uci_get("dhcp.@dnsmasq[0].server") == SB_DNS_INBOUND_ADDRESS;
+    if (key == "noresolv")
+        return uci_get("dhcp.@dnsmasq[0].noresolv") == "1";
+    if (key == "cachesize")
+        return uci_get("dhcp.@dnsmasq[0].cachesize") == "0";
+    return false;
+}
+
+function restore_snapshot_server() {
+    let current_path = "dhcp.@dnsmasq[0].server";
+    if (!current_field_matches_forkop_value("server")) {
+        log("DNS rollback conflict: dnsmasq server changed outside Forkop; preserving the external value", "warn");
+        return false;
+    }
+
+    if (uci_get(snapshot_path("server_present")) != "1") {
+        uci_delete(current_path);
+        return true;
+    }
+
+    let kind = uci_get(snapshot_path("server_kind"));
+    let value = dnsmasq_option_value("forkop_dns_server");
+    uci_delete(current_path);
+    if (kind == "list") {
+        // In fixture mode UCI list values are serialized as whitespace-separated
+        // text; on OpenWrt get_all() returns the original ordered array.
+        let values = type(value) == "array" ? value : words(as_string(value));
+        for (let entry in values)
+            uci_add_list(current_path, entry);
     }
     else {
-        uci_delete("dhcp.@dnsmasq[0]." + key);
+        uci_set(current_path, as_string(value));
     }
+    return true;
+}
+
+function restore_snapshot_field(key) {
+    let current_path = "dhcp.@dnsmasq[0]." + key;
+    if (!current_field_matches_forkop_value(key)) {
+        log("DNS rollback conflict: dnsmasq " + key + " changed outside Forkop; preserving the external value", "warn");
+        return false;
+    }
+
+    if (uci_get(snapshot_path(key + "_present")) == "1")
+        uci_set(current_path, as_string(uci_get(snapshot_path(key))));
+    else
+        uci_delete(current_path);
+    return true;
 }
 
 function dnsmasq_cleanup_legacy_instance() {
@@ -180,55 +301,40 @@ function dnsmasq_cleanup_legacy_instance() {
 }
 
 function dnsmasq_configure_default_instance() {
-    let default_has_forkop_dns = dnsmasq_default_has_forkop_dns();
-
-    backup_dnsmasq_server_list();
-    if (!default_has_forkop_dns) {
-        backup_dnsmasq_config_option("noresolv", "forkop_noresolv");
-        backup_dnsmasq_config_option("cachesize", "forkop_cachesize");
-    }
+    if (!snapshot_dnsmasq_default_instance())
+        return false;
 
     uci_delete("dhcp.@dnsmasq[0].server");
     uci_add_list("dhcp.@dnsmasq[0].server", SB_DNS_INBOUND_ADDRESS);
     uci_set("dhcp.@dnsmasq[0].noresolv", "1");
     uci_set("dhcp.@dnsmasq[0].cachesize", "0");
+    return true;
 }
 
 function dnsmasq_restore_default_instance() {
-    let server_list = dnsmasq_default_servers();
-    let backup_servers = uci_get("dhcp.@dnsmasq[0].forkop_server");
-    let managed_global_dns = list_has(server_list, SB_DNS_INBOUND_ADDRESS);
+    if (!dnsmasq_snapshot_is_valid())
+        return false;
 
-    uci_delete("dhcp.@dnsmasq[0].server");
-    if (backup_servers != "") {
-        for (let value in words(backup_servers))
-            uci_add_list("dhcp.@dnsmasq[0].server", value);
-        uci_delete("dhcp.@dnsmasq[0].forkop_server");
-    }
-    else {
-        for (let value in words(server_list)) {
-            if (value != SB_DNS_INBOUND_ADDRESS)
-                uci_add_list("dhcp.@dnsmasq[0].server", value);
-        }
-    }
-    uci_delete("dhcp.@dnsmasq[0].forkop_server");
+    let changed = restore_snapshot_server();
+    for (let key in [ "noresolv", "cachesize" ])
+        if (restore_snapshot_field(key))
+            changed = true;
 
-    let noresolv = uci_get("dhcp.@dnsmasq[0].forkop_noresolv");
-    if (noresolv != "")
-        restore_dnsmasq_config_option("noresolv", "forkop_noresolv", "");
-    else if (managed_global_dns)
-        uci_set("dhcp.@dnsmasq[0].noresolv", "0");
-
-    let cachesize = uci_get("dhcp.@dnsmasq[0].forkop_cachesize");
-    if (cachesize != "")
-        restore_dnsmasq_config_option("cachesize", "forkop_cachesize", "");
-    else if (managed_global_dns)
-        uci_set("dhcp.@dnsmasq[0].cachesize", "150");
+    // Consume the transaction even when an external component won a field.
+    // This makes rollback idempotent and prevents a later retry from
+    // overwriting an acknowledged external change.
+    clear_dnsmasq_snapshot();
+    return changed;
 }
 
 function dnsmasq_configure(force) {
     if (!uci_available())
         return true;
+
+    if (dnsmasq_snapshot_marker_present() && !dnsmasq_snapshot_is_valid()) {
+        log("Refusing to configure dnsmasq: invalid Forkop DNS transaction snapshot", "warn");
+        return false;
+    }
 
     if (as_string(force) != "force" && uci_get(CONFIG_NAME + ".settings.shutdown_correctly") == "0") {
         if (dnsmasq_default_config_is_complete()) {
@@ -238,9 +344,15 @@ function dnsmasq_configure(force) {
         log("Previous Forkop shutdown was unclean and dnsmasq is not ready; applying Forkop DNS settings", "info");
     }
 
+    if (dnsmasq_snapshot_is_valid() && !dnsmasq_default_config_is_complete()) {
+        log("Refusing to configure dnsmasq: a previous Forkop DNS transaction conflicts with external changes", "warn");
+        return false;
+    }
+
     log("Configuring dnsmasq to forward DNS to sing-box", "info");
     dnsmasq_cleanup_legacy_instance();
-    dnsmasq_configure_default_instance();
+    if (!dnsmasq_configure_default_instance())
+        return false;
     uci_commit("dhcp");
 
     return restart_dnsmasq();
@@ -252,36 +364,47 @@ function dnsmasq_restore(force, quiet) {
 
     if (!quiet)
         log("Restoring DNS settings in dnsmasq", "info");
-    if (as_string(force) != "force" && uci_get(CONFIG_NAME + ".settings.shutdown_correctly") == "1") {
-        if (!dnsmasq_has_forkop_dns()) {
-            log("dnsmasq already uses non-Forkop DNS settings; restore is not required", "info");
-            return true;
-        }
-        log("Forkop DNS settings are still present after a clean shutdown; restoring DNS settings in dnsmasq", "info");
+    let has_marker = dnsmasq_snapshot_marker_present();
+    let has_snapshot = dnsmasq_snapshot_is_valid();
+    let has_legacy = dnsmasq_legacy_instance_exists();
+    if (has_marker && !has_snapshot) {
+        log("DNS rollback skipped: invalid Forkop dnsmasq transaction snapshot", "warn");
+        return true;
     }
+    if (!has_snapshot && !has_legacy) {
+        if (!quiet)
+            log("dnsmasq already uses non-Forkop DNS settings; restore is not required", "info");
+        return true;
+    }
+    if (as_string(force) != "force" && uci_get(CONFIG_NAME + ".settings.shutdown_correctly") == "1")
+        log("Forkop DNS settings are still present after a clean shutdown; restoring DNS settings in dnsmasq", "info");
 
-    dnsmasq_cleanup_legacy_instance();
-    dnsmasq_restore_default_instance();
+    if (has_legacy)
+        dnsmasq_cleanup_legacy_instance();
+    let changed = has_snapshot ? dnsmasq_restore_default_instance() : has_legacy;
+    // Snapshot consumption itself must be durable, even if every field had an
+    // external conflict and therefore no dnsmasq restart is necessary.
     uci_commit("dhcp");
-
-    return restart_dnsmasq();
+    return !changed || restart_dnsmasq();
 }
 
 function failsafe_restore() {
     if (!uci_available())
         return true;
 
-    if (dnsmasq_management_disabled()) {
-        if (!dnsmasq_has_forkop_managed_state()) {
-            log("DNS rollback skipped: dont_touch_dhcp is enabled and no Forkop dnsmasq changes were found", "info");
-            return true;
-        }
+    if (dnsmasq_snapshot_marker_present() && !dnsmasq_snapshot_is_valid()) {
+        log("DNS rollback skipped: invalid Forkop dnsmasq transaction snapshot", "warn");
+        return true;
+    }
 
-        log("Rolling back previous Forkop dnsmasq changes because dont_touch_dhcp is enabled", "warn");
+    if (!dnsmasq_has_forkop_managed_state()) {
+        log("DNS rollback skipped: no valid Forkop dnsmasq transaction was found", "info");
+        return true;
     }
-    else {
-        log("Rolling back Forkop DNS changes in dnsmasq", "warn");
-    }
+
+    log(dnsmasq_management_disabled() ?
+        "Rolling back previous Forkop dnsmasq changes because dont_touch_dhcp is enabled" :
+        "Rolling back Forkop DNS changes in dnsmasq", "warn");
 
     dnsmasq_restore("force", true);
     return true;

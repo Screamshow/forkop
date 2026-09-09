@@ -41,6 +41,9 @@ ops/deployed-nginx/
 !/tests/build_version.sh
 !/tests/manual_restart_contract.sh
 !/tests/support_report_raw.sh
+!/tests/dns_apply.sh
+!/tests/dns_rollback_transaction.sh
+!/tests/subscription_bootstrap_dns.sh
 /docs/releases/*
 !/docs/releases/1.3.8.md
 !/docs/releases/1.3.11.md

@@ -1066,9 +1066,15 @@ function dnsmasq_signature_body(settings, dnsmasq, legacy_dnsmasq_present) {
     body = signature_add_value(body, "dhcp.@dnsmasq[0].server", option(dnsmasq, "server", ""));
     body = signature_add_value(body, "dhcp.@dnsmasq[0].noresolv", option(dnsmasq, "noresolv", ""));
     body = signature_add_value(body, "dhcp.@dnsmasq[0].cachesize", option(dnsmasq, "cachesize", ""));
-    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_server", option(dnsmasq, "forkop_server", ""));
-    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_noresolv", option(dnsmasq, "forkop_noresolv", ""));
-    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_cachesize", option(dnsmasq, "forkop_cachesize", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_version", option(dnsmasq, "forkop_dns_version", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_transaction_id", option(dnsmasq, "forkop_dns_transaction_id", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_server_present", option(dnsmasq, "forkop_dns_server_present", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_server_kind", option(dnsmasq, "forkop_dns_server_kind", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_server", option(dnsmasq, "forkop_dns_server", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_noresolv_present", option(dnsmasq, "forkop_dns_noresolv_present", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_noresolv", option(dnsmasq, "forkop_dns_noresolv", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_cachesize_present", option(dnsmasq, "forkop_dns_cachesize_present", ""));
+    body = signature_add_value(body, "dhcp.@dnsmasq[0].forkop_dns_cachesize", option(dnsmasq, "forkop_dns_cachesize", ""));
     body = signature_add_value(body, "dhcp.forkop.present", arg_bool(legacy_dnsmasq_present) ? "1" : "0");
 
     return body;
@@ -1849,9 +1855,15 @@ function uci_dnsmasq() {
         server: uci_get("dhcp.@dnsmasq[0].server"),
         noresolv: uci_get("dhcp.@dnsmasq[0].noresolv"),
         cachesize: uci_get("dhcp.@dnsmasq[0].cachesize"),
-        forkop_server: uci_get("dhcp.@dnsmasq[0].forkop_server"),
-        forkop_noresolv: uci_get("dhcp.@dnsmasq[0].forkop_noresolv"),
-        forkop_cachesize: uci_get("dhcp.@dnsmasq[0].forkop_cachesize")
+        forkop_dns_version: uci_get("dhcp.@dnsmasq[0].forkop_dns_version"),
+        forkop_dns_transaction_id: uci_get("dhcp.@dnsmasq[0].forkop_dns_transaction_id"),
+        forkop_dns_server_present: uci_get("dhcp.@dnsmasq[0].forkop_dns_server_present"),
+        forkop_dns_server_kind: uci_get("dhcp.@dnsmasq[0].forkop_dns_server_kind"),
+        forkop_dns_server: uci_get("dhcp.@dnsmasq[0].forkop_dns_server"),
+        forkop_dns_noresolv_present: uci_get("dhcp.@dnsmasq[0].forkop_dns_noresolv_present"),
+        forkop_dns_noresolv: uci_get("dhcp.@dnsmasq[0].forkop_dns_noresolv"),
+        forkop_dns_cachesize_present: uci_get("dhcp.@dnsmasq[0].forkop_dns_cachesize_present"),
+        forkop_dns_cachesize: uci_get("dhcp.@dnsmasq[0].forkop_dns_cachesize")
     };
 }
 

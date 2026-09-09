@@ -1375,6 +1375,13 @@ function dnsmasq_has_managed_dns() {
 }
 
 function dnsmasq_has_managed_state() {
+    // Forkop 1.3.11 snapshots are transaction-versioned. A bare
+    // 127.0.0.42 server is not ownership proof and must never trigger this
+    // legacy fallback's destructive restore path.
+    if (dns_owner_option_prefix == "forkop_")
+        return uci_get("dhcp.@dnsmasq[0].forkop_dns_version") == "1" ||
+            dnsmasq_managed_instance_exists();
+
     return uci_get("dhcp.@dnsmasq[0]." + dns_owner_option_prefix + "server") != "" ||
         uci_get("dhcp.@dnsmasq[0]." + dns_owner_option_prefix + "noresolv") != "" ||
         uci_get("dhcp.@dnsmasq[0]." + dns_owner_option_prefix + "cachesize") != "" ||
@@ -1464,6 +1471,15 @@ function dnsmasq_restore_default_instance() {
 dnsmasq_failsafe_restore = function() {
     if (!uci_available())
         return true;
+
+    // Delegate current Forkop state to the single transaction owner when it
+    // is installed. The embedded helper intentionally has no interpretation
+    // of the versioned snapshot and therefore cannot safely restore it.
+    if (dns_owner_option_prefix == "forkop_") {
+        if (path_executable("/usr/bin/ucode") && path_exists("/usr/lib/forkop/dns/apply.uc"))
+            return run_args([ "/usr/bin/ucode", "/usr/lib/forkop/dns/apply.uc", "failsafe-restore" ]);
+        return true;
+    }
 
     if (dnsmasq_management_disabled() && !dnsmasq_has_managed_state())
         return true;

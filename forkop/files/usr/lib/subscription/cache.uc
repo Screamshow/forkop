@@ -6,6 +6,8 @@ let uci_core = require("core.uci");
 let connections = require("config.connections");
 let subscription_share_link = require("subscription.share_link");
 let filter_identity = require("subscription.filter_identity");
+let core_ip = require("core.ip");
+let core_url = require("core.url");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
@@ -1468,10 +1470,116 @@ function get_subscription_hwid(custom_hwid) {
     return custom_hwid != "" ? custom_hwid : generate_hwid();
 }
 
+function bootstrap_dns_servers() {
+    let result = [];
+    // Keep the UCI list order: it is the user's Bootstrap DNS priority.
+    let configured = uci_core.get(CONFIG_NAME + ".settings.bootstrap_dns_server");
+    if (type(configured) != "array")
+        configured = whitespace_values(configured);
+    for (let value in configured) {
+        let server = core_url.host(value);
+        if (core_ip.valid_ip(server))
+            push(result, server);
+    }
+    return result;
+}
+
+function subscription_url_host(url) {
+    return core_url.host(url);
+}
+
+function subscription_url_port(url) {
+    let port = core_url.port(url);
+    if (port != "")
+        return port;
+    return core_url.scheme(url) == "http" ? "80" : "443";
+}
+
+function bootstrap_lookup_address(host, server) {
+    let output = command_output_from_args([ "nslookup", host, server ]);
+    let name_seen = false;
+    for (let line in split(output, "\n")) {
+        line = trim(as_string(line));
+        if (index(line, "Name:") == 0) {
+            name_seen = true;
+            continue;
+        }
+        if (!name_seen)
+            continue;
+        // BusyBox has emitted both "Address:" and "Address 1:" variants.
+        let matched = match(line, /^Address([ \t]+[0-9]+)?:[ \t]*(.*)$/);
+        if (matched == null)
+            continue;
+        let address = trim(as_string(matched[2]));
+        if (core_ip.valid_ip(address))
+            return address;
+    }
+    return "";
+}
+
+function bootstrap_resolve_subscription_host(url) {
+    let host = subscription_url_host(url);
+    if (host == "" || core_ip.valid_ip(host))
+        return null;
+
+    for (let server in bootstrap_dns_servers()) {
+        log_message("Resolving subscription host via bootstrap DNS", "info");
+        let address = bootstrap_lookup_address(host, server);
+        if (address != "") {
+            log_message("Bootstrap DNS " + server + " resolved " + host + " -> " + address, "info");
+            return { host, port: subscription_url_port(url), address };
+        }
+        log_message("Bootstrap DNS " + server + " failed", "warn");
+    }
+    return null;
+}
+
+function curl_resolve_address(address) {
+    return core_ip.ip_family(address) == 6 ? "[" + address + "]" : address;
+}
+
+function subscription_curl_args(url, filepath, http_proxy_address, headers_filepath, effective_user_agent, effective_hwid, resolve) {
+    let args = [
+        "curl", "-f", "-sS",
+        "--connect-timeout", "15",
+        "--speed-time", "15",
+        "--speed-limit", "1"
+    ];
+
+    if (http_proxy_address != "") {
+        push(args, "-x");
+        push(args, "http://" + http_proxy_address);
+    }
+    if (headers_filepath != "") {
+        push(args, "-D");
+        push(args, headers_filepath);
+    }
+    if (resolve != null) {
+        push(args, "--resolve");
+        push(args, resolve.host + ":" + resolve.port + ":" + curl_resolve_address(resolve.address));
+    }
+
+    push(args, "-o");
+    push(args, filepath);
+    for (let header in [
+        "User-Agent: " + get_subscription_user_agent(effective_user_agent),
+        "X-HWID: " + get_subscription_hwid(effective_hwid),
+        "X-Device-OS: OpenWrt Linux",
+        "X-Device-Model: " + get_device_model(),
+        "X-Ver-OS: " + get_kernel_version(),
+        "Accept-Language: ru-RU,en,*",
+        "X-Device-Locale: EN"
+    ]) {
+        push(args, "-H");
+        push(args, header);
+    }
+    push(args, url);
+    return args;
+}
+
 function download_subscription(url, filepath, http_proxy_address, headers_filepath, effective_user_agent, effective_hwid) {
     let retries = 3;
     let wait_seconds = 2;
-    let timeout = 15;
     let stamp = clock();
     let suffix = sprintf(".part.%d.%d", stamp[0], stamp[1]);
     let tmpfile = filepath + suffix;
@@ -1483,39 +1591,18 @@ function download_subscription(url, filepath, http_proxy_address, headers_filepa
         unlink_path(headers_tmpfile);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
-        let args = [
-            "curl", "-f", "-sS",
-            "--connect-timeout", timeout,
-            "--speed-time", timeout,
-            "--speed-limit", "1"
-        ];
-
-        if (http_proxy_address != "") {
-            push(args, "-x");
-            push(args, "http://" + http_proxy_address);
+        let status = command_status_from_args(subscription_curl_args(
+            url, tmpfile, http_proxy_address, headers_tmpfile, effective_user_agent, effective_hwid, null
+        ));
+        if (status == 6) {
+            let resolved = bootstrap_resolve_subscription_host(url);
+            if (resolved != null) {
+                log_message("Downloading subscription using bootstrap-resolved address", "info");
+                status = command_status_from_args(subscription_curl_args(
+                    url, tmpfile, http_proxy_address, headers_tmpfile, effective_user_agent, effective_hwid, resolved
+                ));
+            }
         }
-        if (headers_tmpfile != "") {
-            push(args, "-D");
-            push(args, headers_tmpfile);
-        }
-
-        push(args, "-o");
-        push(args, tmpfile);
-        for (let header in [
-            "User-Agent: " + get_subscription_user_agent(effective_user_agent),
-            "X-HWID: " + get_subscription_hwid(effective_hwid),
-            "X-Device-OS: OpenWrt Linux",
-            "X-Device-Model: " + get_device_model(),
-            "X-Ver-OS: " + get_kernel_version(),
-            "Accept-Language: ru-RU,en,*",
-            "X-Device-Locale: EN"
-        ]) {
-            push(args, "-H");
-            push(args, header);
-        }
-        push(args, url);
-
-        let status = command_status_from_args(args);
         if (status == 0 && file_nonempty(tmpfile)) {
             move_file(tmpfile, filepath);
             if (headers_filepath != "") {
@@ -2581,6 +2668,9 @@ else if (mode == "subscription-import-stats") {
 }
 else if (mode == "subscription-source-summary") {
     print(subscription_source_summary(ARGV[1], ARGV[2], ARGV[3], ARGV[4]), "\n");
+}
+else if (mode == "download-subscription-fixture") {
+    exit(download_subscription(ARGV[1], ARGV[2], ARGV[3] || "", ARGV[4] || "", ARGV[5] || "", ARGV[6] || ""));
 }
 else if (mode == "object-has-extra-keys") {
     exit(object_has_extra_keys(ARGV[1]) ? 0 : 1);

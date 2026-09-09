@@ -102,9 +102,9 @@ function restore_dnsmasq_if_needed() {
     if (dont_touch_dhcp_enabled())
         return;
 
+    // The backend owns the transaction marker and decides whether rollback is
+    // safe. Do not invoke a second raw failsafe pass after it returns.
     command_success_from_args([ BIN_PATH, "restore_dnsmasq" ]);
-    if (path_exists(DNS_APPLY_UC))
-        command_success_from_args([ "ucode", DNS_APPLY_UC, "failsafe-restore" ]);
 }
 
 function remove_managed_sing_box() {
