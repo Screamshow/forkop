@@ -9,6 +9,11 @@
 ```sh
 wget -qO- https://mirror.51343.ru/forkop/install.sh | sh
 ```
+### Canary ветка
+
+```sh
+wget -qO- https://mirror.51343.ru/forkop/install.sh | sh -s -- --channel canary
+```
 
 
 ### Что нового в этом форке
