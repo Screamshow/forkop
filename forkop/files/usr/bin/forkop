@@ -128,6 +128,7 @@ function command_spec(command) {
         reload: [ "service/lifecycle.uc", "reload", 1 ],
         dns_failover_apply: [ "service/lifecycle.uc", "dns-failover-apply", 1 ],
         restart: [ "service/lifecycle.uc", "restart", 0 ],
+        manual_restart: [ "service/lifecycle.uc", "manual-restart", 0 ],
         enable: [ "service/lifecycle.uc", "enable", 0 ],
         disable: [ "service/lifecycle.uc", "disable", 0 ],
         uninstall: [ "service/lifecycle.uc", "uninstall", 0 ],

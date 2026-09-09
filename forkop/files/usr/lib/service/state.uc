@@ -12,6 +12,7 @@ const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const DEFAULT_PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/forkop/reload.pending";
 const DEFAULT_SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
+const SING_BOX_INIT = getenv("FORKOP_SING_BOX_INIT") || "/etc/init.d/sing-box";
 const ZAPRET_DEFAULT_NFQWS_OPT = getenv("ZAPRET_DEFAULT_NFQWS_OPT") || "";
 const ZAPRET2_DEFAULT_NFQWS2_OPT = getenv("ZAPRET2_DEFAULT_NFQWS2_OPT") || "";
 const BYEDPI_DEFAULT_CMD_OPTS = getenv("BYEDPI_DEFAULT_CMD_OPTS") || "";
@@ -105,6 +106,10 @@ function command_trimmed_output_from_args(args) {
 
 function command_success_from_args(args) {
     return system(command_from_args(args) + " >/dev/null 2>&1") == 0;
+}
+
+function command_start_without_procd_lock(args) {
+    return system(command_from_args(args) + " >/dev/null 2>&1 1000>&- &") == 0;
 }
 
 function uci_get(path) {
@@ -262,10 +267,19 @@ function run_pending_reload_if_requested(path, init_script) {
     init_script = as_string(init_script || DEFAULT_SERVICE_INIT);
 
     if (!consume_pending_reload(path))
-        return;
+        return true;
 
     command_success_from_args([ "logger", "-t", "forkop", "[info] Applying pending Forkop reload" ]);
-    system(shell_quote(init_script) + " reload pending >/dev/null 2>&1 1000>&- &");
+    // Do not acknowledge the durable request before its replacement owns the
+    // reload handoff. A detached init.d invocation leaves a window in which a
+    // latency worker can take reload.lock again while the marker is gone.
+    if (system(shell_quote(init_script) + " reload pending </dev/null >/dev/null 2>&1 1000>&-") != 0) {
+        mark_pending_reload(path, "pending_handoff_failed");
+        command_success_from_args([ "logger", "-t", "forkop", "[warn] Pending Forkop reload handoff failed; request was retained" ]);
+        return false;
+    }
+
+    return true;
 }
 
 function first_line_value(path) {
@@ -477,6 +491,13 @@ function process_start_ticks(stat) {
     return int(start_ticks);
 }
 
+function process_start_ticks_for_pid(pid) {
+    pid = as_string(pid);
+    if (match(pid, /^[0-9]+$/) == null)
+        return null;
+    return process_start_ticks(fs.readfile("/proc/" + pid + "/stat"));
+}
+
 function process_age_seconds_from_ticks(start_ticks, current_ticks) {
     start_ticks = as_string(start_ticks);
     current_ticks = as_string(current_ticks);
@@ -514,19 +535,6 @@ function sing_box_pid_replaced(previous_pid, current_pid, current_is_sing_box) {
         (previous_pid <= 0 || current_pid != previous_pid);
 }
 
-function wait_sing_box_pid_replacement(previous_pid, timeout) {
-    timeout = int(timeout || 15);
-    while (timeout > 0) {
-        let current_pid = sing_box_service_pid_runtime();
-        if (sing_box_pid_replaced(previous_pid, current_pid, pid_is_sing_box(current_pid)))
-            return true;
-
-        command_success_from_args([ "sleep", "1" ]);
-        timeout--;
-    }
-    return false;
-}
-
 function sing_box_reload_previous_pid(previous_pid, config_hash_before, config_hash_after) {
     previous_pid = as_string(previous_pid);
     if (as_string(config_hash_before) == as_string(config_hash_after) ||
@@ -542,26 +550,6 @@ function arg_bool(value) {
 
 function sing_box_runtime_reload_needed(config_hash_before, config_hash_after, force) {
     return arg_bool(force) || as_string(config_hash_before) != as_string(config_hash_after);
-}
-
-function reload_sing_box_runtime(previous_pid, config_hash_before, config_hash_after, force) {
-    if (!sing_box_runtime_reload_needed(config_hash_before, config_hash_after, force)) {
-        command_success_from_args([ "logger", "-t", "forkop", "[info] sing-box reload skipped: configuration is unchanged" ]);
-        return;
-    }
-
-    previous_pid = sing_box_reload_previous_pid(previous_pid, config_hash_before, config_hash_after);
-    command_success_from_args([ "logger", "-t", "forkop", "[info] Reloading sing-box runtime" ]);
-    if (!command_success_from_args([ "/etc/init.d/sing-box", "reload" ])) {
-        command_success_from_args([ "logger", "-t", "forkop", "[fatal] Failed to reload sing-box. Aborted." ]);
-        exit(1);
-    }
-
-    let timeout = getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15";
-    if (previous_pid > 0 && !wait_sing_box_pid_replacement(previous_pid, timeout)) {
-        command_success_from_args([ "logger", "-t", "forkop", "[fatal] sing-box reload did not replace the running process. Aborted." ]);
-        exit(1);
-    }
 }
 
 function sing_box_service_running() {
@@ -590,6 +578,215 @@ function sing_box_single_owned_service_runtime() {
 
 function sing_box_process_conflict() {
     return sing_box_process_count() > 0 && !sing_box_single_owned_service_runtime();
+}
+
+function sing_box_runtime_provenance() {
+    let pid = sing_box_service_pid_runtime();
+    let start_ticks = process_start_ticks_for_pid(pid);
+    if (!sing_box_single_owned_service_runtime() || start_ticks == null)
+        return null;
+    return { pid, start_ticks };
+}
+
+function log_controlled_transition_failure(reason, provenance) {
+    let expected_pid = provenance == null ? 0 : provenance.pid;
+    let expected_ticks = provenance == null ? 0 : provenance.start_ticks;
+    let observed_pid = sing_box_service_pid_runtime();
+    let process_count = sing_box_process_count();
+    command_success_from_args([
+        "logger", "-t", "forkop", "[fatal] Controlled sing-box transition refused: " + as_string(reason) +
+        " (expected_pid=" + as_string(expected_pid) +
+        ", expected_start_ticks=" + as_string(expected_ticks) +
+        ", observed_procd_pid=" + as_string(observed_pid) +
+        ", sing_box_process_count=" + as_string(process_count) + ")"
+    ]);
+}
+
+// Stop only a sole, procd-owned Forkop runtime and wait for that exact
+// PID/starttime to disappear. A foreign or unexpected process is never
+// stopped, and no replacement is allowed while any sing-box remains.
+function stop_managed_sing_box_and_wait(timeout) {
+    timeout = int(timeout || 15);
+    let process_count = sing_box_process_count();
+    let service_pid = sing_box_service_pid_runtime();
+
+    if (process_count == 0 && service_pid <= 0)
+        return true;
+
+    let provenance = sing_box_runtime_provenance();
+    if (provenance == null) {
+        log_controlled_transition_failure("ownership is ambiguous before stop", null);
+        return false;
+    }
+
+    if (!command_success_from_args([ SING_BOX_INIT, "stop" ])) {
+        log_controlled_transition_failure("sing-box stop command failed", provenance);
+        return false;
+    }
+
+    while (timeout >= 0) {
+        let current_ticks = process_start_ticks_for_pid(provenance.pid);
+        if (current_ticks != null) {
+            if (!pid_is_sing_box(provenance.pid) || int(current_ticks) != int(provenance.start_ticks)) {
+                log_controlled_transition_failure("old PID changed or was reused", provenance);
+                return false;
+            }
+            // The exiting process can remain visible in /proc briefly after
+            // it no longer has a sing-box executable identity (for example,
+            // while procd reaps it). That is not an overlap: keep waiting for
+            // this exact PID/starttime. Only a second active sing-box is
+            // ambiguous and must fail closed.
+            if (sing_box_process_count() > 1) {
+                log_controlled_transition_failure("extra sing-box appeared while stopping", provenance);
+                return false;
+            }
+        }
+        else {
+            // procd can briefly retain its old PID after the child has exited.
+            // Wait boundedly for that state to clear, but never accept a new
+            // process or a stale/nonzero service PID as a successful stop.
+            if (sing_box_process_count() > 0) {
+                log_controlled_transition_failure("unexpected sing-box remains after stop", provenance);
+                return false;
+            }
+            if (sing_box_service_pid_runtime() <= 0)
+                return true;
+        }
+
+        if (timeout <= 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
+
+    log_controlled_transition_failure("timed out waiting for old managed runtime to exit", provenance);
+    return false;
+}
+
+function start_managed_sing_box_and_verify(timeout) {
+    if (sing_box_process_count() != 0 || sing_box_service_pid_runtime() > 0) {
+        log_controlled_transition_failure("unexpected sing-box exists before start", null);
+        return false;
+    }
+
+    // A Forkop start invoked by procd can inherit fd 1000. Detach the nested
+    // sing-box service command from that lock, then verify its actual state.
+    if (!command_start_without_procd_lock([ SING_BOX_INIT, "start" ])) {
+        log_controlled_transition_failure("sing-box start command failed", null);
+        return false;
+    }
+
+    timeout = int(timeout || 15);
+    while (timeout >= 0) {
+        if (sing_box_single_owned_service_runtime())
+            return true;
+        if (sing_box_process_count() > 1) {
+            log_controlled_transition_failure("multiple sing-box processes appeared after start", null);
+            return false;
+        }
+        if (timeout <= 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
+
+    log_controlled_transition_failure("new managed runtime did not become sole procd-owned process", null);
+    return false;
+}
+
+function controlled_replace_managed_sing_box_runtime(timeout) {
+    if (!stop_managed_sing_box_and_wait(timeout))
+        return false;
+    return start_managed_sing_box_and_verify(timeout);
+}
+
+function reload_sing_box_runtime(previous_pid, config_hash_before, config_hash_after, force) {
+    if (!sing_box_runtime_reload_needed(config_hash_before, config_hash_after, force)) {
+        command_success_from_args([ "logger", "-t", "forkop", "[info] sing-box reload skipped: configuration is unchanged" ]);
+        return;
+    }
+
+    command_success_from_args([ "logger", "-t", "forkop", "[info] Reloading sing-box runtime" ]);
+    let timeout = getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15";
+    if (!controlled_replace_managed_sing_box_runtime(timeout)) {
+        command_success_from_args([ "logger", "-t", "forkop", "[fatal] Controlled sing-box replacement failed. Aborted." ]);
+        exit(1);
+    }
+}
+
+// This marker is created only by a current Forkop-managed package transaction.
+// It names one already procd-owned process by PID *and* kernel start time, so
+// it cannot authorize a PID that was reused after the transaction began.
+function write_managed_upgrade_sing_box_marker(path) {
+    let pid = sing_box_service_pid_runtime();
+    let start_ticks = process_start_ticks_for_pid(pid);
+    if (!sing_box_single_owned_service_runtime() || start_ticks == null)
+        return false;
+
+    let stamp = clock();
+    let temporary = as_string(path) + ".new." + as_string(stamp[0]) + "." + as_string(stamp[1]);
+    let body = "format=1\npid=" + as_string(pid) + "\nstart_ticks=" + as_string(start_ticks) +
+        "\ncreated_at=" + as_string(stamp[0]) + "\n";
+    if (fs.writefile(temporary, body) == null) {
+        unlink_file(temporary);
+        return false;
+    }
+    if (!fs.rename(temporary, as_string(path))) {
+        unlink_file(temporary);
+        return false;
+    }
+    return true;
+}
+
+function managed_upgrade_marker_values(path) {
+    let values = {};
+    let data = fs.readfile(as_string(path));
+    if (data == null)
+        return null;
+    for (let line in split(as_string(data), "\n")) {
+        let marker = index(line, "=");
+        if (marker <= 0)
+            continue;
+        values[substr(line, 0, marker)] = substr(line, marker + 1);
+    }
+    if (values.format != "1" || match(as_string(values.pid), /^[0-9]+$/) == null ||
+        match(as_string(values.start_ticks), /^[0-9]+$/) == null ||
+        match(as_string(values.created_at), /^[0-9]+$/) == null)
+        return null;
+    return values;
+}
+
+// Wait only for the exact pre-transaction managed process. Every invalid,
+// stale, reused or timed-out marker is consumed and fails closed; lifecycle
+// subsequently applies its normal all-process ownership guard.
+function wait_managed_upgrade_sing_box_exit(path, timeout, max_age) {
+    path = as_string(path);
+    timeout = int(timeout || 0);
+    max_age = int(max_age || 120);
+    let marker = managed_upgrade_marker_values(path);
+    let now = int(clock()[0]);
+    if (marker == null || now < int(marker.created_at) || now - int(marker.created_at) > max_age) {
+        unlink_file(path);
+        return false;
+    }
+
+    while (true) {
+        let current_ticks = process_start_ticks_for_pid(marker.pid);
+        if (current_ticks == null) {
+            unlink_file(path);
+            return true;
+        }
+        if (!pid_is_sing_box(marker.pid) || int(current_ticks) != int(marker.start_ticks)) {
+            unlink_file(path);
+            return false;
+        }
+        if (timeout <= 0) {
+            unlink_file(path);
+            return false;
+        }
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
 }
 
 function sing_box_service_stable(min_age) {
@@ -1736,7 +1933,7 @@ else if (mode == "mark-pending-reload")
 else if (mode == "consume-pending-reload")
     exit(consume_pending_reload(ARGV[1]) ? 0 : 1);
 else if (mode == "run-pending-reload-if-requested")
-    run_pending_reload_if_requested(ARGV[1], ARGV[2]);
+    exit(run_pending_reload_if_requested(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "acquire-runtime-dir-lock")
     exit(acquire_runtime_dir_lock(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "acquire-runtime-dir-lock-wait")
@@ -1745,6 +1942,12 @@ else if (mode == "release-runtime-dir-lock")
     release_runtime_dir_lock(ARGV[1]);
 else if (mode == "reload-sing-box-runtime")
     reload_sing_box_runtime(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
+else if (mode == "stop-managed-sing-box-runtime")
+    exit(stop_managed_sing_box_and_wait(ARGV[1]) ? 0 : 1);
+else if (mode == "start-managed-sing-box-runtime")
+    exit(start_managed_sing_box_and_verify(ARGV[1]) ? 0 : 1);
+else if (mode == "controlled-replace-managed-sing-box-runtime")
+    exit(controlled_replace_managed_sing_box_runtime(ARGV[1]) ? 0 : 1);
 else if (mode == "hup-sing-box-runtime")
     hup_sing_box_runtime();
 else if (mode == "single-ready-sing-box-runtime")
@@ -1787,6 +1990,10 @@ else if (mode == "sing-box-single-owned-service-runtime")
     exit(sing_box_single_owned_service_runtime() ? 0 : 1);
 else if (mode == "sing-box-process-conflict")
     exit(sing_box_process_conflict() ? 0 : 1);
+else if (mode == "write-managed-upgrade-sing-box-marker")
+    exit(write_managed_upgrade_sing_box_marker(ARGV[1]) ? 0 : 1);
+else if (mode == "wait-managed-upgrade-sing-box-exit")
+    exit(wait_managed_upgrade_sing_box_exit(ARGV[1], ARGV[2], ARGV[3]) ? 0 : 1);
 else if (mode == "sing-box-service-stable")
     exit(sing_box_service_stable(ARGV[1]) ? 0 : 1);
 else if (mode == "process-age-seconds-fixture") {

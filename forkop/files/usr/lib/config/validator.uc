@@ -1805,7 +1805,6 @@ function managed_sing_box_service_script(marker) {
         "\n" +
         "    procd_open_instance\n" +
         "    procd_set_param command \"$PROG\" run -c \"$config_file\" -D \"$working_directory\"\n" +
-        "    procd_set_param file \"$config_file\"\n" +
         "    procd_set_param stderr \"$log_stderr\"\n" +
         "    procd_set_param limits core=\"unlimited\"\n" +
         "    procd_set_param limits nofile=\"1000000 1000000\"\n" +

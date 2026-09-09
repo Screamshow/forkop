@@ -24,6 +24,50 @@ root_path() {
     printf '%s%s\n' "$MIGRATION_ROOT" "$1"
 }
 
+mirror_supported() {
+    release_file="$(root_path /etc/openwrt_release)"
+    [ -r "$release_file" ] || return 1
+    target="$(sed -n "s/^DISTRIB_TARGET='\(.*\)'/\1/p" "$release_file" | head -n 1)"
+    architecture="$(sed -n "s/^DISTRIB_ARCH='\(.*\)'/\1/p" "$release_file" | head -n 1)"
+    [ "$target" = "mediatek/filogic" ] && [ "$architecture" = "aarch64_cortex-a53" ] || return 1
+    repository_file_has_vendor_origin "$(root_path /etc/opkg/distfeeds.conf)" && return 1
+    repository_file_has_vendor_origin "$(root_path /etc/apk/repositories)" && return 1
+    repository_file_has_vendor_origin "$(root_path /etc/apk/repositories.d/distfeeds.list)" && return 1
+    return 0
+}
+
+repository_file_has_vendor_origin() {
+    repository_file="$1"
+    [ -r "$repository_file" ] || return 1
+    grep -Eqi 'https?://[^/]*(packages\.routerich\.ru|[^/]*gl[-.]?inet[^/]*)/' "$repository_file"
+}
+
+repository_file_uses_mirror() {
+    [ -r "$1" ] && grep -Fq "$MIRROR_BASE_URL/" "$1"
+}
+
+restore_native_repository_file() {
+    repository_file="$1"
+    backup="${repository_file}.pre-forkop-mirror"
+    [ -f "$backup" ] || return 0
+    # A backup is acted on only while its corresponding live file is still the
+    # Forkop mirror version. Do not overwrite a vendor/user edit made later.
+    repository_file_uses_mirror "$repository_file" || return 0
+    # Only restore a file that Forkop demonstrably backed up. This leaves any
+    # user-managed third-party feeds untouched.
+    cp "$backup" "${repository_file}.forkop-restore"
+    chmod 0644 "${repository_file}.forkop-restore"
+    mv "${repository_file}.forkop-restore" "$repository_file"
+    rm -f "$backup"
+}
+
+remove_owned_apk_mirror_artifacts() {
+    feed="$repositories_dir/forkop.list"
+    if [ -f "$feed" ] && grep -Fqx "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" "$feed"; then
+        rm -f "$feed" "$keys_dir/forkop-mirror.pem"
+    fi
+}
+
 rewrite_repository_file() {
     repository_file="$1"
     [ -e "$repository_file" ] || return 0
@@ -57,7 +101,14 @@ repositories_dir="$(root_path /etc/apk/repositories.d)"
 keys_dir="$(root_path /etc/apk/keys)"
 opkg_distfeeds="$(root_path /etc/opkg/distfeeds.conf)"
 
-if [ "$PACKAGE_MANAGER" = "apk" ]; then
+if ! mirror_supported; then
+    # Unsupported targets use their vendor OpenWrt feeds for all dependencies.
+    # Clean up only artifacts created by the old Forkop mirror integration.
+    restore_native_repository_file "$repositories"
+    restore_native_repository_file "$repositories_dir/distfeeds.list"
+    restore_native_repository_file "$opkg_distfeeds"
+    remove_owned_apk_mirror_artifacts
+elif [ "$PACKAGE_MANAGER" = "apk" ]; then
     rewrite_repository_file "$repositories"
     rewrite_repository_file "$repositories_dir/distfeeds.list"
 

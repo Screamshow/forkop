@@ -1334,9 +1334,9 @@ function update_service_action_pid_mode(job_id_value, pid) {
 }
 
 function service_action_worker(path, action, job_id_value, reason) {
-    let args = [ SERVICE_INIT, action ];
     reason = as_string(reason || "");
-    if (reason != "")
+    let args = reason == "manual-ui-restart" ? [ BIN_PATH, "manual_restart" ] : [ SERVICE_INIT, action ];
+    if (reason != "" && reason != "manual-ui-restart")
         push(args, reason);
     let command = "FORKOP_UI_ACTION_TRACKED=1 " + command_from_args(args) + " >/dev/null 2>&1";
     let status = command_status(command);
@@ -1357,7 +1357,7 @@ function service_action_async(action) {
         exit(1);
     }
 
-    let started = start_service_action(action, "ui", "");
+    let started = start_service_action(action, "ui", action == "restart" ? "manual-ui-restart" : "");
     if (!started.success && active_service_action_value() != "") {
         action_start_response(false, "", "Another service action is already running");
         exit(1);

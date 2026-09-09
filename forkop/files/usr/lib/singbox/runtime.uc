@@ -409,7 +409,6 @@ function managed_service_text() {
         "    config_get_bool log_stderr \"main\" \"log_stderr\" \"1\"\n\n" +
         "    procd_open_instance\n" +
         "    procd_set_param command \"$PROG\" run -c \"$config_file\" -D \"$working_directory\"\n" +
-        "    procd_set_param file \"$config_file\"\n" +
         "    procd_set_param stderr \"$log_stderr\"\n" +
         "    procd_set_param limits core=\"unlimited\"\n" +
         "    procd_set_param limits nofile=\"1000000 1000000\"\n" +

@@ -66,11 +66,22 @@ reject_runtime_regex 'log_message\("subscription/cache\.uc: ' \
 reject_runtime_regex 'log_message\("singbox/runtime\.uc: ' \
   "runtime logs must not expose singbox/runtime.uc as a user-facing prefix"
 
-reject_runtime_regex 'log_message\([^\n]*(as_string\()?url\)?' \
-  "runtime logs must not include remote URLs, which can contain query credentials"
-reject_runtime_regex 'log_message\([^\n]*entry\.url' \
-  "runtime logs must not include preflight source URLs"
-reject_runtime_regex 'log_message\([^\n]*\+ reference' \
-  "runtime logs must not include rule-set references, which can be URLs"
+source_identity="$({ ucode -L "$ROOT_DIR/forkop/files/usr/lib" \
+  "$ROOT_DIR/forkop/files/usr/lib/components/updates.uc" \
+  safe-remote-source-identity \
+  'https://alice:secret@example.test:8443/lists/main.txt?token=very-secret#fragment' 'video'; } 2>&1)" ||
+  fail "safe remote-source identity formatter failed"
+[ "$source_identity" = "rule 'video': example.test:8443/lists/main.txt" ] ||
+  fail "safe remote-source identity did not preserve host, numeric port, path, and section"
+case "$source_identity" in
+  *alice*|*secret*|*token*|*fragment*|*'?'*|*'#'*)
+    fail "safe remote-source identity leaked credentials, query, or fragment"
+    ;;
+esac
+
+# Source identifiers are allowed in runtime logs only through the formatter.
+# This catches a future direct interpolation while preserving useful context.
+reject_runtime_regex 'log_message\([^\n]*\+[[:space:]]*(url|reference|entry\.url)([^A-Za-z0-9_]|$)' \
+  "runtime logs must format remote source identities before logging"
 
 printf 'log hygiene checks passed\n'

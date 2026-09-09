@@ -399,8 +399,12 @@ if (length(candidates) != length(builtin.outbounds || []))
 for (let child in builtin.outbounds || [])
     if (!contains(candidates, child))
         die("section cache URLTest candidates are missing a matched xray leaf outbound\n");
-if (!reveal_selector || length(reveal_selector.outbounds || []) != 2)
-    die("xray URLTest children must remain hidden even if a legacy setting disables hiding\n");
+if (!reveal_selector || !contains(reveal_selector.outbounds, "Latvia group") ||
+    !contains(reveal_selector.outbounds, "proxy-urltest-out"))
+    die("selector must keep the imported Xray URLTest group and built-in URLTest\n");
+for (let child in [ "lv-🇱🇻 Riga A", "lv-🇱🇻 Riga B" ])
+    if (contains(reveal_selector.outbounds, child))
+        die("xray URLTest child must remain hidden even if a legacy setting disables hiding\n");
 ' "$xray_config" "$xray_config.section-cache/proxy.json" "$xray_reveal_urltest_config" || fail "xray generated URLTest behavior"
 
 xray_metadata="$WORK_DIR/xray-ui-outbound-metadata.json"

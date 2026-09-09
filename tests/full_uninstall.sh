@@ -69,16 +69,25 @@ grep -qx dnsmasq_restore "$ROOT/service-calls"
 
 fixture missing_backup
 rm "$ROOT/etc/opkg/distfeeds.conf.pre-forkop-mirror"
-run_case failed
-[ -e "$ROOT/packages/forkop" ] && [ -e "$ROOT/etc/forkop/secret" ]
-[ ! -e "$ROOT/service-calls" ]
+run_case complete
+# A legacy mirror file without a Forkop-created backup is not guessed back to
+# /rom. Package removal remains safe and the unknown repository is untouched.
+grep -Fq 'mirror.51343.ru' "$ROOT/etc/opkg/distfeeds.conf"
+
+fixture native_vendor
+printf 'src/gz vendor https://packages.vendor.example/custom\n' > "$ROOT/etc/opkg/customfeeds.conf"
+vendor_hash="$(sha256sum "$ROOT/etc/opkg/customfeeds.conf" | awk '{print $1}')"
+run_case complete
+[ "$vendor_hash" = "$(sha256sum "$ROOT/etc/opkg/customfeeds.conf" | awk '{print $1}')" ] || {
+    echo 'custom vendor feed was modified' >&2; exit 1;
+}
 
 fixture rom_fallback
 rm "$ROOT/etc/opkg/distfeeds.conf.pre-forkop-mirror"
 mkdir -p "$ROOT/rom/etc/opkg"
 printf 'firmware repositories\n' > "$ROOT/rom/etc/opkg/distfeeds.conf"
 run_case complete
-grep -qx 'firmware repositories' "$ROOT/etc/opkg/distfeeds.conf"
+grep -Fq 'mirror.51343.ru' "$ROOT/etc/opkg/distfeeds.conf"
 
 fixture failed_package
 export FAIL_PACKAGE=1
@@ -90,7 +99,8 @@ fixture apk
 mkdir -p "$ROOT/etc/apk/repositories.d" "$ROOT/etc/apk/keys"
 printf 'https://mirror.51343.ru/openwrt/releases/test\n' > "$ROOT/etc/apk/repositories.d/distfeeds.list"
 printf 'original apk repositories\n' > "$ROOT/etc/apk/repositories.d/distfeeds.list.pre-forkop-mirror"
-touch "$ROOT/etc/apk/repositories.d/forkop.list" "$ROOT/etc/apk/keys/forkop-mirror.pem"
+printf 'https://mirror.51343.ru/forkop/mirror/current/packages.adb\n' > "$ROOT/etc/apk/repositories.d/forkop.list"
+touch "$ROOT/etc/apk/keys/forkop-mirror.pem"
 cat > "$ROOT/bin/apk" <<'SH'
 #!/bin/sh
 case "$1" in

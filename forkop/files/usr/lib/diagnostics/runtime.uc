@@ -1911,9 +1911,17 @@ function automatic_latency_test(start_kind) {
         completed++;
 
         if (completed < length(proxy_tags) && completed % batch_size == 0) {
-            log_message("Automatic latency test progress: " + completed + "/" + length(proxy_tags) + " proxy outbounds completed", "info");
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
-            module_success(SERVICE_STATE_UC, [ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
+            let pending_handoff = module_success(SERVICE_STATE_UC, [
+                "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT
+            ]);
+            // A failed handoff retains the durable request. Yield instead of
+            // reclaiming runtime coordination ahead of it.
+            if (!pending_handoff || fs.stat(PENDING_RELOAD_FILE) != null) {
+                module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+                log_message("Automatic latency test yielded to a pending Forkop reload handoff", "info");
+                return 0;
+            }
             command_success_from_args([ "sleep", AUTOMATIC_LATENCY_BATCH_PAUSE ]);
             let reacquired = module_success(SERVICE_STATE_UC, [
                 "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid, "300"

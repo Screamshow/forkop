@@ -20,24 +20,25 @@ has_mirror() {
 
 repository_plan() {
     : > "$JOB/repositories"
-    for file in "$ROOT/etc/opkg/distfeeds.conf" "$ROOT/etc/opkg/customfeeds.conf" \
+    # Only system repository files that Forkop itself backed up are eligible
+    # for restoration. Never infer ownership from a URL in custom/vendor feeds.
+    for file in "$ROOT/etc/opkg/distfeeds.conf" \
         "$ROOT/etc/apk/repositories" "$ROOT"/etc/apk/repositories.d/*.list; do
         [ -f "$file" ] || continue
         [ "$file" != "$ROOT/etc/apk/repositories.d/forkop.list" ] || continue
         source="${file}.pre-forkop-mirror"
-        if [ -f "$source" ] && ! has_mirror "$source"; then
-            :
-        elif has_mirror "$file"; then
-            source="$ROOT/rom${file#"$ROOT"}"
-            if [ ! -f "$source" ] || has_mirror "$source"; then
-                echo "Cannot restore original repositories: $file" >&2
-                return 1
-            fi
-        else
+        if [ ! -f "$source" ] || has_mirror "$source" || ! has_mirror "$file"; then
             continue
         fi
         printf '%s|%s\n' "$file" "$source" >> "$JOB/repositories"
     done
+}
+
+remove_owned_apk_mirror_artifacts() {
+    feed="$ROOT/etc/apk/repositories.d/forkop.list"
+    if [ -f "$feed" ] && grep -Fqx "${MIRROR%/}/forkop/mirror/current/packages.adb" "$feed"; then
+        rm -f "$feed" "$ROOT/etc/apk/keys/forkop-mirror.pem"
+    fi
 }
 
 installed() {
@@ -92,7 +93,7 @@ run() {
         chmod 644 "$file.forkop-restore"
         mv "$file.forkop-restore" "$file"
     done < "$JOB/repositories"
-    rm -f "$ROOT/etc/apk/repositories.d/forkop.list" "$ROOT/etc/apk/keys/forkop-mirror.pem"
+    remove_owned_apk_mirror_artifacts
 
     PHASE=packages
     state running

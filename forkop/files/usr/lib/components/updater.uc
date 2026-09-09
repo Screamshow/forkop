@@ -240,7 +240,7 @@ function forkop_release_plan(latest_version, asset_ext, i18n_required) {
     if (as_string(release.tag_name || "") != as_string(latest_version))
         exit(1);
 
-    if (match(as_string(latest_version), /^[0-9]+[.][0-9]+[.][0-9]+$/) == null)
+    if (match(as_string(latest_version), /^[0-9]+[.][0-9]+[.][0-9]+(-canary[.][0-9]+)?$/) == null)
         exit(1);
 
     let backend = release_asset_pair(release, "forkop_" + latest_version + "." + asset_ext);
@@ -408,7 +408,7 @@ function forkop_normalized_release_version(value) {
 
 function forkop_release_version_valid(value) {
     value = forkop_normalized_release_version(value);
-    return match(value, /^[0-9]+[.][0-9]+[.][0-9]+$/) != null;
+    return match(value, /^[0-9]+[.][0-9]+[.][0-9]+(-canary[.][0-9]+)?$/) != null;
 }
 
 function forkop_release_version_parts(value) {
@@ -416,8 +416,9 @@ function forkop_release_version_parts(value) {
     if (!forkop_release_version_valid(version))
         return null;
 
-    let parts = split(version, ".");
-    return [ int(parts[0]), int(parts[1]), int(parts[2]) ];
+    let match_parts = match(version, /^([0-9]+)[.]([0-9]+)[.]([0-9]+)(-canary[.]([0-9]+))?$/);
+    return [ int(match_parts[1]), int(match_parts[2]), int(match_parts[3]),
+        match_parts[5] == null ? -1 : int(match_parts[5]) ];
 }
 
 function forkop_release_version_compare(lhs, rhs) {
@@ -426,7 +427,7 @@ function forkop_release_version_compare(lhs, rhs) {
     if (lhs_parts == null || rhs_parts == null)
         return false;
 
-    for (let i = 0; i < length(lhs_parts); i++) {
+    for (let i = 0; i < 3; i++) {
         if (lhs_parts[i] < rhs_parts[i]) {
             print("-1\n");
             return true;
@@ -435,6 +436,16 @@ function forkop_release_version_compare(lhs, rhs) {
             print("1\n");
             return true;
         }
+    }
+
+    // A stable release sorts after every canary of the same base version.
+    if (lhs_parts[3] < rhs_parts[3]) {
+        print("-1\n");
+        return true;
+    }
+    if (lhs_parts[3] > rhs_parts[3]) {
+        print("1\n");
+        return true;
     }
 
     print("0\n");

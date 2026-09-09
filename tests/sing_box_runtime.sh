@@ -34,6 +34,17 @@ if grep -R -n -E 'sing_box_runtime_ucode|rulesets_ucode|sing_box_configure_servi
 fi
 grep -Fq 'mode == "configure-service"' "$SINGBOX_RUNTIME_UC" ||
   fail "singbox/runtime.uc must own sing-box service configuration"
+if grep -R -F 'procd_set_param file "$config_file"' "$FORKOP_LIB/singbox/runtime.uc" \
+  "$FORKOP_LIB/components/action.uc" "$FORKOP_LIB/config/validator.uc" >/dev/null 2>&1; then
+  fail "Forkop-managed sing-box service must not independently watch its generated config"
+fi
+grep -Fq 'procd_set_param respawn' "$SINGBOX_RUNTIME_UC" ||
+  fail "Forkop-managed sing-box service must retain procd respawn"
+grep -Fq 'controlled_replace_managed_sing_box_runtime' "$FORKOP_LIB/service/state.uc" ||
+  fail "managed config reload must use the guarded stop/wait/start replacement"
+if grep -Fq '[ "/etc/init.d/sing-box", "reload" ]' "$FORKOP_LIB/service/state.uc"; then
+  fail "state runtime transition must not use procd reload before old PID exit"
+fi
 grep -Fq 'mode == "init-config"' "$SINGBOX_RUNTIME_UC" ||
   fail "singbox/runtime.uc must own sing-box config initialization"
 grep -Fq 'mode == "service-listen-address"' "$SINGBOX_RUNTIME_UC" ||

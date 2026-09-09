@@ -73,7 +73,7 @@ cat >"$WORK_DIR/bin/curl" <<'EOF_CURL'
 case "$*" in
   */proxies)
     [ "${TEST_CLASH_UNREADY:-0}" = 1 ] && { printf 'not-json\n'; exit 0; }
-    printf '%s\n' '{"proxies":{"proxy-a":{"type":"VLESS"},"proxy-b":{"type":"Trojan"},"DIRECT":{"type":"Direct"}}}'
+    printf '%s\n' '{"proxies":{"proxy-a":{"type":"VLESS"},"proxy-b":{"type":"Trojan"},"proxy-c":{"type":"VLESS"},"proxy-d":{"type":"Trojan"},"proxy-e":{"type":"VLESS"},"proxy-f":{"type":"Trojan"},"proxy-g":{"type":"VLESS"},"proxy-h":{"type":"Trojan"},"proxy-i":{"type":"VLESS"},"DIRECT":{"type":"Direct"}}}'
     ;;
   */delay*)
     printf 'latency\n' >>"$TEST_CURL_LOG"
@@ -151,8 +151,10 @@ ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" automatic-latency-test new &
 second_pid=$!
 wait "$first_pid"
 wait "$second_pid"
-[ "$(wc -l <"$TEST_CURL_LOG")" -eq 2 ] || fail "concurrent workers did not coalesce"
+[ "$(wc -l <"$TEST_CURL_LOG")" -eq 9 ] || fail "concurrent workers did not coalesce"
 [ ! -e "$FORKOP_AUTOMATIC_LATENCY_PENDING_FILE" ] || fail "successful full test did not remove marker"
+[ "$(grep -Fc 'Automatic latency test progress:' "$TEST_LOG" || true)" -eq 0 ] ||
+  fail "latency batching emitted intermediate syslog progress"
 
 # A semantic proxy change without a PID change cannot let an old worker
 # acknowledge its marker; the next worker discards that stale marker.

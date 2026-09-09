@@ -321,10 +321,19 @@ function run_pending_reload_if_requested(path, init_script) {
     init_script = as_string(init_script || SERVICE_INIT);
 
     if (!consume_pending_reload(path))
-        return;
+        return true;
 
     command_success_from_args([ "logger", "-t", SERVICE_NAME, "[info] Applying pending Forkop reload" ]);
-    system(shell_quote(init_script) + " reload pending >/dev/null 2>&1 1000>&- &");
+    // Wait for the nested init.d reload to claim and finish the handoff.
+    // Detaching here would consume reload.pending before that process owns
+    // reload.lock, allowing another worker to win the gap.
+    if (system(shell_quote(init_script) + " reload pending </dev/null >/dev/null 2>&1 1000>&-") != 0) {
+        mark_pending_reload(path, "pending_handoff_failed");
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[warn] Pending Forkop reload handoff failed; request was retained" ]);
+        return false;
+    }
+
+    return true;
 }
 
 function uci_settings() {
@@ -482,7 +491,7 @@ function retry_start_on_wan_up_action(runtime_running_value, service_enabled_val
         return "skip_disabled";
     if (!bool_text(retry_pending_value))
         return "skip_no_retry";
-    return "restart";
+    return "start";
 }
 
 function retry_start_on_wan_up(owner_pid) {
@@ -497,11 +506,14 @@ function retry_start_on_wan_up(owner_pid) {
         return 0;
     }
 
-    if (action != "restart")
+    if (action != "start")
         return 0;
 
     command_success_from_args([ "logger", "-t", SERVICE_NAME, "[info] Retrying failed Forkop start after WAN came up" ]);
-    return command_status_from_args([ SERVICE_INIT, "restart", "triggered" ]);
+    // A failed cold start has no Forkop runtime to tear down. Re-enter the
+    // guarded start path so foreign/ambiguous sing-box processes remain
+    // untouched instead of using restart's destructive stop phase.
+    return command_status_from_args([ SERVICE_INIT, "start", "triggered" ]);
 }
 
 function badwan_interface_monitored(settings, interface_name) {

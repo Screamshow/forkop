@@ -30,6 +30,9 @@ const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STAT
 const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNTIME_STATE_DIR + "/list-update.reload";
 const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
+const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
+const MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS = int(getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS") || "15");
+const MANAGED_UPGRADE_SING_BOX_MARKER_MAX_AGE_SECONDS = int(getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER_MAX_AGE_SECONDS") || "120");
 const SERVICE_TRIGGER_SYNC_FILE = getenv("FORKOP_SERVICE_TRIGGER_SYNC_FILE") || RUNTIME_STATE_DIR + "/service-triggers.sync";
 const SUBSCRIPTION_UPDATE_STATE_DIR = getenv("FORKOP_SUBSCRIPTION_UPDATE_STATE_DIR") || RUNTIME_STATE_DIR + "/subscription-update";
 const SUBSCRIPTION_LINKS_DIR = getenv("FORKOP_SUBSCRIPTION_LINKS_DIR") || RUNTIME_STATE_DIR + "/subscription-links";
@@ -337,6 +340,10 @@ function module_capture(module_path, args) {
 
 function module_status(module_path, args) {
     return command_status(module_command(module_path, args));
+}
+
+function module_status_with_env(module_path, args, additions) {
+    return command_status(command_env(lifecycle_env()) + " " + command_env(additions) + " " + command_from_args(module_args(module_path, args)));
 }
 
 function module_success(module_path, args) {
@@ -725,18 +732,17 @@ function discard_singbox_config_stage(stage_path) {
 }
 
 function restore_guarded_singbox_runtime(backup_path, guard_active) {
-    if (as_string(backup_path) == "" || !module_success(SINGBOX_UC, [ "restore-config-stage", backup_path ]))
+    // The stock sing-box init script may watch config.json too. Ensure that no
+    // managed runtime can observe the restored file before we publish it.
+    if (as_string(backup_path) == "" || module_status(STATE_UC, [
+        "stop-managed-sing-box-runtime",
+        as_string(getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15")
+    ]) != 0 || !module_success(SINGBOX_UC, [ "restore-config-stage", backup_path ]))
         return false;
 
-    let pid_result = module_capture(STATE_UC, [ "sing-box-service-runtime-pid" ]);
-    let pid_before = pid_result.status == 0 ? trim(pid_result.output) : "";
-    let config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
     if (module_status(STATE_UC, [
-        "reload-sing-box-runtime",
-        pid_before,
-        "transition-new",
-        file_md5(config_path),
-        "1"
+        "start-managed-sing-box-runtime",
+        as_string(getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15")
     ]) != 0)
         return false;
 
@@ -755,17 +761,6 @@ function restore_guarded_singbox_runtime(backup_path, guard_active) {
         NFT_TABLE_NAME,
         NFT_FAKEIP_MARK
     ]);
-}
-
-function transition_guard_checkpoint() {
-    // Test-only observability for the cross-component ordering contract. Both
-    // values are absent in normal service execution.
-    let marker = as_string(getenv("FORKOP_TRANSITION_GUARD_MARKER") || "");
-    if (marker != "")
-        write_file(marker, "guard-active\n");
-    let pause = int(getenv("FORKOP_TRANSITION_GUARD_PAUSE_SECONDS") || "0");
-    if (pause > 0 && pause <= 30)
-        command_success_from_args([ "sleep", as_string(pause) ]);
 }
 
 function refresh_cron() {
@@ -802,10 +797,10 @@ function prepare_subscription_caches(mode) {
 }
 
 function start_sing_box_and_wait() {
-    // During rcS startup Forkop inherits procd's service lock on fd 1000.
-    // A nested init.d start must not inherit it or procd waits for its own
-    // caller until the service-command timeout expires.
-    if (!command_start_without_procd_lock([ "/etc/init.d/sing-box", "start" ]))
+    if (module_status(STATE_UC, [
+        "start-managed-sing-box-runtime",
+        getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15"
+    ]) != 0)
         return 1;
 
     return module_status(STATE_UC, [
@@ -1038,7 +1033,10 @@ function stop_main() {
     if (module_success(NFT_UC, [ "tproxy-route6-present", RT_TABLE_NAME ]))
         command_success_from_args([ "ip", "-6", "route", "flush", "table", RT_TABLE_NAME ]);
 
-    let sing_box_status = command_status_from_args([ "/etc/init.d/sing-box", "stop" ]);
+    let sing_box_status = module_status(STATE_UC, [
+        "stop-managed-sing-box-runtime",
+        getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15"
+    ]);
     if (sing_box_status != 0)
         status = sing_box_status;
 
@@ -1101,6 +1099,21 @@ function abort_guarded_transition(status, stage_path, backup_path, guard_active)
 }
 
 function start() {
+    // A current installer/updater may have recorded one exact, procd-owned
+    // pre-upgrade process. Wait only for that process to exit; a legacy direct
+    // opkg/apk upgrade has no marker and remains fail-closed below.
+    if (fs.stat(MANAGED_UPGRADE_SING_BOX_MARKER) != null &&
+        !module_success(STATE_UC, [
+            "wait-managed-upgrade-sing-box-exit",
+            MANAGED_UPGRADE_SING_BOX_MARKER,
+            as_string(MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS),
+            as_string(MANAGED_UPGRADE_SING_BOX_MARKER_MAX_AGE_SECONDS)
+        ])) {
+        log_message("Refusing Forkop start: managed upgrade sing-box provenance did not resolve safely", "fatal");
+        release_start_subscription_update_lock();
+        return 1;
+    }
+
     // A second sing-box is not safely attributable from its executable name.
     // Do not turn this detection into a stop/restart cycle: that could remove
     // the old working nft policy while an orphan remains alive.
@@ -1322,8 +1335,18 @@ function dns_failover_apply(candidate_state_path) {
     if (!module_success(STATE_UC, [ "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid(), "2" ]))
         return 2;
 
+    // Do not publish config.json while a vendor-provided init script can be
+    // watching it. Its watcher is outside Forkop's ownership and can otherwise
+    // race our controlled replacement with a second procd start.
+    let transition_timeout = as_string(getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15");
+    if (module_status(STATE_UC, [ "stop-managed-sing-box-runtime", transition_timeout ]) != 0) {
+        release_reload_lock();
+        return 1;
+    }
+
     let patch_result = module_capture(SINGBOX_UC, [ "patch-dns-config", candidate_state_path ]);
     if (patch_result.status != 0) {
+        module_success(STATE_UC, [ "start-managed-sing-box-runtime", transition_timeout ]);
         release_reload_lock();
         return patch_result.status;
     }
@@ -1334,17 +1357,12 @@ function dns_failover_apply(candidate_state_path) {
     let status = 0;
 
     if (changed) {
-        let sing_box_pid_before = sing_box_runtime_pid();
-        status = module_status(STATE_UC, [ "hup-sing-box-runtime" ]);
+        status = module_status(STATE_UC, [ "start-managed-sing-box-runtime", transition_timeout ]);
         if (status == 0)
-            status = wait_dns_failover_state(candidate_state_path, 5);
-
-        if (status != 0) {
-            log_message("sing-box SIGHUP DNS reload did not become ready; trying service reload", "warn");
-            status = module_status(STATE_UC, [ "reload-sing-box-runtime", sing_box_pid_before, "dns-before", "dns-after" ]);
-            if (status == 0)
-                status = wait_dns_failover_state(candidate_state_path, 8);
-        }
+            status = wait_dns_failover_state(candidate_state_path, 8);
+    }
+    else {
+        status = module_status(STATE_UC, [ "start-managed-sing-box-runtime", transition_timeout ]);
     }
 
     if (status == 0 && !module_success(DNS_FAILOVER_UC, [ "commit-state", candidate_state_path ]))
@@ -1352,10 +1370,9 @@ function dns_failover_apply(candidate_state_path) {
 
     if (status != 0 && backup_path != "") {
         log_message("DNS failover apply failed; restoring the previous sing-box configuration", "error");
-        if (module_success(SINGBOX_UC, [ "restore-dns-config", backup_path ])) {
-            let sing_box_pid_before_restore = sing_box_runtime_pid();
-            module_success(STATE_UC, [ "reload-sing-box-runtime", sing_box_pid_before_restore, "dns-failed", "dns-restored" ]);
-        }
+        if (module_success(STATE_UC, [ "stop-managed-sing-box-runtime", transition_timeout ]) &&
+            module_success(SINGBOX_UC, [ "restore-dns-config", backup_path ]))
+            module_success(STATE_UC, [ "start-managed-sing-box-runtime", transition_timeout ]);
     }
 
     if (backup_path != "")
@@ -1591,15 +1608,16 @@ function reload(reason) {
         if (!module_success(NFT_UC, [ "install-transition-guard", NFT_TABLE_NAME, NFT_FAKEIP_MARK ]))
             return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, false);
         transition_guard_active = true;
-        transition_guard_checkpoint();
+        if (module_status(STATE_UC, [
+            "stop-managed-sing-box-runtime",
+            as_string(getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15")
+        ]) != 0)
+            return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
         if (!module_success(SINGBOX_UC, [ "commit-config-stage", staged_singbox_config, staged_singbox_backup ]))
             return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
         status = module_status(STATE_UC, [
-            "reload-sing-box-runtime",
-            sing_box_pid_before,
-            sing_box_config_hash_before,
-            file_md5(sing_box_config_path),
-            as_string(force_runtime_reload)
+            "start-managed-sing-box-runtime",
+            as_string(getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15")
         ]);
         if (status != 0)
             return abort_guarded_transition(status, staged_singbox_config, staged_singbox_backup, transition_guard_active);
@@ -1731,6 +1749,14 @@ function reload_reason_fixture(reason) {
 function restart() {
     log_message("Restarting Forkop", "info");
 
+    // Do not let any restart caller bypass the same ownership check as cold
+    // start. In particular, delayed startup recovery must never stop an
+    // unknown runtime merely to make room for Forkop.
+    if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
+        log_message("Refusing Forkop restart: sing-box process ownership is ambiguous; preserving the existing runtime", "fatal");
+        return 1;
+    }
+
     let selector_state = capture_selector_state();
     let status = stop_impl();
     if (status != 0)
@@ -1756,6 +1782,56 @@ function restart() {
     log_message("Restart verification failed after Forkop was started; stopping Forkop runtime", "fatal");
     cleanup_failed_runtime();
     return 1;
+}
+
+// This path is intentionally not used by init.d restart, UCI reload, cron, or
+// background workers. LuCI's explicit restart first prepares each cache using
+// the existing transactional update implementations, then makes one full
+// stop/start transition. None of the prepare modes reload the live runtime.
+function manual_restart() {
+    log_message("Preparing fresh remote data for manual Forkop restart", "info");
+
+    // Keep lifecycle reloads out of the interval between atomic cache
+    // publication and the final stop/start. The prepare workers inherit this
+    // ownership and therefore do not release or reacquire the same lock.
+    if (!module_success(STATE_UC, [ "acquire-runtime-dir-lock", RELOAD_LOCK_DIR, owner_pid() ])) {
+        log_message("Manual restart deferred because another runtime transition is active", "warn");
+        return 1;
+    }
+    let prepare_env = { FORKOP_MANUAL_RESTART_LOCK_HELD: "1" };
+
+    if (module_status_with_env(UPDATES_UC, [ "subscription-prepare-only", "", "" ], prepare_env) != 0) {
+        module_success(STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+        log_message("Manual restart aborted: subscriptions could not be prepared; the running runtime was preserved", "error");
+        return 1;
+    }
+    if (module_success(STATE_UC, [ "has-list-update-sources" ])) {
+        if (module_status_with_env(UPDATES_UC, [ "list-update" ], {
+            FORKOP_LIST_UPDATE_PREPARE_ONLY: "1",
+            FORKOP_MANUAL_RESTART_LOCK_HELD: "1"
+        }) != 0) {
+            module_success(STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+            log_message("Manual restart aborted: lists could not be prepared; the running runtime was preserved", "error");
+            return 1;
+        }
+    }
+
+    // lifecycle.uc deliberately does not import updates.uc helpers. Keep the
+    // ruleset refresh on the same lists proxy policy as its scheduled path.
+    let ruleset_proxy_address = setting_bool("download_lists_via_proxy", false)
+        ? SB_SERVICE_MIXED_INBOUND_ADDRESS + ":" + as_string(SB_SERVICE_MIXED_INBOUND_PORT)
+        : "";
+    let ruleset_status = module_status(RULESET_CACHE_UC, [ "refresh", ruleset_proxy_address ]);
+    if (ruleset_status > 1) {
+        module_success(STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+        log_message("Manual restart aborted: remote rule sets could not be prepared; the running runtime was preserved", "error");
+        return 1;
+    }
+
+    log_message("Remote data preparation completed; performing manual Forkop restart", "info");
+    let status = restart();
+    module_success(STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+    return status;
 }
 
 function package_manager_remove_if_installed(package_name) {
@@ -1839,6 +1915,8 @@ else if (mode == "dns-failover-apply")
     status = dns_failover_apply(ARGV[1] || "");
 else if (mode == "restart")
     status = restart();
+else if (mode == "manual-restart")
+    status = manual_restart();
 else if (mode == "refresh-rulesets-after-start") {
     refresh_rulesets_after_start();
     status = 0;
@@ -1860,7 +1938,7 @@ else if (mode == "dnsmasq-restore" || mode == "restore-dnsmasq")
 else if (mode == "uninstall")
     status = uninstall();
 else {
-    warn("Usage: service/lifecycle.uc <start|stop|reload|restart|main|enable|disable|dnsmasq-restore|uninstall> ...\n");
+    warn("Usage: service/lifecycle.uc <start|stop|reload|restart|manual-restart|main|enable|disable|dnsmasq-restore|uninstall> ...\n");
     status = 1;
 }
 

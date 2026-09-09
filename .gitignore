@@ -39,8 +39,11 @@ ops/deployed-nginx/
 !/tests/urltest_empty_groups.sh
 !/tests/shell_inventory.sh
 !/tests/build_version.sh
+!/tests/manual_restart_contract.sh
+!/tests/support_report_raw.sh
 /docs/releases/*
 !/docs/releases/1.3.8.md
+!/docs/releases/1.3.11.md
 /ops/mirror/
 /.github/workflows/backend-ci.yml
 /.github/workflows/shellcheck.yml

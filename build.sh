@@ -8,15 +8,15 @@ usage() {
 Usage: $(basename "$0") <version> [output-directory]
 
 Build Forkop IPK and APK packages. The version must use x.y.z or x.y.z-N,
-where N is a numeric package revision.
+or x.y.z-canary.N.
 EOF
 }
 
 validate_release_version() {
   local version="$1"
 
-  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
-    echo "Expected release version in the form x.y.z or x.y.z-N (numeric package revision)" >&2
+  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-canary\.[0-9]+)?$ ]]; then
+    echo "Expected release version in the form x.y.z or x.y.z-canary.N" >&2
     return 1
   fi
 }
@@ -45,8 +45,16 @@ RELEASE_VERSION="$1"
 OUTPUT_DIR="${2:-$ROOT_DIR/dist/release-final}"
 
 validate_release_version "$RELEASE_VERSION" || exit 2
-# APK package revisions use -r, while public and IPK versions retain -<revision>.
-APK_INTERNAL_VERSION="${RELEASE_VERSION/-/\-r}"
+# apk-tools requires prereleases to use its underscore form; artifact names,
+# manifests and the embedded Forkop version retain the public canary.N form.
+if [[ "$RELEASE_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-canary\.([0-9]+)$ ]]; then
+  # apk-tools accepts the standard rc prerelease token, but not arbitrary
+  # labels such as "canary". Its ordering is exactly what a canary needs:
+  # rc.N < final and rc.N < rc.N+1.
+  APK_INTERNAL_VERSION="${BASH_REMATCH[1]}_rc${BASH_REMATCH[2]}"
+else
+  APK_INTERNAL_VERSION="$RELEASE_VERSION"
+fi
 
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
 SDK_CACHE_BASE="${XDG_CACHE_HOME:-${HOME:-/var/cache}}"

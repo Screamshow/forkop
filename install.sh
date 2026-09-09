@@ -11,11 +11,15 @@ PACKAGE_ARCHIVE_SPACE_FACTOR=2
 MISSING_DEPENDENCY_ALLOWANCE_KB=256
 APK_WORLD_FILE="${FORKOP_APK_WORLD_FILE:-/etc/apk/world}"
 OPKG_DISTFEEDS_FILE="${FORKOP_OPKG_DISTFEEDS_FILE:-/etc/opkg/distfeeds.conf}"
+APK_REPOSITORIES_FILE="${FORKOP_APK_REPOSITORIES_FILE:-/etc/apk/repositories}"
+APK_DISTFEEDS_FILE="${FORKOP_APK_DISTFEEDS_FILE:-/etc/apk/repositories.d/distfeeds.list}"
 CONNECT_TIMEOUT_SECONDS=15
 METADATA_TIMEOUT_SECONDS=60
 DOWNLOAD_TIMEOUT_SECONDS=600
 
 PKG_IS_APK=0
+MIRROR_SUPPORTED=0
+REPOSITORY_MODE="native-feeds"
 MIRROR_TRANSACTION_ACTIVE=0
 MIRROR_BACKUP_COUNT=0
 MIRROR_BACKUP_MANIFEST=""
@@ -54,6 +58,7 @@ FORKOP_PACKAGE_VERSION=""
 FORKOP_CONFIG_READY=1
 FORKOP_CONFIG_VALIDATION_ERROR=""
 INSTALL_MODE="clean"
+FORKOP_CHANNEL="${FORKOP_CHANNEL:-stable}"
 LEGACY_BRAND="$(printf '\160\157\144\153\157\160')"
 LEGACY_BACKEND_PACKAGE="${LEGACY_BRAND}-plus"
 LEGACY_CONFIG_PACKAGE_ALT="${LEGACY_BRAND}_plus"
@@ -96,6 +101,7 @@ Automation options (must be explicitly requested):
                                with tiny when no interactive terminal exists
   --confirm-legacy-migration   Confirm removal and migration of a detected
                                legacy installation without an interactive terminal
+  --channel stable|canary      Release channel (stable is the default)
 EOF
 }
 
@@ -112,12 +118,25 @@ parse_args() {
             --confirm-legacy-migration)
                 CONFIRM_LEGACY_MIGRATION=1
                 ;;
+            --channel)
+                shift
+                [ "$#" -gt 0 ] || fail "--channel requires stable or canary"
+                FORKOP_CHANNEL="$1"
+                ;;
+            --channel=*)
+                FORKOP_CHANNEL="${1#--channel=}"
+                ;;
             *)
                 fail "Unknown installer option: $1"
                 ;;
         esac
         shift
     done
+
+    case "$FORKOP_CHANNEL" in
+        stable|canary) ;;
+        *) fail "Unsupported Forkop release channel: $FORKOP_CHANNEL" ;;
+    esac
 }
 
 cleanup() {
@@ -349,6 +368,58 @@ function read_stdin_json() {
     catch (e) {
         return null;
     }
+}
+
+function command_output(args) {
+    let parts = [];
+    for (let arg in args)
+        push(parts, "'" + replace(as_string(arg), /'/g, "'\\''") + "'");
+    let pipe = fs.popen(join(" ", parts) + " 2>/dev/null", "r");
+    if (!pipe)
+        return "";
+    let data = pipe.read("all");
+    let status = pipe.close();
+    return status == 0 && data != null ? as_string(data) : "";
+}
+
+function process_start_ticks(pid) {
+    let stat = fs.readfile("/proc/" + as_string(pid) + "/stat");
+    let marker = index(as_string(stat), ") ");
+    if (marker < 0)
+        return null;
+    let fields = split(trim(substr(stat, marker + 2)), /[ \t\r\n]+/);
+    return length(fields) >= 20 && match(as_string(fields[19]), /^[0-9]+$/) != null ? int(fields[19]) : null;
+}
+
+function managed_upgrade_sing_box_marker(path) {
+    let data = command_output([ "ubus", "call", "service", "list", "{\"name\":\"sing-box\"}" ]);
+    let service;
+    try { service = json(data)["sing-box"]; } catch (e) { return; }
+    let instances = service && type(service.instances) == "object" ? service.instances : {};
+    let pid = 0;
+    for (let _, instance in instances) {
+        if (type(instance) == "object" && instance.running === true && int(instance.pid || 0) > 0) {
+            pid = int(instance.pid);
+            break;
+        }
+    }
+    if (pid <= 0 || match(command_output([ "readlink", "/proc/" + pid + "/exe" ]), /\/sing-box[\r\n]*$/) == null)
+        return;
+    let count = 0;
+    for (let exe in fs.glob("/proc/[0-9]*/exe")) {
+        if (match(command_output([ "readlink", exe ]), /\/sing-box[\r\n]*$/) != null)
+            count++;
+    }
+    let ticks = process_start_ticks(pid);
+    if (count != 1 || ticks == null)
+        return;
+    let stamp = clock();
+    let temporary = as_string(path) + ".new." + stamp[0] + "." + stamp[1];
+    let body = "format=1\npid=" + pid + "\nstart_ticks=" + ticks + "\ncreated_at=" + stamp[0] + "\n";
+    if (fs.writefile(temporary, body) != null && fs.rename(temporary, path))
+        print("captured\n");
+    else
+        fs.unlink(temporary);
 }
 
 function starts_with(value, prefix) {
@@ -1408,7 +1479,7 @@ dnsmasq_failsafe_restore = function() {
 };
 
 function release_version_valid(value) {
-    return match(as_string(value), /^[0-9]+[.][0-9]+[.][0-9]+$/) != null;
+    return match(as_string(value), /^[0-9]+[.][0-9]+[.][0-9]+(-canary[.][0-9]+)?$/) != null;
 }
 
 function asset_matches(name, kind, ext, version) {
@@ -1495,6 +1566,8 @@ else if (mode == "installer-post-install")
     exit(installer_post_install() ? 0 : 1);
 else if (mode == "installer-restore-previous-service")
     exit(installer_restore_previous_service() ? 0 : 1);
+else if (mode == "managed-upgrade-sing-box-marker")
+    managed_upgrade_sing_box_marker(ARGV[1]);
 else
     exit(1);
 EOF
@@ -1510,6 +1583,7 @@ install_json_ucode() {
     FORKOP_INSTALLER_LEGACY_CONFIG_ALT="$LEGACY_CONFIG_PACKAGE_ALT" \
     FORKOP_INSTALLER_DEADLINE_HELPER="$(install_deadline_helper_path)" \
     FORKOP_INSTALLER_COMMAND_RESULT="$TMP_DIR/installer-command" \
+    FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER="${FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER:-/tmp/forkop-managed-upgrade-sing-box}" \
         ucode "$(install_json_helper_path)" "$@"
 }
 
@@ -1581,6 +1655,43 @@ pkg_list_update() {
     fi
 }
 
+repository_file_uses_forkop_mirror() {
+    repository_file="$1"
+    [ -r "$repository_file" ] || return 1
+    grep -Fq 'https://mirror.51343.ru/' "$repository_file"
+}
+
+restore_native_repository_file() {
+    repository_file="$1"
+    backup="${repository_file}.pre-forkop-mirror"
+    [ -f "$backup" ] || return 0
+    # A persistent backup is authority only while the live repository remains
+    # Forkop-owned. Never overwrite a vendor or user edit made afterwards.
+    repository_file_uses_forkop_mirror "$repository_file" || return 0
+    temporary="${repository_file}.forkop-restore"
+    cp "$backup" "$temporary" || fail "Failed to restore $repository_file"
+    chmod 0644 "$temporary" 2>/dev/null || true
+    mv "$temporary" "$repository_file" || fail "Failed to activate restored $repository_file"
+    rm -f "$backup"
+}
+
+remove_owned_apk_mirror_artifacts() {
+    feed="/etc/apk/repositories.d/forkop.list"
+    [ -f "$feed" ] || return 0
+    grep -Fqx 'https://mirror.51343.ru/forkop/mirror/current/packages.adb' "$feed" || return 0
+    rm -f "$feed" /etc/apk/keys/forkop-mirror.pem
+}
+
+restore_native_package_repositories() {
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        restore_native_repository_file "$APK_REPOSITORIES_FILE"
+        restore_native_repository_file "$APK_DISTFEEDS_FILE"
+        remove_owned_apk_mirror_artifacts
+    else
+        restore_native_repository_file "$OPKG_DISTFEEDS_FILE"
+    fi
+}
+
 rollback_package_mirror() {
     [ "$MIRROR_TRANSACTION_ACTIVE" -eq 1 ] || return 0
     [ -n "$MIRROR_BACKUP_MANIFEST" ] && [ -f "$MIRROR_BACKUP_MANIFEST" ] || return 0
@@ -1636,7 +1747,7 @@ commit_package_mirror_transaction() {
 }
 
 configure_apk_mirror() {
-    distfeeds="/etc/apk/repositories.d/distfeeds.list"
+    distfeeds="$APK_DISTFEEDS_FILE"
     mirror_key="/etc/apk/keys/forkop-mirror.pem"
 
     [ "$PKG_IS_APK" -eq 1 ] || return 0
@@ -1658,7 +1769,7 @@ configure_apk_mirror() {
     chmod 0644 "$mirror_key" || fail "Failed to set permissions on the Forkop mirror APK key"
 
     begin_package_mirror_transaction
-    for repository_file in /etc/apk/repositories "$distfeeds"; do
+    for repository_file in "$APK_REPOSITORIES_FILE" "$distfeeds"; do
         rewrite_package_repository_file "$repository_file"
     done
 
@@ -1679,11 +1790,6 @@ configure_opkg_mirror() {
     command_exists opkg || fail "OpenWrt opkg package manager is required"
     [ -s "$distfeeds" ] || fail "$distfeeds is missing or empty"
 
-    if grep -Eq '^[[:space:]]*src/gz[[:space:]]+routerich(_[[:alnum:]_-]+)?[[:space:]]+https?://packages\.routerich\.ru/' "$distfeeds"; then
-        msg "Routerich OPKG feeds remain unchanged; only Forkop release packages use $MIRROR_BASE_URL"
-        return 0
-    fi
-
     case "$MIRROR_BASE_URL" in
         https://*|http://*) ;;
         *) fail "Invalid Forkop mirror URL: $MIRROR_BASE_URL" ;;
@@ -1702,7 +1808,36 @@ configure_opkg_mirror() {
     msg "OpenWrt package feeds now use $MIRROR_BASE_URL"
 }
 
+repository_file_has_vendor_origin() {
+    repository_file="$1"
+    [ -r "$repository_file" ] || return 1
+    # A vendor feed is not evidence that our mirror publishes a compatible
+    # system repository. Routerich and GL.iNet therefore stay native.
+    grep -Eqi 'https?://[^/]*(packages\.routerich\.ru|[^/]*gl[-.]?inet[^/]*)/' "$repository_file"
+}
+
+resolve_repository_mode() {
+    REPOSITORY_MODE="native-feeds"
+    [ "$MIRROR_SUPPORTED" -eq 1 ] || return 0
+
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        repository_file_has_vendor_origin "$APK_REPOSITORIES_FILE" && return 0
+        repository_file_has_vendor_origin "$APK_DISTFEEDS_FILE" && return 0
+    else
+        repository_file_has_vendor_origin "$OPKG_DISTFEEDS_FILE" && return 0
+    fi
+
+    REPOSITORY_MODE="full-mirror"
+}
+
 configure_package_mirror() {
+    resolve_repository_mode
+    if [ "$REPOSITORY_MODE" != "full-mirror" ]; then
+        restore_native_package_repositories
+        msg "Forkop mirror does not provide system feeds for this platform; keeping native OpenWrt feeds"
+        return 0
+    fi
+
     if [ "$PKG_IS_APK" -eq 1 ]; then
         configure_apk_mirror
     else
@@ -1819,10 +1954,9 @@ check_system() {
             [ "$PKG_IS_APK" -eq 1 ] || fail "OpenWrt $release is expected to use apk packages"
             ;;
     esac
-    [ "$target" = "mediatek/filogic" ] ||
-        fail "The mirror currently supports only the mediatek/filogic target (detected: ${target:-unknown})"
-    [ "$architecture" = "aarch64_cortex-a53" ] ||
-        fail "The mirror currently supports only aarch64_cortex-a53 (detected: ${architecture:-unknown})"
+    if [ "$target" = "mediatek/filogic" ] && [ "$architecture" = "aarch64_cortex-a53" ]; then
+        MIRROR_SUPPORTED=1
+    fi
 
     msg "OpenWrt $release, target $target, architecture $architecture"
 
@@ -2244,9 +2378,16 @@ fetch_github_latest_release_json() {
 }
 
 fetch_forkop_latest_release_json() {
-    response="$(http_get "$MIRROR_BASE_URL/forkop/updates/latest.json" 2>/dev/null || true)"
+    response="$(http_get "$MIRROR_BASE_URL/forkop/updates/${FORKOP_CHANNEL}.json" 2>/dev/null || true)"
     [ -n "$response" ] || fail "Failed to query Forkop release metadata from $MIRROR_BASE_URL"
     printf '%s' "$response"
+}
+
+persist_release_channel() {
+    command_exists uci || return 0
+    uci -q set "forkop.settings.update_channel=$FORKOP_CHANNEL" ||
+        fail "Failed to save Forkop release channel"
+    uci -q commit forkop || fail "Failed to save Forkop release channel"
 }
 
 mirror_asset_url() {
@@ -2509,6 +2650,10 @@ download_forkop_packages() {
 }
 
 install_backend_package() {
+    # This installer is a managed upgrade path. Record provenance before the
+    # package manager invokes the old package prerm; a direct opkg/apk upgrade
+    # has no marker and deliberately remains fail-closed after unpack.
+    install_json_ucode managed-upgrade-sing-box-marker "${FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER:-/tmp/forkop-managed-upgrade-sing-box}" >/dev/null 2>&1 || true
     pkg_install_files "$FORKOP_BACKEND_FILE" || fail "forkop installation failed"
 
     [ -x /usr/bin/forkop ] || fail "forkop executable is missing after package installation"
@@ -2612,6 +2757,7 @@ main() {
         install_backend_package
     fi
     install_ui_packages
+    persist_release_channel
     install_selected_sing_box
     validate_installed_configuration
     post_install

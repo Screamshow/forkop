@@ -1229,7 +1229,17 @@ function remember_group_outbounds(group_outbounds, group_name, outbounds) {
     group_outbounds[group_name] = unique_string_array(combined);
 }
 
-function grouped_selector_outbounds(section, selector_tags, group_outbounds) {
+function selector_group_for_outbound(selector_tags, state, outbound_tag_name) {
+    let urltest_groups = object_or_empty(object_or_empty(state).urltestGroups);
+    for (let group_tag in array_or_empty(selector_tags)) {
+        let group = object_or_empty(urltest_groups[group_tag]);
+        if (array_contains(group.outbounds, outbound_tag_name))
+            return group_tag;
+    }
+    return "";
+}
+
+function grouped_selector_outbounds(section, selector_tags, group_outbounds, state) {
     let configured_groups = [
         ...connections.urltests(section),
         ...connections.priority_groups(section)
@@ -1238,9 +1248,18 @@ function grouped_selector_outbounds(section, selector_tags, group_outbounds) {
         return selector_tags;
 
     let selected = [];
-    for (let group_name in keys(object_or_empty(group_outbounds)))
-        for (let tag_name in array_or_empty(group_outbounds[group_name]))
-            push(selected, tag_name);
+    for (let group_name in keys(object_or_empty(group_outbounds))) {
+        for (let tag_name in array_or_empty(group_outbounds[group_name])) {
+            if (array_contains(selector_tags, tag_name)) {
+                push(selected, tag_name);
+                continue;
+            }
+
+            let selector_group = selector_group_for_outbound(selector_tags, state, tag_name);
+            if (selector_group != "")
+                push(selected, selector_group);
+        }
+    }
 
     return unique_string_array(selected);
 }
@@ -1416,7 +1435,7 @@ function add_proxy_selector(config, section, selector_tags, urltest_candidate_ta
         push(priority_tags, priority.tag);
     }
 
-    selector_outbounds = grouped_selector_outbounds(section, selector_tags, group_outbounds);
+    selector_outbounds = grouped_selector_outbounds(section, selector_tags, group_outbounds, state);
     selector_default = selector_outbounds[0];
     if (length(urltest_tags) > 0 || length(priority_tags) > 0) {
         for (let tag in urltest_tags)

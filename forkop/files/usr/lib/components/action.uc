@@ -13,6 +13,7 @@ const FORKOP_VERSION = getenv("FORKOP_VERSION") || constants.FORKOP_VERSION || "
 const FORKOP_RELEASE_REPO = getenv("FORKOP_RELEASE_REPO") || constants.FORKOP_RELEASE_REPO || "Screamshow/forkop";
 const FORKOP_MIRROR_BASE_URL = getenv("FORKOP_MIRROR_BASE_URL") || constants.FORKOP_MIRROR_BASE_URL || "";
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
+const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIME_STATE_DIR + "/system-info.json";
 const COMPONENT_LOCK_DIR = getenv("UPDATES_LOCK_DIR") || RUNTIME_STATE_DIR + "/component-action.lock";
 const TMP_STALE_TTL_MINUTES = getenv("UPDATES_TMP_STALE_TTL_MINUTES") || "30";
@@ -597,9 +598,14 @@ function fetch_github_releases_json(owner, repo, per_page) {
     return response;
 }
 
+function forkop_update_channel() {
+    let channel = trim(uci_core.get(CONFIG_NAME + ".settings.update_channel"));
+    return channel == "canary" ? "canary" : "stable";
+}
+
 function latest_forkop_release_json() {
     if (FORKOP_MIRROR_BASE_URL != "") {
-        let response = http_get(FORKOP_MIRROR_BASE_URL + "/forkop/updates/latest.json");
+        let response = http_get(FORKOP_MIRROR_BASE_URL + "/forkop/updates/" + forkop_update_channel() + ".json");
         if (response == "")
             return "";
         return response;
@@ -695,7 +701,6 @@ function managed_sing_box_service_text() {
         "    config_get_bool log_stderr \"main\" \"log_stderr\" \"1\"\n\n" +
         "    procd_open_instance\n" +
         "    procd_set_param command \"$PROG\" run -c \"$config_file\" -D \"$working_directory\"\n" +
-        "    procd_set_param file \"$config_file\"\n" +
         "    procd_set_param stderr \"$log_stderr\"\n" +
         "    procd_set_param limits core=\"unlimited\"\n" +
         "    procd_set_param limits nofile=\"1000000 1000000\"\n" +
@@ -767,6 +772,14 @@ function forkop_status_running_with_timeout() {
 
 function capture_forkop_running_state() {
     forkop_was_running = file_exists(BIN_PATH) && forkop_status_running_with_timeout();
+}
+
+function capture_managed_upgrade_sing_box_marker() {
+    let state_module = LIB_DIR + "/service/state.uc";
+    if (!file_exists(state_module))
+        return;
+    if (module_success([ state_module, "write-managed-upgrade-sing-box-marker", MANAGED_UPGRADE_SING_BOX_MARKER ]))
+        updates_log("Recorded managed sing-box provenance for package upgrade");
 }
 
 function restart_forkop_after_successful_change() {
@@ -1866,6 +1879,11 @@ function install_forkop() {
         !download_with_retry(release.app_url, app_file, release.app_name) ||
         (release.i18n_url != "" && !download_with_retry(release.i18n_url, i18n_file, release.i18n_name)))
         action_fail("forkop", "install", "Failed to download Forkop release packages", FORKOP_VERSION, latest_version);
+
+    // Capture before apk/opkg runs the currently installed package's prerm.
+    // The new lifecycle will accept only this exact PID/starttime for a short
+    // bounded exit wait, then re-run the normal ownership guard.
+    capture_managed_upgrade_sing_box_marker();
 
     // apk refreshes repository indexes for every `add` invocation. Install the
     // release files in one transaction on APK systems to retain dependency
