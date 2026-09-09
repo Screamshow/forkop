@@ -68,6 +68,12 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # Chrome is preinstalled on GitHub runners but is not a Forkop build
+          # dependency. Exclude only its third-party apt source so a transient
+          # Chrome index mismatch cannot block the release build.
+          for source in /etc/apt/sources.list.d/*; do
+            [ -f "$source" ] && grep -q 'dl.google.com/linux/chrome' "$source" && sudo rm -f "$source"
+          done
           sudo apt-get update
           sudo apt-get install -y build-essential curl fakeroot file gawk git patch perl tar unzip util-linux xz-utils zstd
 
