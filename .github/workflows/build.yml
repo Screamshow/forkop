@@ -40,8 +40,8 @@ jobs:
           else
             VERSION=$(git describe --tags --exact-match 2>/dev/null || true)
           fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release version must use x.y.z format, got: ${VERSION:-<empty>}" >&2
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-canary\.[0-9]+)?$ ]]; then
+            echo "Release version must use x.y.z or x.y.z-canary.N format, got: ${VERSION:-<empty>}" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -110,7 +110,7 @@ jobs:
         with:
           files: ./filtered-bin/release/*.*
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(needs.preparation.outputs.version, '-canary.') }}
           make_latest: true
           name: ${{ needs.preparation.outputs.version }}
           body: ${{ needs.preparation.outputs.release_notes }}
