@@ -1369,13 +1369,22 @@ function migrate_secondary_rulesets_to_mirror(ctx) {
     }
 }
 
+// Keep traffic-expensive bypass routes out of every generated subscription
+// group by default. This runs once so an administrator can remove the rule
+// later in the global settings without it being re-added on every reload.
+function migrate_default_subscription_exclude_regex(ctx) {
+    if (length(list_option(ctx.model.settings, "subscription_exclude_regex")) == 0)
+        set_list_option(ctx, ctx.model.settings, "subscription_exclude_regex", [ "🏳️" ]);
+}
+
 const MIGRATIONS = [
     { id: "interface_sections", run: migrate_interface_sections },
     { id: "enable_component_checks", run: migrate_enable_component_checks },
     { id: "http_connection_urls", run: migrate_http_connection_urls },
     { id: "flintnet_urltest_default", run: migrate_flintnet_urltest_default },
     { id: "retired_secondary_rulesets", run: migrate_retired_secondary_rulesets },
-    { id: "secondary_rulesets_mirror_v1", run: migrate_secondary_rulesets_to_mirror }
+    { id: "secondary_rulesets_mirror_v1", run: migrate_secondary_rulesets_to_mirror },
+    { id: "default_subscription_exclude_regex_v1", run: migrate_default_subscription_exclude_regex }
 ];
 
 function apply_migrations(ctx) {

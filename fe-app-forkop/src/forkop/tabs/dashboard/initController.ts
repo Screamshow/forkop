@@ -734,11 +734,21 @@ async function handleTestLatency(
 
     followedLatencyJobs.add(jobId);
     ownsJobFollow = true;
-    await ForkopShellMethods.waitLatencyTestJob(jobId);
+    const completion = await ForkopShellMethods.waitLatencyTestJob(jobId);
+    if (!completion.success) {
+      throw new Error(completion.error);
+    }
+    if (!completion.data.success) {
+      throw new Error(completion.data.message || _('Latency test failed'));
+    }
     await completeLatencyTestJob(jobId, sectionName);
     completed = true;
   } catch (error) {
     logger.error('[DASHBOARD]', 'handleTestLatency: failed', error);
+    if (!pageUnloading) {
+      const message = error instanceof Error ? error.message : '';
+      showToast(message || _('Latency test failed'), 'error');
+    }
   } finally {
     if (ownsJobFollow) {
       followedLatencyJobs.delete(jobId);

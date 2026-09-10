@@ -569,6 +569,13 @@ function subscription_hide_detour_outbounds(section, value) {
     return true;
 }
 
+function subscription_exclude_regex(section, value) {
+    let child = child_item_by_value(section, "subscription_url", "url", value);
+    if (child != null)
+        return child_list(child, "exclude_regex", []);
+    return item_list(section, "subscription_url_settings", value, "exclude_regex", []);
+}
+
 function subscription_prefix_nodes(section, value) {
     let child = child_item_by_value(section, "subscription_url", "url", value);
     if (child != null)
@@ -1015,6 +1022,7 @@ return {
     subscription_include_urltest_groups,
     subscription_hide_urltest_group_outbounds,
     subscription_hide_detour_outbounds,
+    subscription_exclude_regex,
     subscription_prefix_nodes,
     subscription_node_prefix,
     subscription_user_agent,

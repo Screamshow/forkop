@@ -1424,6 +1424,14 @@ function latency_test_async(latency_type, section, tag, requested_timeout) {
         exit(1);
     }
 
+    // The automatic startup/subscription sweep and a user-requested test share
+    // one runtime lock. Reject early so the UI can report the real reason
+    // instead of briefly showing a second, doomed progress job.
+    if (fs.stat(LATENCY_TEST_LOCK_DIR) != null) {
+        action_start_response(false, "", "Another latency test is already running");
+        exit(1);
+    }
+
     ensure_dirs();
     let id = job_id();
     let path = job_state_path_value(LATENCY_ACTION_DIR, id);

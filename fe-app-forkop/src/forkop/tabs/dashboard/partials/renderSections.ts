@@ -252,6 +252,74 @@ function renderDefaultState({
   subscriptionUpdating,
   selectorSwitchingTag,
 }: IRenderSectionsProps) {
+  function renderPriorityMembers(outbound: Forkop.Outbound) {
+    const members = outbound.priorityInfo?.outbounds || [];
+
+    if (members.length === 0) {
+      return undefined;
+    }
+
+    let previousLevel = -1;
+    const content: HTMLElement[] = [];
+
+    members.forEach((member, index) => {
+      if (member.levelIndex !== previousLevel) {
+        previousLevel = member.levelIndex;
+        content.push(
+          E(
+            'div',
+            { class: 'fkp_dashboard-page__priority-members__level' },
+            `${_('Priority')} #${member.levelIndex + 1}: ${member.levelName}`,
+          ),
+        );
+      }
+
+      content.push(
+        E(
+          'div',
+          {
+            class: [
+              'fkp_dashboard-page__priority-members__row',
+              member.selected
+                ? 'fkp_dashboard-page__priority-members__row--selected'
+                : '',
+            ].filter(Boolean).join(' '),
+          },
+          [
+            E('span', { class: 'fkp_dashboard-page__priority-members__order' }, String(index + 1)),
+            E(
+              'span',
+              { class: 'fkp_dashboard-page__priority-members__name' },
+              renderFlagEmojis(member.displayName),
+            ),
+            E(
+              'span',
+              {
+                class: member.latency
+                  ? 'fkp_dashboard-page__outbound-grid__item__latency--green'
+                  : 'fkp_dashboard-page__outbound-grid__item__latency--empty',
+              },
+              member.latency ? `${member.latency}ms` : 'N/A',
+            ),
+          ],
+        ),
+      );
+    });
+
+    return E(
+      'details',
+      {
+        class: 'fkp_dashboard-page__priority-members',
+        open: true,
+        click: (event: Event) => event.stopPropagation(),
+      },
+      [
+        E('summary', {}, `${_('Nodes')}: ${members.length}`),
+        E('div', { class: 'fkp_dashboard-page__priority-members__list' }, content),
+      ],
+    );
+  }
+
   function testLatency() {
     if (section.withTagSelect) {
       return onTestLatency(
@@ -284,6 +352,7 @@ function renderDefaultState({
     }
 
     const footerLabel = getOutboundFooterLabel(outbound);
+    const priorityMembers = renderPriorityMembers(outbound);
     const selectorSwitching = Boolean(selectorSwitchingTag);
     const outboundSwitching = selectorSwitchingTag === outbound.code;
     const canChooseOutbound =
@@ -391,6 +460,7 @@ function renderDefaultState({
             outbound.latency ? `${outbound.latency}ms` : 'N/A',
           ),
         ]),
+        ...(priorityMembers ? [priorityMembers] : []),
       ],
     );
   }

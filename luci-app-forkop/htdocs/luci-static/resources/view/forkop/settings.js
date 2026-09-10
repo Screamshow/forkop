@@ -22,6 +22,19 @@ function validateLatencyTestUrl(value) {
   return validation.valid ? true : validation.message;
 }
 
+function validateRegex(_sectionId, value) {
+  if (!value || !value.length) {
+    return true;
+  }
+
+  try {
+    new RegExp(value);
+    return true;
+  } catch (_error) {
+    return _("Invalid regular expression");
+  }
+}
+
 function isDownloadSectionAction(action, capabilities) {
   switch (action) {
     case "connection":
@@ -598,6 +611,17 @@ function createSettingsContent(section, capabilities) {
   o.validate = function (_section_id, value) {
     return validateLatencyTestUrl(value);
   };
+
+  o = section.option(
+    form.DynamicList,
+    "subscription_exclude_regex",
+    _("Globally exclude subscription nodes by regular expression"),
+    _(
+      "Remove matching nodes from every current and future subscription before sing-box, URLTest, Priority, and the dashboard are generated.",
+    ),
+  );
+  o.rmempty = true;
+  o.validate = validateRegex;
 
   o = section.option(
     form.Flag,

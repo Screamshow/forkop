@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-06 17:10+0300\n"
-"PO-Revision-Date: 2026-09-06 17:10+0300\n"
+"POT-Creation-Date: 2026-09-10 09:05+0300\n"
+"PO-Revision-Date: 2026-09-10 09:05+0300\n"
 "Last-Translator: Screamshow\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -689,9 +689,6 @@ msgstr "Принудительная маршрутизация устройст
 msgid "Forkop Error"
 msgstr "Ошибка Forkop"
 
-msgid "Forkop logs could not be collected."
-msgstr "Не удалось собрать журналы Forkop."
-
 msgid "Forkop manages ciadpi pid files itself, so pidfile options are not allowed here."
 msgstr "Forkop сам управляет pid-файлами ciadpi, поэтому параметры pidfile здесь запрещены."
 
@@ -761,8 +758,8 @@ msgstr "Получить глобальную проверку"
 msgid "Global check"
 msgstr "Глобальная проверка"
 
-msgid "Global check could not be collected."
-msgstr "Не удалось собрать общую проверку."
+msgid "Globally exclude subscription nodes by regular expression"
+msgstr "Глобально исключать узлы подписок по регулярному выражению"
 
 msgid "Hide values"
 msgstr "Скрывать значения"
@@ -1351,6 +1348,9 @@ msgstr "Полностью удалить Forkop X"
 
 msgid "Remove Forkop X, sing-box, their settings and cache, and restore the original device repositories?"
 msgstr "Удалить Forkop X, sing-box, их настройки и кэш и восстановить исходные репозитории устройства?"
+
+msgid "Remove matching nodes from every current and future subscription before sing-box, URLTest, Priority, and the dashboard are generated."
+msgstr "Удалять совпадающие узлы из всех текущих и будущих подписок до формирования sing-box, URLTest, Priority и дашборда."
 
 msgid "Remove permanently"
 msgstr "Удалить безвозвратно"

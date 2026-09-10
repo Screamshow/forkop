@@ -1466,6 +1466,8 @@ function validate_rule(section, sections, context) {
             for (let value in connections.subscription_urls(section)) {
                 validate_subscription_source_entry_value(value, name);
                 validate_subscription_request_profile(section, value);
+                for (let regex in connections.subscription_exclude_regex(section, value))
+                    validate_urltest_regex_value(regex, name);
                 let subscription_update_interval = subscription_update_interval_for_source(section, value);
                 if (subscription_update_interval != "")
                     validate_required_duration_option(subscription_update_interval, "rule." + name + ".subscription_update_interval");
@@ -1632,6 +1634,8 @@ function validate_runtime_config(context) {
     validate_dns_settings(settings, sections, context);
     validate_list_update_settings(settings);
     validate_http_url_option(option(settings, "latency_test_url", DEFAULT_LATENCY_TEST_URL) || DEFAULT_LATENCY_TEST_URL, "settings.latency_test_url");
+    for (let value in list_option(settings, "subscription_exclude_regex", []))
+        validate_urltest_regex_value(value, "settings");
 
     if (download_via_proxy_enabled(settings, "lists")) {
         validate_download_section_rows(

@@ -1209,7 +1209,8 @@ function subscription_urls_signature(section) {
             node_prefix: connections.subscription_node_prefix(section, entry),
             include_urltest_groups: connections.subscription_include_urltest_groups(section, entry) ? "1" : "0",
             hide_urltest_group_outbounds: connections.subscription_hide_urltest_group_outbounds(section, entry) ? "1" : "0",
-            hide_detour_outbounds: connections.subscription_hide_detour_outbounds(section, entry) ? "1" : "0"
+            hide_detour_outbounds: connections.subscription_hide_detour_outbounds(section, entry) ? "1" : "0",
+            exclude_regex: connections.subscription_exclude_regex(section, entry)
         });
     }
     return sprintf("%J", result);
@@ -1561,6 +1562,8 @@ function sing_box_signature_body(settings, sections, mwan3_active) {
     body = signature_add_value(body, "settings.service_listen_address", option(settings, "service_listen_address", ""));
     body = signature_add_value(body, "settings.direct_proxy_enabled", bool_option_value(settings, "direct_proxy_enabled", false));
     body = signature_add_value(body, "settings.direct_proxy_port", option(settings, "direct_proxy_port", "2080"));
+    for (let value in list_option(settings, "subscription_exclude_regex", []))
+        body = signature_add_value(body, "settings.subscription_exclude_regex", value);
     body = signature_add_value(body, "runtime.mwan3_active", bool_value(mwan3_active));
 
     let enable_yacd = bool_option_value(settings, "enable_yacd", false);

@@ -272,6 +272,7 @@ function hydrateConfigSections(configSections: Forkop.ConfigSection[]) {
           include_urltest_groups: item.include_urltest_groups,
           hide_urltest_group_outbounds: item.hide_urltest_group_outbounds,
           hide_detour_outbounds: item.hide_detour_outbounds,
+          exclude_regex: item.exclude_regex,
         };
       });
       next.subscription_url_settings = compactSettingsMap(settings);
@@ -1153,6 +1154,9 @@ function buildProxyGroupOutbounds(
     config,
     entry: proxyByCode.get(config.code),
   }));
+  const priorityMemberCodes = new Set(
+    priorityEntries.flatMap(({ entry }) => entry?.value.all || []),
+  );
   const manualLinkByCode = buildManualLinkByCode(section);
   const selectorCodes = selector?.value?.all ?? [];
   const urlTestCodes = urlTestConfigs.map((config) => config.code);
@@ -1177,6 +1181,12 @@ function buildProxyGroupOutbounds(
     const item = proxyByCode.get(code);
     const urlTestConfig = urlTestConfigByCode.get(code);
     const priorityConfig = priorityConfigByCode.get(code);
+
+    // A member is controlled by Priority and is rendered inside its card.
+    // Keeping a second top-level card would offer a manual route around it.
+    if (!priorityConfig && priorityMemberCodes.has(code)) {
+      return [];
+    }
 
     if (!item && !urlTestConfig && !priorityConfig) {
       return [];

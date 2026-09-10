@@ -437,6 +437,57 @@ export const styles = `
     color: var(--error-color-medium, red);
 }
 
+.fkp_dashboard-page__priority-members {
+    margin-top: 10px;
+    border-top: 1px solid var(--border-color-low, #eee);
+    padding-top: 8px;
+}
+
+.fkp_dashboard-page__priority-members > summary {
+    cursor: pointer;
+    color: var(--text-color-medium, #666);
+    font-size: 13px;
+    user-select: none;
+}
+
+.fkp_dashboard-page__priority-members__list {
+    display: grid;
+    gap: 3px;
+    margin-top: 8px;
+}
+
+.fkp_dashboard-page__priority-members__level {
+    margin-top: 5px;
+    color: var(--text-color-medium, #666);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.fkp_dashboard-page__priority-members__row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 4px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+.fkp_dashboard-page__priority-members__row--selected {
+    background: rgba(54, 179, 126, 0.13);
+}
+
+.fkp_dashboard-page__priority-members__order {
+    color: var(--text-color-medium, #666);
+    font-family: monospace;
+}
+
+.fkp_dashboard-page__priority-members__name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .fkp_dashboard-page__urltest-details {
     box-sizing: border-box;
     width: min(760px, calc(100vw - 56px));

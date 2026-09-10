@@ -230,7 +230,10 @@ function subscription_visibility_refs(outbounds) {
         if (type(outbound) != "object")
             continue;
 
-        if (subscription_urltest_group_outbound(outbound)) {
+        // Provider URLTest groups do not consistently carry Forkop's internal
+        // allow-group marker. Any URLTest inbound from a subscription owns its
+        // listed members, which must not also become standalone dashboard rows.
+        if (as_string(outbound.type || "") == "urltest") {
             for (let tag_name in array_or_empty(outbound.outbounds)) {
                 tag_name = as_string(tag_name);
                 if (tag_name != "")
@@ -606,6 +609,74 @@ function compatible_subscription_outbounds(outbounds, section_name) {
     }
 }
 
+function subscription_exclude_regex_outbounds(outbounds, regexes) {
+    regexes = array_or_empty(regexes);
+    if (length(regexes) == 0)
+        return array_or_empty(outbounds);
+
+    let tags = [];
+    let names = {};
+    for (let outbound in array_or_empty(outbounds)) {
+        if (type(outbound) != "object")
+            continue;
+        let tag_name = as_string(outbound.tag || "");
+        if (tag_name == "")
+            continue;
+        push(tags, tag_name);
+        names[tag_name] = subscription_outbound_display_name(outbound);
+    }
+
+    let excluded = {};
+    for (let tag_name in tags) {
+        for (let pattern in regexes) {
+            try {
+                if (match(names[tag_name], regexp(as_string(pattern))) != null) {
+                    excluded[tag_name] = true;
+                    break;
+                }
+            }
+            catch (e) {
+            }
+        }
+    }
+    if (length(keys(excluded)) == 0)
+        return array_or_empty(outbounds);
+
+    let result = [];
+    for (let outbound in array_or_empty(outbounds)) {
+        let tag_name = type(outbound) == "object" ? as_string(outbound.tag || "") : "";
+        if (!excluded[tag_name])
+            push(result, outbound);
+    }
+    return result;
+}
+
+function global_subscription_exclude_regex() {
+    return list_option(runtime_settings(), "subscription_exclude_regex", []);
+}
+
+function effective_subscription_exclude_regex(section, source_entry) {
+    let result = [];
+    let seen = {};
+    for (let pattern in global_subscription_exclude_regex()) {
+        pattern = as_string(pattern);
+        if (pattern != "" && !seen[pattern]) {
+            seen[pattern] = true;
+            push(result, pattern);
+        }
+    }
+    // Keep legacy per-source rules effective for configurations created before
+    // the global setting was introduced. New policy belongs in settings.
+    for (let pattern in connections.subscription_exclude_regex(section, source_entry)) {
+        pattern = as_string(pattern);
+        if (pattern != "" && !seen[pattern]) {
+            seen[pattern] = true;
+            push(result, pattern);
+        }
+    }
+    return result;
+}
+
 function copy_subscription_outbound(outbound, new_tag) {
     let copy = {};
     for (let key, value in outbound) {
@@ -749,6 +820,10 @@ function add_subscription_source_with_state(config, section, source_index, sourc
         return 0;
 
     let source_outbounds = runtime_subscription.read_source_outbounds(source_section);
+    source_outbounds = subscription_exclude_regex_outbounds(
+        source_outbounds,
+        effective_subscription_exclude_regex(section, source_entry)
+    );
     if (length(source_outbounds) == 0)
         return 0;
 
@@ -1229,16 +1304,6 @@ function remember_group_outbounds(group_outbounds, group_name, outbounds) {
     group_outbounds[group_name] = unique_string_array(combined);
 }
 
-function selector_group_for_outbound(selector_tags, state, outbound_tag_name) {
-    let urltest_groups = object_or_empty(object_or_empty(state).urltestGroups);
-    for (let group_tag in array_or_empty(selector_tags)) {
-        let group = object_or_empty(urltest_groups[group_tag]);
-        if (array_contains(group.outbounds, outbound_tag_name))
-            return group_tag;
-    }
-    return "";
-}
-
 function grouped_selector_outbounds(section, selector_tags, group_outbounds, state) {
     let configured_groups = [
         ...connections.urltests(section),
@@ -1248,18 +1313,9 @@ function grouped_selector_outbounds(section, selector_tags, group_outbounds, sta
         return selector_tags;
 
     let selected = [];
-    for (let group_name in keys(object_or_empty(group_outbounds))) {
-        for (let tag_name in array_or_empty(group_outbounds[group_name])) {
-            if (array_contains(selector_tags, tag_name)) {
-                push(selected, tag_name);
-                continue;
-            }
-
-            let selector_group = selector_group_for_outbound(selector_tags, state, tag_name);
-            if (selector_group != "")
-                push(selected, selector_group);
-        }
-    }
+    for (let group_name in keys(object_or_empty(group_outbounds)))
+        for (let tag_name in array_or_empty(group_outbounds[group_name]))
+            push(selected, tag_name);
 
     return unique_string_array(selected);
 }
