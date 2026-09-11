@@ -91,12 +91,12 @@ function strip_first_scheme_marker(value) {
 
 function authority(value) {
     value = strip_first_scheme_marker(value);
+    let end = first_index_any(value, ["/", "?", "#"], 0);
+    value = end >= 0 ? substr(value, 0, end) : value;
     let at = rindex(value, "@");
     if (at >= 0)
         value = substr(value, at + 1);
-
-    let end = first_index_any(value, ["/", "?", "#"], 0);
-    return end >= 0 ? substr(value, 0, end) : value;
+    return value;
 }
 
 function host(value) {

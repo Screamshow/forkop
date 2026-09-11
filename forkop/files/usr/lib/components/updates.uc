@@ -3,6 +3,8 @@
 let fs = require("fs");
 let uci_core = require("core.uci");
 let connections = require("config.connections");
+let core_ip = require("core.ip");
+let core_url = require("core.url");
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const STATE_UC = getenv("FORKOP_STATE_UC") || LIB_DIR + "/service/state.uc";
@@ -2844,9 +2846,82 @@ function record_mirror_download_failure(state) {
     return true;
 }
 
-function download_to_file_once(url, filepath, proxy_address) {
-    // OpenWrt ships BusyBox wget, which has no GNU wget `-t` retry option.
-    // Each call is already one explicit attempt inside download_fallback().
+function list_bootstrap_dns_servers() {
+    let result = [];
+    let configured = uci_core.get(CONFIG_NAME + ".settings.bootstrap_dns_server");
+    if (type(configured) != "array")
+        configured = split(trim(as_string(configured)), /[ \t\r\n]+/);
+
+    for (let value in configured) {
+        let server = core_url.host(value);
+        if (core_ip.valid_ip(server))
+            push(result, server);
+    }
+    return result;
+}
+
+function list_bootstrap_resolve(url) {
+    let host = core_url.host(url);
+    if (host == "" || core_ip.valid_ip(host))
+        return null;
+
+    for (let server in list_bootstrap_dns_servers()) {
+        let output = command_output_from_args([ "nslookup", host, server ]);
+        let name_seen = false;
+        let ipv6_address = "";
+        for (let line in split(output, "\n")) {
+            line = trim(as_string(line));
+            if (index(line, "Name:") == 0) {
+                name_seen = true;
+                continue;
+            }
+            if (!name_seen)
+                continue;
+            let matched = match(line, /^Address([ \t]+[0-9]+)?:[ \t]*(.*)$/);
+            if (matched == null)
+                continue;
+            let address = trim(as_string(matched[2]));
+            if (core_ip.ip_family(address) == 4)
+                return {
+                    host,
+                    port: core_url.port(url) || (core_url.scheme(url) == "http" ? "80" : "443"),
+                    address
+                };
+            if (ipv6_address == "" && core_ip.ip_family(address) == 6)
+                ipv6_address = address;
+        }
+        if (ipv6_address != "")
+            return {
+                host,
+                port: core_url.port(url) || (core_url.scheme(url) == "http" ? "80" : "443"),
+                address: ipv6_address
+            };
+    }
+    return null;
+}
+
+function list_curl_args(url, filepath, proxy_address, resolve) {
+    let args = [
+        "curl", "-f", "-sS",
+        "--connect-timeout", "20",
+        "--speed-time", "15",
+        "--speed-limit", "1",
+        "-o", filepath
+    ];
+    if (as_string(proxy_address) != "") {
+        push(args, "-x");
+        push(args, "http://" + as_string(proxy_address));
+    }
+    if (resolve != null) {
+        push(args, "--resolve");
+        push(args, resolve.host + ":" + resolve.port + ":" +
+            (core_ip.ip_family(resolve.address) == 6 ? "[" + resolve.address + "]" : resolve.address));
+    }
+    push(args, url);
+    return args;
+}
+
+function download_to_file_once(url, filepath, proxy_address, resolve) {
     let target_dir = parent_dir(filepath);
     if (target_dir == "")
         target_dir = ".";
@@ -2861,22 +2936,34 @@ function download_to_file_once(url, filepath, proxy_address) {
     // ash's file-size limit is enforced while bytes are written, including
     // responses without Content-Length. Keep a reserve for the running router.
     let max_blocks = int((available - LIST_DOWNLOAD_MIN_FREE_BYTES) / 512);
-    let download_command = command_from_args([ "wget", "--proxy=on", "-T", "20", "-O", filepath, url ]);
-    if (as_string(proxy_address) != "")
-        download_command = "http_proxy=" + shell_quote("http://" + as_string(proxy_address)) +
-            " https_proxy=" + shell_quote("http://" + as_string(proxy_address)) + " " + download_command;
+    let download_command = command_from_args(list_curl_args(url, filepath, proxy_address, resolve));
     let command = "ulimit -f " + max_blocks + "; " + download_command;
 
-    let status = command_success(command);
-    if (!status)
+    let status = command_status(command);
+    if (status != 0)
         fs.unlink(filepath);
     return status;
+}
+
+function download_to_file_with_bootstrap(url, filepath, proxy_address) {
+    let status = download_to_file_once(url, filepath, proxy_address, null);
+    // A configured proxy owns destination DNS. Do not bypass it with a direct
+    // Bootstrap connection; the direct path uses this fallback only on curl's
+    // explicit name-resolution failure code.
+    if (status == 6 && as_string(proxy_address) == "") {
+        let resolved = list_bootstrap_resolve(url);
+        if (resolved != null) {
+            log_message("Retrying remote list download with Bootstrap DNS", "info");
+            status = download_to_file_once(url, filepath, proxy_address, resolved);
+        }
+    }
+    return status == 0;
 }
 
 function download_fallback(url, filepath, proxy_address) {
     let attempt = 1;
     while (attempt <= 3) {
-        if (download_to_file_once(url, filepath, proxy_address))
+        if (download_to_file_with_bootstrap(url, filepath, proxy_address))
             return true;
 
         log_message("Attempt " + attempt + "/3 to download " + safe_remote_source_identity(url) + " failed", "warn");
@@ -2901,7 +2988,7 @@ function download_to_file_network(url, filepath, proxy_address) {
 
     let attempt = 1;
     while (attempt <= 3) {
-        if (download_to_file_once(url, filepath, proxy_address)) {
+        if (download_to_file_with_bootstrap(url, filepath, proxy_address)) {
             record_mirror_download_success(mirror_state);
             return true;
         }
@@ -3757,6 +3844,7 @@ function dns_probe_passed(proxy_address) {
         return true;
     }
 
+    let bootstrap_available = length(list_bootstrap_dns_servers()) > 0;
     let attempt = 1;
     while (attempt <= 10) {
         let output = command_output_from_args([ "dig", "+short", "openwrt.org", "A", "+timeout=3", "+tries=1" ]);
@@ -3765,6 +3853,11 @@ function dns_probe_passed(proxy_address) {
                 log_message("DNS check passed", "info");
                 return true;
             }
+        }
+
+        if (bootstrap_available) {
+            log_message("System DNS is unavailable; continuing list update with configured Bootstrap DNS fallback", "warn");
+            return true;
         }
 
         log_message("DNS is unavailable [" + attempt + "/10]", "info");

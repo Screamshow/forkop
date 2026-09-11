@@ -33,9 +33,17 @@ if [ "${FORKOP_TEST_SING_BOX_PROBE_MODE:-fast}" = "slow" ]; then
   exec sleep 30
 fi
 printf 'sing-box version 1.13.14\n\n'
-printf 'Tags: with_quic,with_tailscale\n'
+printf 'Tags: %s\n' "${FORKOP_TEST_SING_BOX_PROBE_TAGS:-with_quic,with_tailscale}"
 SH
 chmod 755 "$PROBE_BIN"
+cat >"$WORK_DIR/apk" <<'SH'
+#!/bin/sh
+if [ "$1" = "info" ] && [ "$2" = "-e" ] && [ "$3" = "sing-box" ] && [ "${FORKOP_TEST_SING_BOX_REGULAR_PACKAGE:-0}" = "1" ]; then
+  exit 0
+fi
+exit 1
+SH
+chmod 755 "$WORK_DIR/apk"
 cat >"$WORK_DIR/opkg" <<'SH'
 #!/bin/sh
 exit 0
@@ -139,5 +147,17 @@ FORKOP_TEST_SING_BOX_PROBE_MODE=fast ui_capabilities >/dev/null
   fail "stale probe lock prevented a subsequent probe"
 [ ! -e "$CACHE_FILE.lock" ] ||
   fail "stale probe lock was not cleaned after the subsequent probe"
+
+# A manually installed regular APK package has neither the Tiny package name
+# nor the Tailscale build tag. It must remain a regular build in UI status.
+rm -f "$CACHE_FILE"
+regular_package="$(FORKOP_TEST_SING_BOX_PROBE_MODE=fast FORKOP_TEST_SING_BOX_PROBE_TAGS=with_quic FORKOP_TEST_SING_BOX_REGULAR_PACKAGE=1 ui_capabilities)"
+JSON_VALUE="$regular_package" node - <<'NODE'
+const value = JSON.parse(process.env.JSON_VALUE);
+if (value.sing_box_extended !== 0 || value.sing_box_tiny !== 0 || value.sing_box_tailscale !== 0) {
+  console.error('regular sing-box package must not be labelled tiny or extended');
+  process.exit(1);
+}
+NODE
 
 printf 'UI sing-box probe checks passed\n'

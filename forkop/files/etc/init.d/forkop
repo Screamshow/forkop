@@ -29,6 +29,16 @@ sync_service_triggers_payload() {
     _procd_ubus_call set >/dev/null 2>&1 || true
 }
 
+start_dns_watchdog() {
+    # This worker deliberately lives in Forkop's procd service, not in the
+    # sing-box service it observes.  It can therefore restore dnsmasq when
+    # sing-box was stopped separately or cannot be respawned.
+    procd_open_instance "dns-watchdog"
+    procd_set_param command ucode -L "$FORKOP_LIB" "$FORKOP_LIB/service/watchdog.uc"
+    procd_set_param respawn 3600 5 5
+    procd_close_instance
+}
+
 start_service() {
     # rcS/procd keeps its service transaction on fd 1000. Forkop starts and
     # verifies the separate sing-box procd service, so doing the full workflow
@@ -38,11 +48,15 @@ start_service() {
     if [ -e "/proc/$$/fd/1000" ]; then
         initd_ucode start-service "$1" "$$" </dev/null >/dev/null 2>&1 1000>&- &
         FORKOP_LAST_START_STATUS=0
+        start_dns_watchdog
         return 0
     fi
 
     initd_ucode start-service "$1" "$$"
     FORKOP_LAST_START_STATUS="$?"
+
+    start_dns_watchdog
+
     return "$FORKOP_LAST_START_STATUS"
 }
 

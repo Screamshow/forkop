@@ -1047,8 +1047,6 @@ function capability_flags() {
             else if (info != null) {
                 if (match(info.tags, /(^|[,: \t])with_tailscale([, \t]|$)/) != null)
                     result.sing_box_tailscale = 1;
-                if (result.sing_box_tailscale == 0)
-                    result.sing_box_tiny = 1;
             }
         }
     }

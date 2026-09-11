@@ -4,7 +4,11 @@ let fs = require("fs");
 let common = require("core.common");
 let constants = require("core.constants");
 let rulesets = require("singbox.rulesets");
+let uci_core = require("core.uci");
+let core_ip = require("core.ip");
+let core_url = require("core.url");
 
+const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const MANIFEST_PATH = getenv("FORKOP_RULESET_CACHE_MANIFEST") || CACHE_DIR + "/manifest.json";
 const LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forkop/list-cache";
@@ -308,16 +312,90 @@ function write_manifest(manifest) {
     return true;
 }
 
-function download_candidate(url, target, proxy_address) {
+function bootstrap_dns_servers() {
+    let result = [];
+    let configured = uci_core.get(CONFIG_NAME + ".settings.bootstrap_dns_server");
+    if (type(configured) != "array")
+        configured = split(trim(as_string(configured)), /[ \t\r\n]+/);
+
+    for (let value in configured) {
+        let server = core_url.host(value);
+        if (core_ip.valid_ip(server))
+            push(result, server);
+    }
+    return result;
+}
+
+function bootstrap_resolve(url) {
+    let host = core_url.host(url);
+    if (host == "" || core_ip.valid_ip(host))
+        return null;
+
+    for (let server in bootstrap_dns_servers()) {
+        let output = command_output([ "nslookup", host, server ]);
+        let name_seen = false;
+        let ipv6_address = "";
+        for (let line in split(output, "\n")) {
+            line = trim(as_string(line));
+            if (index(line, "Name:") == 0) {
+                name_seen = true;
+                continue;
+            }
+            if (!name_seen)
+                continue;
+            let matched = match(line, /^Address([ \t]+[0-9]+)?:[ \t]*(.*)$/);
+            if (matched == null)
+                continue;
+            let address = trim(as_string(matched[2]));
+            if (core_ip.ip_family(address) == 4)
+                return {
+                    host,
+                    port: core_url.port(url) || (core_url.scheme(url) == "http" ? "80" : "443"),
+                    address
+                };
+            if (ipv6_address == "" && core_ip.ip_family(address) == 6)
+                ipv6_address = address;
+        }
+        if (ipv6_address != "")
+            return {
+                host,
+                port: core_url.port(url) || (core_url.scheme(url) == "http" ? "80" : "443"),
+                address: ipv6_address
+            };
+    }
+    return null;
+}
+
+function download_candidate(url, target, proxy_address, resolve) {
     let args = [ "curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "8", "--max-time", "30" ];
     if (as_string(proxy_address) != "")
         push(args, "--proxy", "http://" + as_string(proxy_address));
+    if (resolve != null) {
+        push(args, "--resolve");
+        push(args, resolve.host + ":" + resolve.port + ":" +
+            (core_ip.ip_family(resolve.address) == 6 ? "[" + resolve.address + "]" : resolve.address));
+    }
     push(args, "--output", target, url);
     let free_bytes = available_bytes(parent_dir(target), false);
     if (free_bytes < 0 || free_bytes <= DOWNLOAD_MIN_FREE_BYTES)
-        return false;
+        return 1;
     let max_blocks = int((free_bytes - DOWNLOAD_MIN_FREE_BYTES) / 512);
-    return system("ulimit -f " + max_blocks + "; " + command_from_args(args) + " >/dev/null 2>&1") == 0;
+    let status = int(system("ulimit -f " + max_blocks + "; " + command_from_args(args) + " >/dev/null 2>&1"));
+    return status > 255 ? int(status / 256) : status;
+}
+
+function download_candidate_with_bootstrap(url, target, proxy_address) {
+    let status = download_candidate(url, target, proxy_address, null);
+    // A configured proxy owns destination DNS. The direct Bootstrap retry is
+    // intentionally limited to curl's explicit name-resolution failure.
+    if (status == 6 && as_string(proxy_address) == "") {
+        let resolved = bootstrap_resolve(url);
+        if (resolved != null) {
+            warn("rule-set download retrying with Bootstrap DNS for ", resolved.host, "\n");
+            status = download_candidate(url, target, proxy_address, resolved);
+        }
+    }
+    return status == 0;
 }
 
 function commit_persistent_candidate(source, target, format) {
@@ -349,12 +427,13 @@ function refresh_entry(entry, proxy_address, runtime_manifest) {
     fs.unlink(binary_validation_path(temporary));
 
     for (let candidate in candidate_urls(url)) {
-        if (!download_candidate(candidate, temporary, proxy_address)) {
+        if (!download_candidate_with_bootstrap(candidate, temporary, proxy_address)) {
             fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
             continue;
         }
         if (!valid_cache(temporary, format)) {
+            warn("rule-set download returned an invalid ", format, " payload for ", candidate, "\n");
             fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
             continue;

@@ -22,6 +22,8 @@ interface IRenderSectionsProps {
   latencyProgress?: Forkop.LatencyActionProgress;
   subscriptionUpdating: boolean;
   selectorSwitchingTag?: string;
+  isPriorityMembersExpanded: (outbound: Forkop.Outbound) => boolean;
+  onPriorityMembersToggle: (outbound: Forkop.Outbound, open: boolean) => void;
 }
 
 function renderFailedState() {
@@ -251,6 +253,8 @@ function renderDefaultState({
   latencyProgress,
   subscriptionUpdating,
   selectorSwitchingTag,
+  isPriorityMembersExpanded,
+  onPriorityMembersToggle,
 }: IRenderSectionsProps) {
   function renderPriorityMembers(outbound: Forkop.Outbound) {
     const members = outbound.priorityInfo?.outbounds || [];
@@ -310,8 +314,12 @@ function renderDefaultState({
       'details',
       {
         class: 'fkp_dashboard-page__priority-members',
-        open: true,
+        open: isPriorityMembersExpanded(outbound),
         click: (event: Event) => event.stopPropagation(),
+        ontoggle: (event: Event) => {
+          const details = event.currentTarget as HTMLDetailsElement;
+          onPriorityMembersToggle(outbound, details.open);
+        },
       },
       [
         E('summary', {}, `${_('Nodes')}: ${members.length}`),

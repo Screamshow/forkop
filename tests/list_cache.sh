@@ -54,12 +54,12 @@ cache_cmd() {
     ucode -L "$FORKOP_LIB" "$UPDATES_UC" "$@"
 }
 
-cat >"$WORK_DIR/bin/wget" <<'EOF_WGET'
+cat >"$WORK_DIR/bin/curl" <<'EOF_CURL'
 #!/bin/sh
 printf 'network attempted\n' >>"$LIST_CACHE_WGET_LOG"
 exit 1
-EOF_WGET
-chmod +x "$WORK_DIR/bin/wget"
+EOF_CURL
+chmod +x "$WORK_DIR/bin/curl"
 cat >"$WORK_DIR/bin/logger" <<'EOF_LOGGER'
 #!/bin/sh
 printf '%s\n' "$*" >>"$LIST_CACHE_LOG"
@@ -382,25 +382,28 @@ legacy_bad_cmd list-cache-valid && fail "corrupt v1 cache was migrated"
   fail "failed v1 migration destroyed its LKG"
 [ ! -e "$WORK_DIR/legacy-v1-invalid.stage" ] || fail "failed v1 migration retained a stage"
 
-# The streaming limit wrapper must preserve proxy variables for wget.
-cat >"$WORK_DIR/bin/wget" <<'EOF_PROXY_WGET'
+# The streaming limit wrapper must retain the explicitly selected service proxy.
+cat >"$WORK_DIR/bin/curl" <<'EOF_PROXY_CURL'
 #!/bin/sh
-[ "${http_proxy:-}" = 'http://127.0.0.1:18080' ] || exit 1
-[ "${https_proxy:-}" = 'http://127.0.0.1:18080' ] || exit 1
+proxy=0
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = -O ]; then
+  if [ "$1" = -x ] && [ "${2:-}" = 'http://127.0.0.1:18080' ]; then
+    proxy=1
+    shift
+  elif [ "$1" = -o ]; then
+    [ "$proxy" = 1 ] || exit 1
     printf 'proxied.example\n' >"$2"
     exit 0
   fi
   shift
 done
 exit 1
-EOF_PROXY_WGET
-chmod +x "$WORK_DIR/bin/wget"
+EOF_PROXY_CURL
+chmod +x "$WORK_DIR/bin/curl"
 PATH="$WORK_DIR/bin:$PATH" FORKOP_LIST_DOWNLOAD_MIN_FREE_BYTES=0 FORKOP_LIB="$FORKOP_LIB" \
   ucode -L "$FORKOP_LIB" "$UPDATES_UC" download-list-file \
     https://lists.test/proxied "$WORK_DIR/proxied" 127.0.0.1:18080 ||
-  fail "temporary-space limit wrapper dropped the service proxy environment"
+  fail "temporary-space limit wrapper dropped the selected service proxy"
 grep -Fq 'proxied.example' "$WORK_DIR/proxied" || fail "proxied fixture download was not written"
 
 printf 'persistent list cache checks passed\n'

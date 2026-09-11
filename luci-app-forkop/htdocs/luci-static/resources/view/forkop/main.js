@@ -1935,7 +1935,9 @@ function renderDefaultState({
   latencyFetching,
   latencyProgress,
   subscriptionUpdating,
-  selectorSwitchingTag
+  selectorSwitchingTag,
+  isPriorityMembersExpanded,
+  onPriorityMembersToggle
 }) {
   function renderPriorityMembers(outbound) {
     const members = outbound.priorityInfo?.outbounds || [];
@@ -1986,8 +1988,12 @@ function renderDefaultState({
       "details",
       {
         class: "fkp_dashboard-page__priority-members",
-        open: true,
-        click: (event) => event.stopPropagation()
+        open: isPriorityMembersExpanded(outbound),
+        click: (event) => event.stopPropagation(),
+        ontoggle: (event) => {
+          const details = event.currentTarget;
+          onPriorityMembersToggle(outbound, details.open);
+        }
       },
       [
         E("summary", {}, `${_("Nodes")}: ${members.length}`),
@@ -2333,7 +2339,10 @@ function render() {
             latencyFetching: false,
             latencyProgress: void 0,
             subscriptionUpdating: false,
-            selectorSwitchingTag: void 0
+            selectorSwitchingTag: void 0,
+            isPriorityMembersExpanded: () => false,
+            onPriorityMembersToggle: () => {
+            }
           })
         )
       ])
@@ -5568,6 +5577,10 @@ var followedSubscriptionJobs = /* @__PURE__ */ new Set();
 var followedLatencyJobs = /* @__PURE__ */ new Set();
 var handledSubscriptionJobs = /* @__PURE__ */ new Set();
 var handledLatencyJobs = /* @__PURE__ */ new Set();
+var expandedPriorityMembers = /* @__PURE__ */ new Set();
+function priorityMembersStateKey(section, outbound) {
+  return `${section.sectionName}:${outbound.code}`;
+}
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {
     pageUnloading = true;
@@ -6765,7 +6778,10 @@ async function renderSectionsWidget() {
       latencyFetching: false,
       latencyProgress: void 0,
       subscriptionUpdating: false,
-      selectorSwitchingTag: void 0
+      selectorSwitchingTag: void 0,
+      isPriorityMembersExpanded: () => false,
+      onPriorityMembersToggle: () => {
+      }
     });
     return preserveScrollForPage(() => {
       container.replaceChildren(renderedWidget);
@@ -6784,6 +6800,15 @@ async function renderSectionsWidget() {
         sectionsWidget.subscriptionUpdatingSections[section.sectionName]
       ),
       selectorSwitchingTag: sectionsWidget.selectorSwitchingSections[section.sectionName],
+      isPriorityMembersExpanded: (outbound) => expandedPriorityMembers.has(priorityMembersStateKey(section, outbound)),
+      onPriorityMembersToggle: (outbound, open) => {
+        const key = priorityMembersStateKey(section, outbound);
+        if (open) {
+          expandedPriorityMembers.add(key);
+        } else {
+          expandedPriorityMembers.delete(key);
+        }
+      },
       onTestLatency: (tag) => {
         if (section.withTagSelect) {
           if (Array.isArray(tag)) {

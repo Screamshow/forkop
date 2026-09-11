@@ -52,6 +52,16 @@ const followedSubscriptionJobs = new Set<string>();
 const followedLatencyJobs = new Set<string>();
 const handledSubscriptionJobs = new Set<string>();
 const handledLatencyJobs = new Set<string>();
+// Dashboard data is refreshed periodically. Keep disclosure state outside the
+// rendered DOM so replacing cards does not reopen or collapse them.
+const expandedPriorityMembers = new Set<string>();
+
+function priorityMembersStateKey(
+  section: Forkop.OutboundGroup,
+  outbound: Forkop.Outbound,
+) {
+  return `${section.sectionName}:${outbound.code}`;
+}
 
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => {
@@ -1565,6 +1575,8 @@ async function renderSectionsWidget() {
       latencyProgress: undefined,
       subscriptionUpdating: false,
       selectorSwitchingTag: undefined,
+      isPriorityMembersExpanded: () => false,
+      onPriorityMembersToggle: () => {},
     });
 
     return preserveScrollForPage(() => {
@@ -1587,6 +1599,16 @@ async function renderSectionsWidget() {
       ),
       selectorSwitchingTag:
         sectionsWidget.selectorSwitchingSections[section.sectionName],
+      isPriorityMembersExpanded: (outbound) =>
+        expandedPriorityMembers.has(priorityMembersStateKey(section, outbound)),
+      onPriorityMembersToggle: (outbound, open) => {
+        const key = priorityMembersStateKey(section, outbound);
+        if (open) {
+          expandedPriorityMembers.add(key);
+        } else {
+          expandedPriorityMembers.delete(key);
+        }
+      },
       onTestLatency: (tag) => {
         if (section.withTagSelect) {
           if (Array.isArray(tag)) {

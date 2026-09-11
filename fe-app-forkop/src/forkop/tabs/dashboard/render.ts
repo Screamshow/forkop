@@ -85,6 +85,8 @@ export function render() {
             latencyProgress: undefined,
             subscriptionUpdating: false,
             selectorSwitchingTag: undefined,
+            isPriorityMembersExpanded: () => false,
+            onPriorityMembersToggle: () => {},
           }),
         ),
       ]),
