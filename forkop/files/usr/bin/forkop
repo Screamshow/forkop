@@ -124,6 +124,7 @@ function show_help() {
 function command_spec(command) {
     let commands = {
         start: [ "service/lifecycle.uc", "start", 0 ],
+        post_start_latency: [ "service/lifecycle.uc", "post-start-latency", 0 ],
         stop: [ "service/lifecycle.uc", "stop", 0 ],
         reload: [ "service/lifecycle.uc", "reload", 1 ],
         dns_failover_apply: [ "service/lifecycle.uc", "dns-failover-apply", 1 ],

@@ -916,27 +916,57 @@ function sing_box_component_action_running() {
     return module_success(SERVICE_UI_UC, [ "component-action-running-for", "sing_box" ]);
 }
 
+function sing_box_package_installed_exact(package_name) {
+    let installed = command_output_from_args([ "apk", "list", "--installed", "--manifest" ]);
+    for (let line in split(installed, "\n")) {
+        let fields = split(trim(as_string(line)), /[ \t]+/);
+        if (as_string(fields[0]) == as_string(package_name))
+            return true;
+    }
+
+    installed = command_output_from_args([ "opkg", "list-installed" ]);
+    for (let line in split(installed, "\n"))
+        if (split(trim(as_string(line)), /[ \t]+/)[0] == as_string(package_name))
+            return true;
+
+    return false;
+}
+
+function sing_box_installed_package_name() {
+    for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ])
+        if (sing_box_package_installed_exact(package_name))
+            return package_name;
+
+    return "";
+}
+
+function sing_box_regular_package_installed() {
+    return sing_box_package_installed_exact("sing-box");
+}
+
 function sing_box_live_probe_disabled() {
-    return sing_box_marker_is("extended") ||
-        sing_box_marker_is("extended-compressed") ||
-        sing_box_component_action_running();
+    return !sing_box_regular_package_installed() && (sing_box_marker_is("extended") ||
+        sing_box_marker_is("extended-compressed") || sing_box_component_action_running());
 }
 
 function sing_box_tiny_package_installed() {
-    return module_success(PACKAGES_UC, [ "installed", "sing-box-tiny" ]);
+    return sing_box_package_installed_exact("sing-box-tiny");
 }
 
 function sing_box_capability_flags(sing_box_version, sing_box_version_output) {
     let extended = 0;
     let tiny = 0;
     let tailscale = 0;
+    let package_name = sing_box_installed_package_name();
+    let regular_installed = package_name == "sing-box";
 
-    if (sing_box_marker_is("extended") ||
-        sing_box_marker_is("extended-compressed") ||
+    if (package_name == "sing-box-extended" || (!regular_installed && (sing_box_marker_is("extended") ||
+        sing_box_marker_is("extended-compressed"))) ||
         module_success(SINGBOX_RUNTIME_UC, [ "is-extended", sing_box_version ]))
         extended = 1;
 
-    if (extended == 0 && (sing_box_marker_is("tiny") || sing_box_tiny_package_installed()))
+    if (package_name == "sing-box-tiny" || (!regular_installed && extended == 0 &&
+        (sing_box_marker_is("tiny") || sing_box_tiny_package_installed())))
         tiny = 1;
 
     if (extended == 1)
@@ -948,7 +978,7 @@ function sing_box_capability_flags(sing_box_version, sing_box_version_output) {
     else if (tiny == 0 && sing_box_component_action_running())
         tailscale = 1;
 
-    return { extended, tiny, tailscale };
+    return { extended, tiny, tailscale, package_name };
 }
 
 function provider_version(runtime_uc) {
@@ -1031,6 +1061,7 @@ function build_system_info() {
         sing_box_tiny: flags.tiny,
         sing_box_compressed,
         sing_box_tailscale: flags.tailscale,
+        sing_box_package: flags.package_name,
         zapret_version,
         zapret_installed,
         zapret2_version,
@@ -1832,6 +1863,22 @@ function automatic_latency_test(start_kind) {
         return 0;
     }
 
+    // A pending reload is a hard barrier: measuring the old sing-box process
+    // before it restarts only guarantees a PID-change interruption. Hand the
+    // reload off first. Its completion schedules exactly one worker against
+    // the final generated proxy set, so this worker must not race it.
+    if (fs.stat(PENDING_RELOAD_FILE) != null) {
+        log_message("Automatic latency test is waiting for the pending Forkop reload before taking measurements", "info");
+        if (!module_success(SERVICE_STATE_UC, [
+            "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT
+        ]) || fs.stat(PENDING_RELOAD_FILE) != null) {
+            log_message("Automatic latency test deferred because the pending Forkop reload handoff did not complete; the marker was retained", "warn");
+            return 0;
+        }
+        log_message("Automatic latency test yielded to the completed reload; the final runtime will resume it", "info");
+        return 0;
+    }
+
     let stat = as_string(fs.readfile("/proc/self/stat"));
     let separator = index(stat, " ");
     let owner_pid = separator > 0 ? substr(stat, 0, separator) : "";
@@ -1912,6 +1959,7 @@ function automatic_latency_test(start_kind) {
 
         if (completed < length(proxy_tags) && completed % batch_size == 0) {
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+            let pending_reload_requested = fs.stat(PENDING_RELOAD_FILE) != null;
             let pending_handoff = module_success(SERVICE_STATE_UC, [
                 "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT
             ]);
@@ -1931,7 +1979,13 @@ function automatic_latency_test(start_kind) {
                 if (reacquired)
                     module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
                 module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
-                log_message("Automatic latency test was interrupted by reload; the pending marker was retained for the next start", "info");
+                if (pending_reload_requested) {
+                    log_message("Automatic latency test was interrupted by reload; the pending reload will resume it after sing-box is ready", "info");
+                }
+                else {
+                    log_message("Automatic latency test was interrupted by reload; resuming automatically after sing-box is ready", "info");
+                    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "resume" ]);
+                }
                 return 0;
             }
         }

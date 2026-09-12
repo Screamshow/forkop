@@ -624,6 +624,11 @@ function start_service(reason, owner_pid) {
         command_success_from_args([ "logger", "-t", SERVICE_NAME, "[warn] Forkop start failed; scheduled an automatic retry" ]);
     }
     finish_external_service_action("start", plan.job_id, status);
+    // lifecycle.start leaves reload.pending intact because this action owns
+    // reload.lock. Hand it off only after completing the start action; the
+    // pending reload then schedules one latency worker for its final proxy set.
+    if (status == 0 && active_service_action_value() == "")
+        run_pending_reload_if_requested(PENDING_RELOAD_FILE, SERVICE_INIT);
     return status;
 }
 

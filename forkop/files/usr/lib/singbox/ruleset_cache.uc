@@ -9,6 +9,7 @@ let core_ip = require("core.ip");
 let core_url = require("core.url");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
+const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
 const CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const MANIFEST_PATH = getenv("FORKOP_RULESET_CACHE_MANIFEST") || CACHE_DIR + "/manifest.json";
 const LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forkop/list-cache";
@@ -671,9 +672,25 @@ function refresh_and_reload(proxy_address) {
     system(command_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]) + " >/dev/null 2>&1 1000>&- &");
 }
 
+function manifest_has_entries() {
+    for (let key, entry in common.object_or_empty(common.read_json_file(MANIFEST_PATH)))
+        if (as_string(common.object_or_empty(entry).url) != "")
+            return true;
+    return false;
+}
+
 function refresh_if_due_and_reload(proxy_address) {
-    if (refresh_manifest(proxy_address, true) != 0)
+    let status = refresh_manifest(proxy_address, true);
+    // At cold boot the generator may have used its empty local fallback before
+    // this persistent cache was materialized. A still-fresh cache then needs
+    // one local reload to replace that fallback with the saved rule-set; it
+    // must not trigger another network download.
+    if (status != 0 && (status != 1 || !manifest_has_entries())) {
+        // No rule-set reload follows this post-start worker. Let lifecycle
+        // release the latency barrier rather than waiting for another start.
+        system(command_from_args([ BIN_PATH, "post-start-latency" ]) + " >/dev/null 2>&1 1000>&- &");
         return;
+    }
     system(command_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]) + " >/dev/null 2>&1 1000>&- &");
 }
 

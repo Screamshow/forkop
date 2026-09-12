@@ -2341,7 +2341,7 @@ msgid "Stop checking when URLTest group is not used. Use sing-box duration forma
 msgstr ""
 
 #: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:62
-msgid "Stop Forkop"
+msgid "Stop Forkop X"
 msgstr ""
 
 #: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:3612
@@ -2381,8 +2381,8 @@ msgstr ""
 msgid "Support"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/initController.ts:183
-msgid "Support report downloaded"
+#: src/forkop/tabs/diagnostic/initController.ts:184
+msgid "Support report contains confidential information. Do not share it in public chats."
 msgstr ""
 
 #: src/forkop/tabs/dashboard/initController.ts:1718

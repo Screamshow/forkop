@@ -4817,6 +4817,10 @@ function formatSingBoxVersion(value) {
   if (isVersionPlaceholder(version)) {
     return version;
   }
+  const packageName = String(value.sing_box_package || "").trim();
+  if (packageName) {
+    return `${version} (${packageName})`;
+  }
   const normalizedValue = normalizeSingBoxVariantFields(value);
   let variant = "";
   if (normalizedValue.sing_box_extended && normalizedValue.sing_box_compressed) {
@@ -4946,6 +4950,7 @@ function applyServiceState(uiState) {
   nextSystemInfo.sing_box_tiny = uiState.capabilities.sing_box_tiny;
   nextSystemInfo.sing_box_compressed = uiState.capabilities.sing_box_compressed;
   nextSystemInfo.sing_box_tailscale = uiState.capabilities.sing_box_tailscale;
+  nextSystemInfo.sing_box_package = uiState.capabilities.sing_box_package;
   store.set({
     servicesInfoWidget: {
       loading: false,
@@ -8994,7 +8999,7 @@ function renderAvailableActions({
         classNames: ["cbi-button-remove"],
         onClick: stop.onClick,
         icon: renderCircleStopIcon24,
-        text: _("Stop Forkop"),
+        text: _("Stop Forkop X"),
         loading: stop.loading,
         disabled: stop.disabled
       })
@@ -9878,7 +9883,7 @@ async function handleDownloadSupportReport() {
       throw new Error(report.error || "Support report collection failed");
     }
     downloadSupportReport(String(report.data ?? ""));
-    showToast(_("Support report downloaded"), "success");
+    showToast(_("Support report contains confidential information. Do not share it in public chats."), "error");
   } catch (error) {
     logger.error("[DIAGNOSTIC]", "handleDownloadSupportReport - e", error);
     showToast(_("Failed to create support report"), "error");

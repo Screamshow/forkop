@@ -59,7 +59,7 @@ export function renderAvailableActions({
         classNames: ['cbi-button-remove'],
         onClick: stop.onClick,
         icon: renderCircleStopIcon24,
-        text: _('Stop Forkop'),
+        text: _('Stop Forkop X'),
         loading: stop.loading,
         disabled: stop.disabled,
       }),

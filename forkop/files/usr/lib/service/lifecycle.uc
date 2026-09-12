@@ -29,6 +29,7 @@ const RELOAD_STATE_SNAPSHOT_FILE = getenv("FORKOP_RELOAD_STATE_SNAPSHOT_FILE") |
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STATE_DIR + "/reload.pending";
 const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNTIME_STATE_DIR + "/list-update.reload";
 const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
+const POST_START_LATENCY_FILE = getenv("FORKOP_POST_START_LATENCY_FILE") || RUNTIME_STATE_DIR + "/post-start-latency.pending";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS = int(getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS") || "15");
@@ -390,13 +391,6 @@ function mark_pending_reload_if_config_changed(initial_fingerprint, reason) {
     return false;
 }
 
-function finish_reload_status(status, initial_fingerprint) {
-    status = int(status || 0);
-    if (status == 0)
-        mark_pending_reload_if_config_changed(initial_fingerprint, "config_changed_during_reload");
-    return status;
-}
-
 function module_output(module_path, args) {
     let result = module_capture(module_path, args);
     return result.status == 0 ? result.output : "";
@@ -483,6 +477,41 @@ function config_get(path, fallback) {
     if (!uci_core.exists(path))
         return as_string(fallback);
     return trim(uci_core.get(path));
+}
+
+function schedule_automatic_latency_after_runtime() {
+    if (fs.stat(PENDING_RELOAD_FILE) != null) {
+        log_message("Automatic latency test is deferred until the pending Forkop reload completes", "info");
+        return false;
+    }
+
+    let config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
+    let proxy_signature = trim(module_output(DIAGNOSTICS_UC, [
+        "proxy-outbounds-signature", config_path
+    ]));
+    if (proxy_signature == "") {
+        log_message("Automatic latency test was not scheduled because no testable proxy outbounds were found", "info");
+        return false;
+    }
+    if (!module_success(UPDATES_UC, [ "schedule-automatic-latency-test", proxy_signature ])) {
+        log_message("Automatic latency test could not be scheduled", "warn");
+        return false;
+    }
+
+    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "resume" ]);
+    return true;
+}
+
+function finish_reload_status(status, initial_fingerprint, schedule_latency) {
+    status = int(status || 0);
+    if (status == 0) {
+        mark_pending_reload_if_config_changed(initial_fingerprint, "config_changed_during_reload");
+        if (schedule_latency || fs.stat(POST_START_LATENCY_FILE) != null) {
+            remove_file(POST_START_LATENCY_FILE);
+            schedule_automatic_latency_after_runtime();
+        }
+    }
+    return status;
 }
 
 function config_set(path, value) {
@@ -988,16 +1017,13 @@ function start_impl() {
         // Serialize the two network workers. The rule-set refresh may reload
         // sing-box and must not tear down the service proxy during list I/O.
         write_file(RULESET_REFRESH_AFTER_LIST_FILE, "due\n");
+        write_file(POST_START_LATENCY_FILE, "pending\n");
         module_background(UPDATES_UC, [ "list-update-after-start" ]);
     }
     else {
         module_background(LIFECYCLE_UC, [ "refresh-rulesets-after-start" ]);
     }
     module_background(DIAGNOSTICS_UC, [ "get-system-info" ]);
-    // The worker exits immediately when no persistent pending marker exists.
-    // Scheduling it here guarantees that a reboot-interrupted test resumes
-    // only after sing-box, Clash API, and the rest of Forkop are ready.
-    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "resume" ]);
     return 0;
 }
 
@@ -1147,24 +1173,20 @@ function start() {
         return status;
     }
 
-    // Latency values live in sing-box's runtime and are lost on a real reboot.
-    // Queue a fresh pass only after the complete Forkop runtime has passed its
-    // startup verification.  schedule-automatic-latency-test coalesces an
-    // existing marker, so this also safely continues a test interrupted by a
-    // reboot instead of starting a competing worker.
-    let config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
-    let proxy_signature = trim(module_output(DIAGNOSTICS_UC, [
-        "proxy-outbounds-signature", config_path
-    ]));
-    if (proxy_signature == "") {
-        log_message("Automatic latency test was not scheduled at startup because no testable proxy outbounds were found", "info");
+    // A queued reload owns the next runtime transition. initd starts it only
+    // after this start action has released reload.lock; calling it here would
+    // deadlock the nested init.d reload handoff.
+    if (fs.stat(PENDING_RELOAD_FILE) != null) {
+        log_message("Automatic latency test is deferred until the pending Forkop reload completes", "info");
+        return 0;
     }
-    else if (!module_success(UPDATES_UC, [ "schedule-automatic-latency-test", proxy_signature ])) {
-        log_message("Automatic latency test could not be scheduled at startup", "warn");
+
+    if (fs.stat(POST_START_LATENCY_FILE) != null) {
+        log_message("Automatic latency test is deferred until the post-start list and rule-set pipeline completes", "info");
+        return 0;
     }
-    else {
-        module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "new" ]);
-    }
+
+    schedule_automatic_latency_after_runtime();
 
     return 0;
 }
@@ -1412,10 +1434,10 @@ function reload(reason) {
     if (!module_success(STATE_UC, [ "forkop-running", RT_TABLE_NAME, NFT_TABLE_NAME, NFT_FAKEIP_MARK ])) {
         if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
             log_message("Reload refused: multiple or non-procd sing-box processes were detected; preserving the existing runtime", "fatal");
-            return finish_reload_status(1, reload_config_fingerprint);
+            return finish_reload_status(1, reload_config_fingerprint, reason == "pending");
         }
         log_message("Runtime state is incomplete; restarting Forkop runtime", "info");
-        return finish_reload_status(restart_runtime_for_reload(), reload_config_fingerprint);
+        return finish_reload_status(restart_runtime_for_reload(), reload_config_fingerprint, reason == "pending");
     }
 
     remove_file(RELOAD_STATE_SNAPSHOT_FILE);
@@ -1468,7 +1490,7 @@ function reload(reason) {
     if (plan_result.status != 0) {
         if (plan_result.status == 2) {
             log_message("Reload state is unavailable; restarting Forkop runtime", "info");
-            return finish_reload_status(restart_runtime_for_reload(), reload_config_fingerprint);
+            return finish_reload_status(restart_runtime_for_reload(), reload_config_fingerprint, reason == "pending");
         }
         return abort_reload(plan_result.status, false);
     }
@@ -1496,7 +1518,7 @@ function reload(reason) {
         ]);
         if (status == 0)
             log_message("Reload skipped: runtime-relevant configuration is unchanged", "info");
-        return finish_reload_status(status, reload_config_fingerprint);
+        return finish_reload_status(status, reload_config_fingerprint, reason == "pending");
     }
 
     let actions = reload_actions_summary(plan);
@@ -1688,7 +1710,7 @@ function reload(reason) {
         RULE_CONDITION_CACHE_DIR,
         "1",
         "1"
-    ]), reload_config_fingerprint);
+    ]), reload_config_fingerprint, reason == "pending");
     if (status != 0)
         return status;
 
@@ -1892,6 +1914,18 @@ function enable_service() {
     return command_status_from_args([ SERVICE_INIT, "enable" ]);
 }
 
+function post_start_latency() {
+    if (fs.stat(POST_START_LATENCY_FILE) == null)
+        return 0;
+    if (fs.stat(PENDING_RELOAD_FILE) != null) {
+        log_message("Automatic latency test remains deferred while the post-start pipeline hands off a pending reload", "info");
+        return 0;
+    }
+    remove_file(POST_START_LATENCY_FILE);
+    schedule_automatic_latency_after_runtime();
+    return 0;
+}
+
 function disable_service() {
     return command_status_from_args([ SERVICE_INIT, "disable" ]);
 }
@@ -1921,6 +1955,8 @@ else if (mode == "refresh-rulesets-after-start") {
     refresh_rulesets_after_start();
     status = 0;
 }
+else if (mode == "post-start-latency")
+    status = post_start_latency();
 else if (mode == "enable")
     status = enable_service();
 else if (mode == "disable")

@@ -9,6 +9,9 @@ MIRROR="${FORKOP_MIRROR_BASE_URL:-}"
 if [ -z "$MIRROR" ]; then MIRROR="$(uci -q get forkop.settings.mirror_base_url 2>/dev/null || true)"; fi
 MIRROR="${MIRROR:-https://mirror.51343.ru}"
 BIN="$ROOT/usr/bin/forkop"
+TORRSERVER_DIRECT_INIT="$ROOT/etc/init.d/forkop-torrserver-direct"
+TORRSERVER_DIRECT_UC="$ROOT/usr/lib/forkop/torrserver/direct.uc"
+UCODE_BIN="$ROOT/usr/bin/ucode"
 LOCK="$ROOT/tmp/forkop-full-uninstall.lock"
 COMPONENT_LOCK="$ROOT/var/run/forkop/component-action.lock"
 PACKAGES="luci-i18n-forkop-ru luci-app-forkop forkop sing-box sing-box-tiny sing-box-extended"
@@ -81,6 +84,17 @@ run() {
         "$ROOT/etc/init.d/forkop" disable
     fi
     if [ -x "$BIN" ]; then "$BIN" dnsmasq_restore; fi
+    # Direct proxy is served by the Forkop-managed sing-box runtime, so
+    # stopping Forkop above closes its listener. TorrServer Direct owns a
+    # separate service and nftables table: stop both explicitly before its
+    # configuration and binaries disappear.
+    if [ -x "$TORRSERVER_DIRECT_INIT" ]; then
+        "$TORRSERVER_DIRECT_INIT" stop || true
+        "$TORRSERVER_DIRECT_INIT" disable || true
+    fi
+    if [ -x "$UCODE_BIN" ] && [ -f "$TORRSERVER_DIRECT_UC" ]; then
+        "$UCODE_BIN" -L "$ROOT/usr/lib/forkop" "$TORRSERVER_DIRECT_UC" remove || true
+    fi
     if [ -x "$ROOT/etc/init.d/sing-box" ]; then
         "$ROOT/etc/init.d/sing-box" stop
         "$ROOT/etc/init.d/sing-box" disable
@@ -123,7 +137,8 @@ run() {
         /etc/config/sing-box.apk-old /etc/config/sing-box-opkg /etc/config/sing-box.opkg-new \
         /etc/config/sing-box.opkg-old /etc/config/sing-box.opkg-dist \
         /usr/bin/forkop /usr/bin/sing-box /usr/lib/libcronet.so \
-        /etc/init.d/forkop /etc/init.d/sing-box /etc/uci-defaults/50_luci-forkop \
+        /etc/init.d/forkop /etc/init.d/sing-box /etc/init.d/forkop-torrserver-direct \
+        /etc/uci-defaults/50_luci-forkop \
         /usr/share/luci/menu.d/luci-app-forkop.json /usr/share/rpcd/acl.d/luci-app-forkop.json; do
         rm -f "$ROOT$file"
     done

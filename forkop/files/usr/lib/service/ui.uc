@@ -880,9 +880,34 @@ function marker_is(expected) {
     return first_line(SING_BOX_VARIANT_STATE_FILE) == as_string(expected);
 }
 
+function apk_package_installed(package_name) {
+    let installed = command_output_from_args([ "apk", "list", "--installed", "--manifest" ]);
+    for (let line in split(installed, "\n")) {
+        let fields = split(trim(as_string(line)), /[ \t]+/);
+        if (as_string(fields[0]) == as_string(package_name))
+            return true;
+    }
+    return false;
+}
+
+function installed_sing_box_package_name() {
+    for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ])
+        if (apk_package_installed(package_name))
+            return package_name;
+
+    let installed = command_output_from_args([ "opkg", "list-installed" ]);
+    for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ]) {
+        for (let line in split(installed, "\n"))
+            if (split(trim(as_string(line)), /[ \t]+/)[0] == package_name)
+                return package_name;
+    }
+
+    return "";
+}
+
 function tiny_package_installed() {
     if (command_success_from_args([ "sh", "-c", "command -v apk" ]))
-        return command_success_from_args([ "apk", "info", "-e", "sing-box-tiny" ]);
+        return apk_package_installed("sing-box-tiny");
 
     let installed = command_output_from_args([ "opkg", "list-installed" ]);
     for (let line in split(installed, "\n"))
@@ -1017,28 +1042,41 @@ function capability_flags() {
         sing_box_tiny: 0,
         sing_box_compressed: 0,
         sing_box_tailscale: 0,
+        sing_box_package: "",
         zapret_installed: file_executable(ZAPRET_PROVIDER_NFQWS_BIN) ? 1 : 0,
         zapret2_installed: file_executable(ZAPRET2_PROVIDER_NFQWS2_BIN) ? 1 : 0,
         byedpi_installed: file_executable(BYEDPI_BIN) ? 1 : 0
     };
 
     if (file_executable(SING_BOX_BIN_PATH)) {
-        if (marker_is("extended-compressed")) {
+        result.sing_box_package = installed_sing_box_package_name();
+        // A manually installed regular package supersedes a persisted variant
+        // marker from a previous Forkop-managed Tiny/Extended installation.
+        // Package-manager state is authoritative for this case.
+        let regular_installed = result.sing_box_package == "sing-box";
+        if (result.sing_box_package == "sing-box-extended") {
+            result.sing_box_extended = 1;
+            result.sing_box_tailscale = 1;
+        }
+        else if (result.sing_box_package == "sing-box-tiny") {
+            result.sing_box_tiny = 1;
+        }
+        else if (!regular_installed && marker_is("extended-compressed")) {
             result.sing_box_extended = 1;
             result.sing_box_compressed = 1;
             result.sing_box_tailscale = 1;
         }
-        else if (marker_is("extended")) {
+        else if (!regular_installed && marker_is("extended")) {
             result.sing_box_extended = 1;
             result.sing_box_tailscale = 1;
         }
-        else if (marker_is("tiny") || tiny_package_installed()) {
+        else if (!regular_installed && (marker_is("tiny") || tiny_package_installed())) {
             result.sing_box_tiny = 1;
         }
-        else if (component_action_running_for("sing_box")) {
+        else if (!regular_installed && component_action_running_for("sing_box")) {
             result.sing_box_tailscale = 1;
         }
-        else {
+        else if (!regular_installed) {
             let info = sing_box_version_info();
             if (info != null && index(info.version, "extended") >= 0) {
                 result.sing_box_extended = 1;

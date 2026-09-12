@@ -599,8 +599,13 @@ function fetch_github_releases_json(owner, repo, per_page) {
 }
 
 function forkop_update_channel() {
-    let channel = trim(uci_core.get(CONFIG_NAME + ".settings.update_channel"));
-    return channel == "canary" ? "canary" : "stable";
+    // A stable build may have inherited update_channel=canary while it was
+    // upgraded from a canary release. Never let that stale setting make a
+    // stable installation consume pre-release metadata.
+    if (match(FORKOP_VERSION, /-canary[.][0-9]+$/) == null)
+        return "stable";
+
+    return "canary";
 }
 
 function latest_forkop_release_json() {

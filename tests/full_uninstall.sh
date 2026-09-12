@@ -8,7 +8,8 @@ trap 'rm -rf "$WORK"' EXIT
 fixture() {
     ROOT="$WORK/$1"
     mkdir -p "$ROOT/etc/opkg" "$ROOT/usr/bin" "$ROOT/bin" "$ROOT/packages" \
-        "$ROOT/etc/forkop" "$ROOT/etc/sing-box" "$ROOT/etc/config" "$ROOT/usr/lib/forkop"
+        "$ROOT/etc/forkop" "$ROOT/etc/sing-box" "$ROOT/etc/config" "$ROOT/etc/init.d" \
+        "$ROOT/usr/lib/forkop/torrserver"
     printf 'original vendor repositories\n' > "$ROOT/etc/opkg/distfeeds.conf.pre-forkop-mirror"
     printf 'https://mirror.51343.ru/openwrt/releases/test\n' > "$ROOT/etc/opkg/distfeeds.conf"
     printf 'wifi configuration\n' > "$ROOT/etc/config/wireless"
@@ -19,12 +20,22 @@ fixture() {
     touch "$ROOT/etc/config/sing-box.apk-new" "$ROOT/etc/config/sing-box.apk-old" \
         "$ROOT/etc/config/sing-box-opkg" "$ROOT/etc/config/sing-box.opkg-new" \
         "$ROOT/etc/config/sing-box.opkg-old" "$ROOT/etc/config/sing-box.opkg-dist"
-    touch "$ROOT/etc/forkop/secret" "$ROOT/etc/sing-box/config.json" "$ROOT/usr/lib/forkop/test"
-    touch "$ROOT/packages/forkop" "$ROOT/packages/luci-app-forkop" "$ROOT/packages/sing-box"
+    touch "$ROOT/etc/forkop/secret" "$ROOT/etc/sing-box/config.json" "$ROOT/usr/lib/forkop/test" \
+        "$ROOT/usr/lib/forkop/torrserver/direct.uc" "$ROOT/usr/bin/sing-box"
+    touch "$ROOT/packages/forkop" "$ROOT/packages/luci-app-forkop" "$ROOT/packages/sing-box" \
+        "$ROOT/packages/sing-box-tiny" "$ROOT/packages/sing-box-extended"
     cat > "$ROOT/usr/bin/forkop" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
 exit "${FAIL_STOP:-0}"
+SH
+    cat > "$ROOT/etc/init.d/forkop-torrserver-direct" <<'SH'
+#!/bin/sh
+printf 'torrserver-direct %s\n' "$1" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
+SH
+    cat > "$ROOT/usr/bin/ucode" <<'SH'
+#!/bin/sh
+printf 'torrserver-direct-rule %s\n' "$*" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
 SH
     cat > "$ROOT/bin/opkg" <<'SH'
 #!/bin/sh
@@ -37,7 +48,8 @@ case "$1" in
  *) exit 1;;
 esac
 SH
-    chmod +x "$ROOT/usr/bin/forkop" "$ROOT/bin/opkg"
+    chmod +x "$ROOT/usr/bin/forkop" "$ROOT/usr/bin/ucode" \
+        "$ROOT/etc/init.d/forkop-torrserver-direct" "$ROOT/bin/opkg"
 }
 
 run_case() {
@@ -58,6 +70,9 @@ run_case complete
 grep -qx 'original vendor repositories' "$ROOT/etc/opkg/distfeeds.conf"
 [ ! -e "$ROOT/usr/lib/forkop" ] && [ ! -e "$ROOT/etc/forkop" ] && [ ! -e "$ROOT/etc/sing-box" ]
 [ ! -e "$ROOT/packages/forkop" ]
+[ ! -e "$ROOT/packages/sing-box" ] && [ ! -e "$ROOT/packages/sing-box-tiny" ] && \
+    [ ! -e "$ROOT/packages/sing-box-extended" ]
+[ ! -e "$ROOT/usr/bin/sing-box" ]
 grep -qx 'wifi configuration' "$ROOT/etc/config/wireless"
 [ -e "$ROOT/etc/config/wireless.apk-new" ]
 for file in forkop.apk-new forkop.apk-old forkop-opkg forkop.opkg-new forkop.opkg-old \
@@ -66,6 +81,11 @@ for file in forkop.apk-new forkop.apk-old forkop-opkg forkop.opkg-new forkop.opk
     [ ! -e "$ROOT/etc/config/$file" ]
 done
 grep -qx dnsmasq_restore "$ROOT/service-calls"
+grep -qx 'torrserver-direct stop' "$ROOT/service-calls"
+grep -qx 'torrserver-direct disable' "$ROOT/service-calls"
+grep -Fq 'torrserver-direct-rule ' "$ROOT/service-calls"
+grep -Fq 'torrserver/direct.uc remove' "$ROOT/service-calls"
+[ ! -e "$ROOT/etc/init.d/forkop-torrserver-direct" ]
 
 fixture missing_backup
 rm "$ROOT/etc/opkg/distfeeds.conf.pre-forkop-mirror"

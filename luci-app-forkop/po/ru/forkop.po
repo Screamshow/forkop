@@ -1628,8 +1628,8 @@ msgstr "Запустить Forkop"
 msgid "Stop checking when URLTest group is not used. Use sing-box duration format like 1d, 12h or 30m."
 msgstr "Останавливать проверку если URLTest группа не используется. Используйте формат длительности sing-box, например 1d, 12h или 30m."
 
-msgid "Stop Forkop"
-msgstr "Остановить Forkop"
+msgid "Stop Forkop X"
+msgstr "Остановить Forkop X"
 
 msgid "Subnets from the list will be extracted and added to nftables"
 msgstr "IP-адреса и подсети из списка будут извлечены и добавлены в nftables"
@@ -1658,8 +1658,8 @@ msgstr "Подписки обновлены"
 msgid "Support"
 msgstr "Поддержка"
 
-msgid "Support report downloaded"
-msgstr "Отчёт для поддержки скачан"
+msgid "Support report contains confidential information. Do not share it in public chats."
+msgstr "Отчёт содержит конфиденциальную информацию. Не публикуйте его в открытых чатах."
 
 msgid "System info"
 msgstr "Системная информация"

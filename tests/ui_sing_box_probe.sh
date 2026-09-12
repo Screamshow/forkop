@@ -38,7 +38,14 @@ SH
 chmod 755 "$PROBE_BIN"
 cat >"$WORK_DIR/apk" <<'SH'
 #!/bin/sh
-if [ "$1" = "info" ] && [ "$2" = "-e" ] && [ "$3" = "sing-box" ] && [ "${FORKOP_TEST_SING_BOX_REGULAR_PACKAGE:-0}" = "1" ]; then
+if [ "$1" = "list" ] && [ "$2" = "--installed" ] && [ "$3" = "--manifest" ]; then
+  if [ "${FORKOP_TEST_SING_BOX_REGULAR_PACKAGE:-0}" = "1" ]; then
+    printf '%s\n' 'sing-box 1.13.14-r1'
+  elif [ "${FORKOP_TEST_SING_BOX_EXTENDED_PACKAGE:-0}" = "1" ]; then
+    printf '%s\n' 'sing-box-extended 1.13.14-r1'
+  elif [ "${FORKOP_TEST_SING_BOX_TINY_PACKAGE:-0}" = "1" ]; then
+    printf '%s\n' 'sing-box-tiny 1.13.14-r1'
+  fi
   exit 0
 fi
 exit 1
@@ -149,13 +156,38 @@ FORKOP_TEST_SING_BOX_PROBE_MODE=fast ui_capabilities >/dev/null
   fail "stale probe lock was not cleaned after the subsequent probe"
 
 # A manually installed regular APK package has neither the Tiny package name
-# nor the Tailscale build tag. It must remain a regular build in UI status.
+# nor the Tailscale build tag. A stale Tiny marker from the previous managed
+# installation must not override its package-manager identity.
 rm -f "$CACHE_FILE"
+printf 'tiny\n' >"$WORK_DIR/missing-variant"
 regular_package="$(FORKOP_TEST_SING_BOX_PROBE_MODE=fast FORKOP_TEST_SING_BOX_PROBE_TAGS=with_quic FORKOP_TEST_SING_BOX_REGULAR_PACKAGE=1 ui_capabilities)"
 JSON_VALUE="$regular_package" node - <<'NODE'
 const value = JSON.parse(process.env.JSON_VALUE);
-if (value.sing_box_extended !== 0 || value.sing_box_tiny !== 0 || value.sing_box_tailscale !== 0) {
+if (value.sing_box_package !== 'sing-box' || value.sing_box_extended !== 0 || value.sing_box_tiny !== 0 || value.sing_box_tailscale !== 0) {
   console.error('regular sing-box package must not be labelled tiny or extended');
+  process.exit(1);
+}
+NODE
+rm -f "$WORK_DIR/missing-variant"
+
+# Tiny provides the virtual sing-box dependency in APK, so its exact package
+# name must be checked instead of `apk info -e sing-box`.
+rm -f "$CACHE_FILE"
+tiny_package="$(FORKOP_TEST_SING_BOX_PROBE_MODE=fast FORKOP_TEST_SING_BOX_TINY_PACKAGE=1 ui_capabilities)"
+JSON_VALUE="$tiny_package" node - <<'NODE'
+const value = JSON.parse(process.env.JSON_VALUE);
+if (value.sing_box_package !== 'sing-box-tiny' || value.sing_box_extended !== 0 || value.sing_box_tiny !== 1 || value.sing_box_tailscale !== 0) {
+  console.error('tiny sing-box package must be labelled tiny');
+  process.exit(1);
+}
+NODE
+
+rm -f "$CACHE_FILE"
+extended_package="$(FORKOP_TEST_SING_BOX_PROBE_MODE=fast FORKOP_TEST_SING_BOX_EXTENDED_PACKAGE=1 ui_capabilities)"
+JSON_VALUE="$extended_package" node - <<'NODE'
+const value = JSON.parse(process.env.JSON_VALUE);
+if (value.sing_box_package !== 'sing-box-extended' || value.sing_box_extended !== 1 || value.sing_box_tiny !== 0) {
+  console.error('extended sing-box package must be labelled extended');
   process.exit(1);
 }
 NODE
