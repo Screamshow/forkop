@@ -60,6 +60,7 @@ const HELPERS_UC = LIB_DIR + "/core/helpers.uc";
 const PACKAGES_UC = LIB_DIR + "/core/packages.uc";
 const DNS_APPLY_UC = LIB_DIR + "/dns/apply.uc";
 const SERVICE_STATE_UC = getenv("FORKOP_SERVICE_STATE_UC") || LIB_DIR + "/service/state.uc";
+const DIAGNOSTICS_RUNTIME_UC = getenv("FORKOP_DIAGNOSTICS_RUNTIME_UC") || LIB_DIR + "/diagnostics/runtime.uc";
 const SERVICE_UI_UC = LIB_DIR + "/service/ui.uc";
 const SUBSCRIPTION_CACHE_UC = LIB_DIR + "/subscription/cache.uc";
 const PROVIDERS_STATUS_UC = LIB_DIR + "/providers/status.uc";
@@ -1775,6 +1776,21 @@ function automatic_latency_remove_marker(signature) {
         remove_file(AUTOMATIC_LATENCY_PENDING_FILE);
 }
 
+// reload.pending belongs to init.d. A latency worker only releases its locks
+// and asks init.d to apply the request; the completed lifecycle schedules the
+// one replacement worker against its final proxy generation.
+function automatic_latency_yield_to_pending_reload() {
+    return system(shell_quote(SERVICE_INIT) + " reload pending </dev/null >/dev/null 2>&1 1000>&-") == 0;
+}
+
+function automatic_latency_schedule_resume() {
+    let command = command_from_args([
+        "ucode", "-L", LIB_DIR, DIAGNOSTICS_RUNTIME_UC,
+        "automatic-latency-test", "resume"
+    ]) + " </dev/null >/dev/null 2>&1 &";
+    return system(command) == 0;
+}
+
 function automatic_latency_record_failure(signature) {
     let marker = automatic_latency_pending_marker();
     if (marker == null || as_string(marker.signature) != as_string(signature))
@@ -1969,13 +1985,8 @@ function automatic_latency_test(start_kind) {
     // the final generated proxy set, so this worker must not race it.
     if (fs.stat(PENDING_RELOAD_FILE) != null) {
         log_message("Automatic latency test is waiting for the pending Forkop reload before taking measurements", "info");
-        if (!module_success(SERVICE_STATE_UC, [
-            "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT
-        ]) || fs.stat(PENDING_RELOAD_FILE) != null) {
-            log_message("Automatic latency test deferred because the pending Forkop reload handoff did not complete; the marker was retained", "warn");
-            return 0;
-        }
-        log_message("Automatic latency test yielded to the completed reload; the final runtime will resume it", "info");
+        automatic_latency_yield_to_pending_reload();
+        log_message("Automatic latency test yielded to the pending reload; the final runtime will resume it", "info");
         return 0;
     }
 
@@ -2067,14 +2078,10 @@ function automatic_latency_test(start_kind) {
         if (completed < length(proxy_tags) && completed % batch_size == 0) {
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
             let pending_reload_requested = fs.stat(PENDING_RELOAD_FILE) != null;
-            let pending_handoff = module_success(SERVICE_STATE_UC, [
-                "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT
-            ]);
-            // A failed handoff retains the durable request. Yield instead of
-            // reclaiming runtime coordination ahead of it.
-            if (!pending_handoff || fs.stat(PENDING_RELOAD_FILE) != null) {
+            if (pending_reload_requested) {
                 module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
-                log_message("Automatic latency test yielded to a pending Forkop reload handoff", "info");
+                automatic_latency_yield_to_pending_reload();
+                log_message("Automatic latency test yielded to a pending Forkop reload", "info");
                 return 0;
             }
             command_success_from_args([ "sleep", AUTOMATIC_LATENCY_BATCH_PAUSE ]);
@@ -2091,7 +2098,7 @@ function automatic_latency_test(start_kind) {
                 }
                 else {
                     log_message("Automatic latency test was interrupted by reload; resuming automatically after sing-box is ready", "info");
-                    module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "resume" ]);
+                    automatic_latency_schedule_resume();
                 }
                 return 0;
             }

@@ -263,6 +263,24 @@ function consume_pending_reload(path) {
     return true;
 }
 
+function first_line_value(path) {
+    let data = fs.readfile(path);
+    if (data == null)
+        return "";
+
+    let newline = index(data, "\n");
+    return newline >= 0 ? substr(data, 0, newline) : data;
+}
+
+function pid_alive(pid) {
+    pid = as_string(pid);
+    return match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
+}
+
+function package_upgrade_quiescing() {
+    return pid_alive(first_line_value(PACKAGE_UPGRADE_QUIESCE_FILE));
+}
+
 function run_pending_reload_if_requested(path, init_script) {
     path = as_string(path || DEFAULT_PENDING_RELOAD_FILE);
     init_script = as_string(init_script || DEFAULT_SERVICE_INIT);
@@ -286,24 +304,6 @@ function run_pending_reload_if_requested(path, init_script) {
     }
 
     return true;
-}
-
-function first_line_value(path) {
-    let data = fs.readfile(path);
-    if (data == null)
-        return "";
-
-    let newline = index(data, "\n");
-    return newline >= 0 ? substr(data, 0, newline) : data;
-}
-
-function pid_alive(pid) {
-    pid = as_string(pid);
-    return match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
-}
-
-function package_upgrade_quiescing() {
-    return pid_alive(first_line_value(PACKAGE_UPGRADE_QUIESCE_FILE));
 }
 
 function lock_dir_write_owner(lock_dir, owner_pid) {

@@ -42,6 +42,10 @@ grep -Fq '"acquire-runtime-dir-lock-wait-until-package-upgrade", RELOAD_LOCK_DIR
   fail "automatic latency test must serialize against Forkop reload and package upgrades"
 grep -Fq 'package_upgrade_quiescing()' "$ROOT_DIR/forkop/files/usr/lib/service/state.uc" ||
   fail "queued reloads must yield while package pre-upgrade owns the transition"
+state_quiesce_line=$(grep -n 'function package_upgrade_quiescing()' "$ROOT_DIR/forkop/files/usr/lib/service/state.uc" | head -1 | cut -d: -f1)
+state_handoff_line=$(grep -n 'function run_pending_reload_if_requested' "$ROOT_DIR/forkop/files/usr/lib/service/state.uc" | head -1 | cut -d: -f1)
+[ -n "$state_quiesce_line" ] && [ -n "$state_handoff_line" ] && [ "$state_quiesce_line" -lt "$state_handoff_line" ] ||
+  fail "pending reload handoff must not call a helper declared later in ucode"
 grep -Fq 'begin_upgrade_quiesce(action)' "$ROOT_DIR/forkop/files/usr/lib/service/package.uc" ||
   fail "package pre-upgrade must quiesce background runtime workers"
 grep -Fq '"single-ready-sing-box-runtime"' "$DIAGNOSTICS_UC" ||
@@ -52,8 +56,15 @@ grep -Fq 'Automatic latency test is already scheduled or running; coalescing the
   fail "duplicate automatic latency requests must coalesce"
 grep -Fq 'completed % batch_size == 0' "$DIAGNOSTICS_UC" ||
   fail "automatic latency warm-up must yield between bounded batches"
-grep -Fq 'run-pending-reload-if-requested' "$DIAGNOSTICS_UC" ||
-  fail "automatic latency warm-up must yield to pending reloads between batches"
+grep -Fq 'automatic_latency_yield_to_pending_reload()' "$DIAGNOSTICS_UC" ||
+  fail "automatic latency warm-up must hand pending reload ownership to init.d"
+grep -Fq 'function automatic_latency_schedule_resume()' "$DIAGNOSTICS_UC" ||
+  fail "automatic latency resume must use its local background launcher"
+if grep -Fq 'module_background(' "$DIAGNOSTICS_UC"; then
+  fail "diagnostics runtime cannot call lifecycle-only module_background"
+fi
+grep -Fq 'consume_pending_reload(PENDING_RELOAD_FILE);' "$ROOT_DIR/forkop/files/usr/lib/service/initd.uc" ||
+  fail "the init.d pending reload owner must consume its marker before starting"
 grep -Fq 'Automatic latency test is waiting for the pending Forkop reload before taking measurements' "$DIAGNOSTICS_UC" ||
   fail "automatic latency must not measure before a startup pending reload"
 grep -Fq 'the final runtime will resume it' "$DIAGNOSTICS_UC" ||
@@ -71,7 +82,7 @@ grep -Fq 'automatic_latency_record_failure(pending_signature)' "$DIAGNOSTICS_UC"
   fail "failed latency tests must retain a marker with retry state"
 grep -Fq 'AUTOMATIC_LATENCY_RETRY_BASE_SECONDS' "$DIAGNOSTICS_UC" ||
   fail "Clash API failures must have a retry pause"
-grep -Fq 'module_background(DIAGNOSTICS_UC, [ "automatic-latency-test", "resume" ])' "$DIAGNOSTICS_UC" ||
+grep -Fq 'automatic_latency_schedule_resume();' "$DIAGNOSTICS_UC" ||
   fail "reload interruption must schedule its own resume worker"
 grep -Fq 'the pending reload will resume it after sing-box is ready' "$DIAGNOSTICS_UC" ||
   fail "pending reload must own the single automatic test resume"

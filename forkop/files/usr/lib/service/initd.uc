@@ -697,6 +697,10 @@ function reload_begin_value(reason, owner_pid, runtime_running_value, service_en
             return { action: "skip", job_id: "" };
         }
 
+        // The init.d action which acquired reload.lock owns this request.
+        // Consume its marker before beginning the lifecycle so reload_finish()
+        // only observes requests that arrived while this reload was active.
+        consume_pending_reload(PENDING_RELOAD_FILE);
         unlink_file(SERVICE_TRIGGER_SYNC_FILE);
         let job_id = begin_external_service_action("reload", "initd", owner_pid);
         return { action: "run", job_id };
