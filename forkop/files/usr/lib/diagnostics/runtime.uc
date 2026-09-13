@@ -2041,7 +2041,7 @@ function automatic_latency_test(start_kind) {
     }
 
     log_message((as_string(start_kind) == "resume" ? "Resuming interrupted" : "Starting new") +
-        " automatic latency test for " + length(proxy_tags) + " proxy outbounds", "info");
+        " automatic latency test for " + length(proxy_tags) + " independent proxy outbounds", "info");
     let status = 0;
     let completed = 0;
     let batch_size = AUTOMATIC_LATENCY_BATCH_SIZE > 0 ? AUTOMATIC_LATENCY_BATCH_SIZE : 4;
