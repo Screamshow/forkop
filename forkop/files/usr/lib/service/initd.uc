@@ -513,7 +513,12 @@ function retry_start_on_wan_up(owner_pid) {
     // A failed cold start has no Forkop runtime to tear down. Re-enter the
     // guarded start path so foreign/ambiguous sing-box processes remain
     // untouched instead of using restart's destructive stop phase.
-    return command_status_from_args([ SERVICE_INIT, "start", "triggered" ]);
+    let status = command_status_from_args([ SERVICE_INIT, "start", "triggered" ]);
+    if (status == 0)
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[info] Forkop recovered automatically after a failed start" ]);
+    else
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[error] Forkop automatic recovery attempt failed; see the preceding startup logs" ]);
+    return status;
 }
 
 function badwan_interface_monitored(settings, interface_name) {

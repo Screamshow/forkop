@@ -7,6 +7,7 @@ import {
   LogNotificationDeduper,
   ForkopLogNotification,
 } from './logNotificationDeduper.service';
+import { StartRecoveryNotificationController } from './startRecoveryNotification.service';
 import { ForkopShellMethods } from '../methods';
 import {
   registerRuntimeStateResumeRefresh,
@@ -48,6 +49,26 @@ function showLogNotification(notification: ForkopLogNotification) {
     return;
   }
 
+  if (notification.kind === 'start-recovery-pending') {
+    ui.addNotification(
+      _('Forkop is restarting automatically'),
+      E('div', {}, _('A startup attempt was interrupted. Forkop will retry automatically; no action is needed yet.')),
+      'warning',
+      'fkp-start-recovery-notification',
+    );
+    return;
+  }
+
+  if (notification.kind === 'start-recovery-succeeded') {
+    ui.addNotification(
+      _('Forkop recovered automatically'),
+      E('div', {}, _('Forkop restarted successfully after a temporary startup failure.')),
+      'success',
+      'fkp-start-recovery-notification',
+    );
+    return;
+  }
+
   ui.addNotification(
     _('Forkop Error'),
     E('div', {}, notification.line),
@@ -69,6 +90,9 @@ export function coreService(options: CoreServiceOptions = {}) {
 
   const watcher = ForkopLogWatcher.getInstance();
   const logNotificationDeduper = new LogNotificationDeduper();
+  const startRecoveryNotifications = new StartRecoveryNotificationController(
+    showLogNotification,
+  );
 
   watcher.init(
     async () => {
@@ -83,6 +107,9 @@ export function coreService(options: CoreServiceOptions = {}) {
     {
       intervalMs: LOG_WATCHER_INTERVAL_MS,
       onNewLog: (line) => {
+        if (startRecoveryNotifications.handle(line)) {
+          return;
+        }
         if (logNotificationDeduper.shouldNotify(line)) {
           const notification = getForkopLogNotification(line);
           if (notification) {

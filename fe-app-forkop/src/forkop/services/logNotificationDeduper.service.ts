@@ -3,6 +3,8 @@ const MAX_STORED_LOG_NOTIFICATIONS = 500;
 
 export type ForkopLogNotification =
   | { kind: 'error'; line: string }
+  | { kind: 'start-recovery-pending'; line: string }
+  | { kind: 'start-recovery-succeeded'; line: string }
   | {
       kind: 'component-update';
       line: string;

@@ -1149,6 +1149,30 @@ function start() {
         return 1;
     }
 
+    // Package installation can queue a second init.d start while the first
+    // one is still building its runtime. initd serializes both calls with
+    // reload.lock, so by the time this call acquires it the first start may
+    // already have completed. Treat that coherent, sole procd-owned runtime
+    // as a successful idempotent start. Without this check the second call
+    // reaches start_managed_sing_box_and_verify() with a live sing-box and
+    // incorrectly classifies the first start's process as unexpected.
+    //
+    // Do not relax the ownership safety rule: the full stable-runtime
+    // predicate requires the sole procd-owned process, ready listeners and
+    // Clash API, plus Forkop's nftables/routing state. A partial or foreign
+    // runtime continues through the guarded cold-start path and fails closed.
+    if (module_success(STATE_UC, [
+        "forkop-stably-running",
+        RT_TABLE_NAME,
+        NFT_TABLE_NAME,
+        NFT_FAKEIP_MARK,
+        as_string(RUNTIME_STABLE_MIN_AGE)
+    ])) {
+        log_message("Forkop is already stably running; treating duplicate start as successful", "info");
+        release_start_subscription_update_lock();
+        return 0;
+    }
+
     let status = start_impl();
     release_start_subscription_update_lock();
 

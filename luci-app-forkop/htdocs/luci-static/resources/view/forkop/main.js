@@ -4766,6 +4766,47 @@ var LogNotificationDeduper = class {
   }
 };
 
+// src/forkop/services/startRecoveryNotification.service.ts
+function isRecoverableStartFailureLog(line) {
+  const lower = line.toLowerCase();
+  return lower.includes("controlled sing-box transition refused:") || lower.includes("sing-box did not reach a stable running state after start");
+}
+function isRetryScheduledLog(line) {
+  return line.includes("Forkop start failed; scheduled an automatic retry");
+}
+function isRecoverySucceededLog(line) {
+  return line.includes("Forkop recovered automatically after a failed start");
+}
+function isRecoveryFailedLog(line) {
+  return line.includes("Forkop automatic recovery attempt failed") || line.includes("Forkop startup retry suppressed");
+}
+var StartRecoveryNotificationController = class {
+  constructor(emit) {
+    this.emit = emit;
+  }
+  handle(line) {
+    if (isRecoverableStartFailureLog(line)) {
+      this.pendingFailure || (this.pendingFailure = { kind: "error", line });
+      return true;
+    }
+    if (isRetryScheduledLog(line)) {
+      this.pendingFailure = void 0;
+      this.emit({ kind: "start-recovery-pending", line });
+      return true;
+    }
+    if (isRecoverySucceededLog(line)) {
+      this.pendingFailure = void 0;
+      this.emit({ kind: "start-recovery-succeeded", line });
+      return true;
+    }
+    if (isRecoveryFailedLog(line)) {
+      this.pendingFailure = void 0;
+      return false;
+    }
+    return false;
+  }
+};
+
 // src/forkop/helpers/getComponentActionKey.ts
 var componentActionKeyMap = {
   "forkop:check_update": "forkopCheck",
@@ -4816,10 +4857,6 @@ function formatSingBoxVersion(value) {
   }
   if (isVersionPlaceholder(version)) {
     return version;
-  }
-  const packageName = String(value.sing_box_package || "").trim();
-  if (packageName) {
-    return `${version} (${packageName})`;
   }
   const normalizedValue = normalizeSingBoxVariantFields(value);
   let variant = "";
@@ -4950,7 +4987,6 @@ function applyServiceState(uiState) {
   nextSystemInfo.sing_box_tiny = uiState.capabilities.sing_box_tiny;
   nextSystemInfo.sing_box_compressed = uiState.capabilities.sing_box_compressed;
   nextSystemInfo.sing_box_tailscale = uiState.capabilities.sing_box_tailscale;
-  nextSystemInfo.sing_box_package = uiState.capabilities.sing_box_package;
   store.set({
     servicesInfoWidget: {
       loading: false,
@@ -5184,6 +5220,24 @@ function showLogNotification(notification) {
     );
     return;
   }
+  if (notification.kind === "start-recovery-pending") {
+    ui.addNotification(
+      _("Forkop is restarting automatically"),
+      E("div", {}, _("A startup attempt was interrupted. Forkop will retry automatically; no action is needed yet.")),
+      "warning",
+      "fkp-start-recovery-notification"
+    );
+    return;
+  }
+  if (notification.kind === "start-recovery-succeeded") {
+    ui.addNotification(
+      _("Forkop recovered automatically"),
+      E("div", {}, _("Forkop restarted successfully after a temporary startup failure.")),
+      "success",
+      "fkp-start-recovery-notification"
+    );
+    return;
+  }
   ui.addNotification(
     _("Forkop Error"),
     E("div", {}, notification.line),
@@ -5203,6 +5257,9 @@ function coreService(options = {}) {
   });
   const watcher = ForkopLogWatcher.getInstance();
   const logNotificationDeduper = new LogNotificationDeduper();
+  const startRecoveryNotifications = new StartRecoveryNotificationController(
+    showLogNotification
+  );
   watcher.init(
     async () => {
       const logs = await ForkopShellMethods.checkLogs();
@@ -5214,6 +5271,9 @@ function coreService(options = {}) {
     {
       intervalMs: LOG_WATCHER_INTERVAL_MS,
       onNewLog: (line) => {
+        if (startRecoveryNotifications.handle(line)) {
+          return;
+        }
         if (logNotificationDeduper.shouldNotify(line)) {
           const notification = getForkopLogNotification(line);
           if (notification) {
@@ -9883,7 +9943,10 @@ async function handleDownloadSupportReport() {
       throw new Error(report.error || "Support report collection failed");
     }
     downloadSupportReport(String(report.data ?? ""));
-    showToast(_("Support report contains confidential information. Do not share it in public chats."), "error");
+    showToast(
+      _("Support report contains confidential information. Do not share it in public chats."),
+      "error"
+    );
   } catch (error) {
     logger.error("[DIAGNOSTIC]", "handleDownloadSupportReport - e", error);
     showToast(_("Failed to create support report"), "error");

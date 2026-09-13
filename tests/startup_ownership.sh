@@ -97,5 +97,18 @@ grep -Fq '[ SERVICE_INIT, "start", "triggered" ]' "$INITD" || fail "retry does n
 grep -Fq '[ SERVICE_INIT, "restart", "triggered" ]' "$INITD" && fail "retry still uses restart"
 grep -Fq 'sing-box-process-conflict' "$LIFECYCLE" || fail "lifecycle ownership guard missing"
 grep -Fq 'wait-managed-upgrade-sing-box-exit' "$LIFECYCLE" || fail "managed wait is not before lifecycle guard"
+grep -Fq '"forkop-stably-running"' "$LIFECYCLE" ||
+  fail "duplicate start does not adopt a stable Forkop runtime"
+grep -Fq 'treating duplicate start as successful' "$LIFECYCLE" ||
+  fail "duplicate stable start is not explicitly idempotent"
+
+# The duplicate-start fast path is deliberately narrower than merely finding
+# a sing-box PID: it must use the full stable runtime predicate. This keeps a
+# partial post-failure state on the guarded cold-start/retry path and continues
+# to reject a foreign or ambiguous process layout.
+stable_check_line="$(grep -nF '"forkop-stably-running"' "$LIFECYCLE" | head -n1 | cut -d: -f1)"
+start_impl_line="$(grep -nF 'let status = start_impl();' "$LIFECYCLE" | head -n1 | cut -d: -f1)"
+[ -n "$stable_check_line" ] && [ -n "$start_impl_line" ] && [ "$stable_check_line" -lt "$start_impl_line" ] ||
+  fail "duplicate start must be accepted before cold-start sing-box creation"
 
 printf 'startup ownership checks passed\n'
