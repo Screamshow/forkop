@@ -64,6 +64,8 @@ const SING_BOX_START_STABLE_MIN_AGE = int(getenv("FORKOP_SING_BOX_START_STABLE_M
 const SING_BOX_START_VERIFY_TIMEOUT = int(getenv("FORKOP_SING_BOX_START_VERIFY_TIMEOUT") || "10");
 const NFT_POPULATE_ENABLED_DEFAULT = int(getenv("FORKOP_NFT_POPULATE_ENABLED") || "1");
 
+let permanent_start_failure = false;
+
 const TMP_SING_BOX_FOLDER = getenv("TMP_SING_BOX_FOLDER") || constant_value("TMP_SING_BOX_FOLDER", "/tmp/sing-box");
 const TMP_RULESET_FOLDER = getenv("TMP_RULESET_FOLDER") || constant_value("TMP_RULESET_FOLDER", TMP_SING_BOX_FOLDER + "/rulesets");
 const TMP_SUBSCRIPTION_FOLDER = getenv("TMP_SUBSCRIPTION_FOLDER") || constant_value("TMP_SUBSCRIPTION_FOLDER", TMP_SING_BOX_FOLDER + "/subscriptions");
@@ -577,6 +579,10 @@ function clear_start_failure() {
     remove_file(START_FAILURE_FILE);
 }
 
+function mark_start_failure(reason) {
+    return fs.writefile(START_FAILURE_FILE, as_string(reason || "permanent_start_failure") + "\n") != null;
+}
+
 function set_runtime_config_error(message) {
     fs.writefile(RUNTIME_CONFIG_ERROR_FILE, as_string(message) + "\n");
 }
@@ -861,11 +867,15 @@ function start_main() {
     let status;
 
     log_message("Starting Forkop", "info");
-    clear_start_failure();
 
     status = validate_start_config();
-    if (status != 0)
+    if (status != 0) {
+        // Validation failures are local configuration failures. Keep the
+        // durable marker until a later, verified successful start proves an
+        // operator has corrected the configuration.
+        permanent_start_failure = true;
         return status;
+    }
 
     startup_config_fingerprint = external_config_fingerprint();
 
@@ -936,8 +946,12 @@ function start_main() {
     }
 
     status = singbox_init_config();
-    if (status != 0)
+    if (status != 0) {
+        // A generator rejection is a deterministic configuration problem;
+        // retrying it every time WAN comes up cannot make it valid.
+        permanent_start_failure = true;
         return start_phase_failed("sing-box-config", status);
+    }
 
     status = refresh_cron();
     if (status != 0)
@@ -1038,6 +1052,17 @@ function start_impl() {
 
 function stop_main() {
     let status = 0;
+
+    // A stop/restart must never tear down Forkop's DNS, nftables and routing
+    // state before it has proved that the current sing-box belongs to the
+    // managed procd service. In particular, procd can briefly report an old
+    // PID while replacing its child. Treat that unsettled observation exactly
+    // like a foreign process: preserve the working dataplane and let the
+    // serialized caller retry after the ownership state has converged.
+    if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
+        log_message("Refusing Forkop stop: sing-box process ownership is ambiguous; preserving the existing runtime", "fatal");
+        return 1;
+    }
 
     log_message("Stopping Forkop", "info");
     module_success(DNS_FAILOVER_UC, [ "stop-runtime" ]);
@@ -1197,6 +1222,8 @@ function start() {
 
     if (status != 0) {
         cleanup_failed_runtime();
+        if (permanent_start_failure)
+            mark_start_failure("sing_box_config");
         return status;
     }
 
@@ -1217,6 +1244,10 @@ function start() {
     }
 
     clear_runtime_config_error();
+    // A failure marker must survive subsequent failed starts. Clearing it
+    // before validation lets a detached package/boot start re-enable an
+    // endless retry loop for the same invalid configuration.
+    clear_start_failure();
 
     // A queued reload owns the next runtime transition. initd starts it only
     // after this start action has released reload.lock; calling it here would
@@ -1476,11 +1507,16 @@ function reload(reason) {
     if (status != 0)
         return status;
 
+    // This gate must precede every reload-state capture and candidate nft
+    // operation. A reload can otherwise rebuild the live dataplane before a
+    // later sing-box transition notices that procd ownership is unsettled.
+    // Preserve the coherent runtime until ownership has converged instead.
+    if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
+        log_message("Reload refused: multiple or non-procd sing-box processes were detected; preserving the existing runtime", "fatal");
+        return finish_reload_status(1, reload_config_fingerprint, reason == "pending");
+    }
+
     if (!module_success(STATE_UC, [ "forkop-running", RT_TABLE_NAME, NFT_TABLE_NAME, NFT_FAKEIP_MARK ])) {
-        if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
-            log_message("Reload refused: multiple or non-procd sing-box processes were detected; preserving the existing runtime", "fatal");
-            return finish_reload_status(1, reload_config_fingerprint, reason == "pending");
-        }
         log_message("Runtime state is incomplete; restarting Forkop runtime", "info");
         return finish_reload_status(restart_runtime_for_reload(), reload_config_fingerprint, reason == "pending");
     }

@@ -121,13 +121,16 @@ function remove_managed_sing_box() {
 }
 
 function remember_upgrade_state(action) {
-    if (as_string(action) != "upgrade") {
-        unlink_if_exists(PACKAGE_UPGRADE_STATE);
-        return;
-    }
-
+    // opkg invokes prerm without an action argument on some supported
+    // OpenWrt 24 builds, including a normal version upgrade.  The old
+    // action-based branch then erased the only hand-off telling postinst to
+    // restore a service that was deliberately stopped for the package swap.
+    // Service state is the authoritative input here: a marker is written only
+    // when Forkop was actually running immediately before prerm.
     if (command_success_from_args([ INIT_PATH, "status" ]))
         fs.writefile(PACKAGE_UPGRADE_STATE, "1\n");
+    else
+        unlink_if_exists(PACKAGE_UPGRADE_STATE);
 }
 
 function current_pid() {

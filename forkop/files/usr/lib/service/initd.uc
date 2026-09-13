@@ -621,7 +621,7 @@ function start_service(reason, owner_pid) {
     else if (start_failure_blocks_retry(START_FAILURE_FILE)) {
         clear_start_retry(START_RETRY_FILE);
         cancel_scheduled_start_retry(START_RETRY_PID_FILE);
-        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[error] Forkop startup retry suppressed because all rule-set download sources failed; see the fatal startup error in LuCI logs" ]);
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[error] Forkop startup retry suppressed because the failure requires configuration or operator action; see the fatal startup error in LuCI logs" ]);
     }
     else {
         mark_start_retry(START_RETRY_FILE, as_string(reason) == "triggered" ? "wan_retry_failed" : "start_failed");

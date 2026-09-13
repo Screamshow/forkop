@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Stateful OpenWrt regression for the lifecycle single-process invariant.
 # It is intentionally run against an installed, already healthy Forkop
@@ -9,6 +9,7 @@ FORKOP_LIB="${FORKOP_LIB:-/usr/lib/forkop}"
 STATE_UC="$FORKOP_LIB/service/state.uc"
 WORK_DIR="$(mktemp -d)"
 DUPLICATE_PID=""
+REAL_UBUS="$(command -v ubus)"
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 state() { ucode -L "$FORKOP_LIB" "$STATE_UC" "$@"; }
@@ -30,6 +31,7 @@ trap cleanup EXIT
 
 [ -r "$STATE_UC" ] || fail "Forkop state module is missing"
 command -v sing-box >/dev/null || fail "sing-box is not installed"
+[ -n "$REAL_UBUS" ] || fail "ubus is not installed"
 
 expected_pid="$(state sing-box-service-runtime-pid)" || fail "procd has no Forkop sing-box PID"
 [ -n "$(nft list table inet ForkopTable 2>/dev/null)" ] || fail "healthy baseline has no ForkopTable"
@@ -72,10 +74,10 @@ fi
 if /usr/bin/forkop reload on_config_change >/dev/null 2>&1; then
   fail "lifecycle accepted reload while sing-box ownership was ambiguous"
 fi
+[ "$(table_policy_hash)" = "$table_hash" ] ||
+  fail "ambiguous sing-box ownership tore down the active nft policy"
 [ "$(state sing-box-service-runtime-pid)" = "$expected_pid" ] ||
   fail "duplicate rejection restarted the procd-owned sing-box"
-[ "$(table_policy_hash)" = "$table_hash" ] ||
-  fail "duplicate rejection changed the active nft policy"
 
 kill "$DUPLICATE_PID"
 wait "$DUPLICATE_PID" 2>/dev/null || true
@@ -87,5 +89,36 @@ done
 [ "$(process_count)" = "1" ] || fail "test-owned duplicate did not exit"
 state wait-forkop-stable-start forkop ForkopTable 0x04000000 0 4 ||
   fail "Forkop did not recover its accepted state after duplicate exit"
+
+# Model the procd hand-off seen during package lifecycle operations: sing-box
+# is healthy and unique, while a transient service query still reports another
+# live PID. The reload must decline before changing DNS/nft/routing, then the
+# normal service view must remain healthy when the transient observation ends.
+mkdir "$WORK_DIR/fake-bin"
+cat >"$WORK_DIR/fake-bin/ubus" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = "call" ] && [ "${2:-}" = "service" ] && [ "${3:-}" = "list" ]; then
+  printf '{"sing-box":{"instances":{"sing-box.main":{"running":true,"pid":%s}}}}\n' "$FORKOP_TEST_STALE_PID"
+  exit 0
+fi
+exec "$FORKOP_REAL_UBUS" "$@"
+EOF
+chmod 700 "$WORK_DIR/fake-bin/ubus"
+export FORKOP_REAL_UBUS="$REAL_UBUS"
+export FORKOP_TEST_STALE_PID="$$"
+
+PATH="$WORK_DIR/fake-bin:$PATH" state sing-box-process-conflict ||
+  fail "stale procd PID was not classified as ambiguous ownership"
+if PATH="$WORK_DIR/fake-bin:$PATH" /usr/bin/forkop reload on_config_change >/dev/null 2>&1; then
+  fail "lifecycle accepted reload while procd reported a stale sing-box PID"
+fi
+[ "$(table_policy_hash)" = "$table_hash" ] ||
+  fail "stale procd PID changed the active nft policy"
+[ "$(process_count)" = "1" ] ||
+  fail "stale procd PID disturbed the sole sing-box process"
+state sing-box-single-owned-service-runtime ||
+  fail "healthy ownership did not recover after stale procd PID test"
+state wait-forkop-stable-start forkop ForkopTable 0x04000000 0 4 ||
+  fail "Forkop did not remain stable after stale procd PID test"
 
 printf 'sing-box single-process lifecycle checks passed\n'
