@@ -38,8 +38,12 @@ grep -Fq 'write_state_file(AUTOMATIC_LATENCY_PENDING_FILE' "$UPDATES_UC" ||
   fail "pending marker must be written atomically"
 grep -Fq 'final_proxy_set_changed = proxy_signature_after != "" && proxy_signature_after != proxy_signature_before' "$UPDATES_UC" ||
   fail "latency scheduling must compare the final usable proxy set"
-grep -Fq '"acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid' "$DIAGNOSTICS_UC" ||
-  fail "automatic latency test must serialize against Forkop reload"
+grep -Fq '"acquire-runtime-dir-lock-wait-until-package-upgrade", RELOAD_LOCK_DIR, owner_pid' "$DIAGNOSTICS_UC" ||
+  fail "automatic latency test must serialize against Forkop reload and package upgrades"
+grep -Fq 'package_upgrade_quiescing()' "$ROOT_DIR/forkop/files/usr/lib/service/state.uc" ||
+  fail "queued reloads must yield while package pre-upgrade owns the transition"
+grep -Fq 'begin_upgrade_quiesce(action)' "$ROOT_DIR/forkop/files/usr/lib/service/package.uc" ||
+  fail "package pre-upgrade must quiesce background runtime workers"
 grep -Fq '"single-ready-sing-box-runtime"' "$DIAGNOSTICS_UC" ||
   fail "automatic latency test must require one ready sing-box process"
 grep -Fq 'function single_ready_sing_box_runtime()' "$ROOT_DIR/forkop/files/usr/lib/service/state.uc" ||

@@ -47,6 +47,26 @@ if grep -Fq '[ "/etc/init.d/sing-box", "reload" ]' "$FORKOP_LIB/service/state.uc
 fi
 grep -Fq 'mode == "init-config"' "$SINGBOX_RUNTIME_UC" ||
   fail "singbox/runtime.uc must own sing-box config initialization"
+grep -Fq 'mode == "validate-config-stage"' "$SINGBOX_RUNTIME_UC" ||
+  fail "singbox/runtime.uc must expose staged config validation"
+grep -Fq 'validate-config-stage", staged_singbox_config' "$LIFECYCLE_UC" ||
+  fail "reload lifecycle must validate the staged config"
+grep -Fq 'abort_invalid_staged_config(staged_singbox_config)' "$LIFECYCLE_UC" ||
+  fail "an invalid staged configuration must stop Forkop fail-closed"
+grep -Fq 'Forkop stopped: the generated sing-box configuration is invalid' "$LIFECYCLE_UC" ||
+  fail "invalid staged configuration must expose an explicit error"
+grep -Fq 'config_error' "$FORKOP_LIB/service/ui.uc" ||
+  fail "LuCI state must expose the staged configuration error"
+if grep -Fq 'support_report_command("sing-box check"' "$FORKOP_LIB/diagnostics/runtime.uc"; then
+  fail "support reports must not start a memory-intensive sing-box check"
+fi
+if ! awk '
+/"stop-managed-sing-box-runtime"/ { stopped = 1 }
+/"validate-config-stage", staged_singbox_config/ { if (!stopped) exit 1; found = 1 }
+END { exit found ? 0 : 1 }
+' "$LIFECYCLE_UC"; then
+  fail "staged config validation must run only after the old sing-box runtime stops"
+fi
 grep -Fq 'mode == "service-listen-address"' "$SINGBOX_RUNTIME_UC" ||
   fail "singbox/runtime.uc must own service listen address detection"
 grep -Fq 'mode == "service-proxy-address"' "$SINGBOX_RUNTIME_UC" ||

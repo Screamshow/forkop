@@ -666,6 +666,25 @@ function sing_box_check(config_path, output_path) {
     return { status, reason };
 }
 
+// A full sing-box check parses every outbound eagerly and can briefly use far
+// more memory than the long-running runtime. Call this only when no managed
+// sing-box process is alive (the lifecycle owns that serialization).
+function validate_config_stage(stage_path) {
+    let check_log = temp_path();
+    if (as_string(stage_path) == "" || check_log == "") {
+        remove_file(check_log);
+        return false;
+    }
+
+    let result = SINGBOX_CONFIG_FAIL_PHASE == "check"
+        ? { status: 1, reason: "injected sing-box configuration check failure" }
+        : sing_box_check(stage_path, check_log);
+    if (result.status != 0)
+        log_message("Staged sing-box configuration is invalid: " + result.reason + ". Aborted.", "fatal");
+    remove_file(check_log);
+    return result.status == 0;
+}
+
 function prepare_subscription_caches(prepared, no_refresh) {
     let result = subscription_cache_capture([ "prepare-caches", "runtime", prepared ? "1" : "0", no_refresh ? "1" : "0" ]);
     if (result.status != 0) {
@@ -831,7 +850,7 @@ function restore_dns_config(backup_path) {
     return command_success_from_args([ "mv", "-f", backup_path, config_path ]);
 }
 
-function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferred_sections, stage_path) {
+function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferred_sections, stage_path, validate_now) {
     let settings = uci_settings();
     let config_path = option(settings, "config_path", "");
     if (config_path == "") {
@@ -891,13 +910,15 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
         exit(1);
     }
 
-    let check_result = SINGBOX_CONFIG_FAIL_PHASE == "check"
-        ? { status: 1, reason: "injected sing-box configuration check failure" }
-        : sing_box_check(temp_config, runtime_log);
-    if (check_result.status != 0) {
-        log_message("Generated sing-box configuration is invalid: " + check_result.reason + ". Aborted.", "fatal");
-        remove_files([ temp_config, runtime_log ]);
-        exit(1);
+    if (validate_now !== false) {
+        let check_result = SINGBOX_CONFIG_FAIL_PHASE == "check"
+            ? { status: 1, reason: "injected sing-box configuration check failure" }
+            : sing_box_check(temp_config, runtime_log);
+        if (check_result.status != 0) {
+            log_message("Generated sing-box configuration is invalid: " + check_result.reason + ". Aborted.", "fatal");
+            remove_files([ temp_config, runtime_log ]);
+            exit(1);
+        }
     }
 
     if (populate_nft && !module_success([
@@ -949,15 +970,19 @@ let mode = ARGV[0] || "";
 if (mode == "configure-service")
     configure_service();
 else if (mode == "init-config")
-    init_config(arg_bool(ARGV[1] || "1"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "", "");
+    init_config(arg_bool(ARGV[1] || "1"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "", "", true);
 else if (mode == "prepare-config-stage")
-    init_config(arg_bool(ARGV[1] || "0"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "", ARGV[5] || "");
+    // The lifecycle validates this staged file after stopping the old runtime.
+    // That ordering avoids a high transient memory peak on small routers.
+    init_config(arg_bool(ARGV[1] || "0"), arg_bool(ARGV[2] || "0"), arg_bool(ARGV[3] || "0"), ARGV[4] || "", ARGV[5] || "", false);
 else if (mode == "commit-config-stage")
     exit(commit_config_stage(ARGV[1] || "", ARGV[2] || "") ? 0 : 1);
 else if (mode == "restore-config-stage")
     exit(restore_config_stage(ARGV[1] || "") ? 0 : 1);
 else if (mode == "discard-config-stage")
     exit(discard_config_stage(ARGV[1] || "") ? 0 : 1);
+else if (mode == "validate-config-stage")
+    exit(validate_config_stage(ARGV[1] || "") ? 0 : 1);
 else if (mode == "save-config-file-fixture")
     exit(save_config_file(ARGV[1] || "", ARGV[2] || "") ? 0 : 1);
 else if (mode == "publish-section-cache-fixture")

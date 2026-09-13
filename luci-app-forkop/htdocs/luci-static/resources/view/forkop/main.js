@@ -6423,7 +6423,7 @@ function renderUrlTestEditorModal(outbound) {
     if (!jobId) throw new Error("reload failed");
     const result = await ForkopShellMethods.waitServiceActionJob(jobId);
     void ForkopShellMethods.uiActionAck("service", jobId);
-    if (!result.success) throw new Error("reload failed");
+    if (!result.success) throw new Error(result.error || "reload failed");
     setBusy(true, _("Refreshing Dashboard\u2026"));
     await fetchDashboardSections({ force: true });
   };

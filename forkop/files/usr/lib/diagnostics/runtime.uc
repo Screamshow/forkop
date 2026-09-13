@@ -53,6 +53,7 @@ const AUTOMATIC_LATENCY_PENDING_FORMAT = "1";
 const AUTOMATIC_LATENCY_RETRY_BASE_SECONDS = int(getenv("FORKOP_AUTOMATIC_LATENCY_RETRY_BASE_SECONDS") || "300");
 const AUTOMATIC_LATENCY_MAX_FAILURES = int(getenv("FORKOP_AUTOMATIC_LATENCY_MAX_FAILURES") || "5");
 const AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS = int(getenv("FORKOP_AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS") || "15");
+const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || RUNTIME_STATE_DIR + "/package-upgrade.quiesce";
 
 const STATUS_UC = LIB_DIR + "/diagnostics/status.uc";
 const HELPERS_UC = LIB_DIR + "/core/helpers.uc";
@@ -1936,6 +1937,12 @@ function clash_api(action, arg1, arg2, arg3) {
 }
 
 function automatic_latency_test(start_kind) {
+    let package_upgrade_pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
+    if (package_upgrade_pid != "" && command_success_from_args([ "kill", "-0", package_upgrade_pid ])) {
+        log_message("Automatic latency test yielded because a Forkop package upgrade is stopping the runtime", "info");
+        return 0;
+    }
+
     let marker = automatic_latency_pending_marker();
     if (marker == null) {
         if (fs.stat(AUTOMATIC_LATENCY_PENDING_FILE) != null) {
@@ -1995,7 +2002,7 @@ function automatic_latency_test(start_kind) {
     }
 
     if (!module_success(SERVICE_STATE_UC, [
-        "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid, "300"
+        "acquire-runtime-dir-lock-wait-until-package-upgrade", RELOAD_LOCK_DIR, owner_pid, "300"
     ])) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
         log_message("Automatic latency test deferred because Forkop did not finish reloading; the pending marker was retained", "warn");
@@ -2046,6 +2053,13 @@ function automatic_latency_test(start_kind) {
     let completed = 0;
     let batch_size = AUTOMATIC_LATENCY_BATCH_SIZE > 0 ? AUTOMATIC_LATENCY_BATCH_SIZE : 4;
     for (let proxy_tag in proxy_tags) {
+        package_upgrade_pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
+        if (package_upgrade_pid != "" && command_success_from_args([ "kill", "-0", package_upgrade_pid ])) {
+            module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+            module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+            log_message("Automatic latency test yielded to a Forkop package upgrade", "info");
+            return 0;
+        }
         if (clash_api("get_proxy_latency", proxy_tag, "5000", "") != 0)
             status = 1;
         completed++;
@@ -2065,7 +2079,7 @@ function automatic_latency_test(start_kind) {
             }
             command_success_from_args([ "sleep", AUTOMATIC_LATENCY_BATCH_PAUSE ]);
             let reacquired = module_success(SERVICE_STATE_UC, [
-                "acquire-runtime-dir-lock-wait", RELOAD_LOCK_DIR, owner_pid, "300"
+                "acquire-runtime-dir-lock-wait-until-package-upgrade", RELOAD_LOCK_DIR, owner_pid, "300"
             ]);
             if (!reacquired || !module_success(SERVICE_STATE_UC, [ "single-ready-sing-box-runtime" ]) ||
                 sing_box_pid_before != trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]))) {
@@ -2284,9 +2298,6 @@ function support_report() {
 
     support_report_heading("Generated sing-box configuration (raw)");
     show_sing_box_config("raw");
-    let sing_box_config_path = option(settings(), "config_path", "");
-    if (sing_box_config_path != "")
-        support_report_command("sing-box check", [ SING_BOX_BIN_PATH, "check", "-c", sing_box_config_path ]);
 
     support_report_command("System uptime", [ "uptime" ]);
     support_report_command("Memory", [ "free" ]);

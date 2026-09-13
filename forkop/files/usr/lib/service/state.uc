@@ -12,6 +12,7 @@ const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const DEFAULT_PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/forkop/reload.pending";
 const DEFAULT_SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
+const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || "/var/run/forkop/package-upgrade.quiesce";
 const SING_BOX_INIT = getenv("FORKOP_SING_BOX_INIT") || "/etc/init.d/sing-box";
 const ZAPRET_DEFAULT_NFQWS_OPT = getenv("ZAPRET_DEFAULT_NFQWS_OPT") || "";
 const ZAPRET2_DEFAULT_NFQWS2_OPT = getenv("ZAPRET2_DEFAULT_NFQWS2_OPT") || "";
@@ -266,6 +267,11 @@ function run_pending_reload_if_requested(path, init_script) {
     path = as_string(path || DEFAULT_PENDING_RELOAD_FILE);
     init_script = as_string(init_script || DEFAULT_SERVICE_INIT);
 
+    // The package pre-upgrade action owns the service transition. A worker
+    // must not hand a queued reload back to init.d while it is stopping it.
+    if (package_upgrade_quiescing())
+        return true;
+
     if (!consume_pending_reload(path))
         return true;
 
@@ -294,6 +300,10 @@ function first_line_value(path) {
 function pid_alive(pid) {
     pid = as_string(pid);
     return match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
+}
+
+function package_upgrade_quiescing() {
+    return pid_alive(first_line_value(PACKAGE_UPGRADE_QUIESCE_FILE));
 }
 
 function lock_dir_write_owner(lock_dir, owner_pid) {
@@ -342,6 +352,23 @@ function acquire_runtime_dir_lock_wait(lock_dir, owner_pid, timeout) {
     }
 
     return true;
+}
+
+function acquire_runtime_dir_lock_wait_until_package_upgrade(lock_dir, owner_pid, timeout) {
+    let timeout_text = as_string(timeout == null ? "300" : timeout);
+    timeout = numeric_text(timeout_text) ? int(timeout_text, 10) : 300;
+    let start = int(current_epoch(), 10) || 0;
+
+    while (!acquire_runtime_dir_lock(lock_dir, owner_pid)) {
+        if (package_upgrade_quiescing())
+            return false;
+        let now = int(current_epoch(), 10) || start;
+        if (now - start >= timeout)
+            return false;
+        command_success_from_args([ "sleep", "2" ]);
+    }
+
+    return !package_upgrade_quiescing();
 }
 
 function release_runtime_dir_lock(lock_dir) {
@@ -1953,6 +1980,8 @@ else if (mode == "acquire-runtime-dir-lock")
     exit(acquire_runtime_dir_lock(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "acquire-runtime-dir-lock-wait")
     exit(acquire_runtime_dir_lock_wait(ARGV[1], ARGV[2], ARGV[3]) ? 0 : 1);
+else if (mode == "acquire-runtime-dir-lock-wait-until-package-upgrade")
+    exit(acquire_runtime_dir_lock_wait_until_package_upgrade(ARGV[1], ARGV[2], ARGV[3]) ? 0 : 1);
 else if (mode == "release-runtime-dir-lock")
     release_runtime_dir_lock(ARGV[1]);
 else if (mode == "reload-sing-box-runtime")

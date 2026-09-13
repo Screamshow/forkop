@@ -12,6 +12,7 @@ const STATE_UC = LIB_DIR + "/service/state.uc";
 const UI_UC = LIB_DIR + "/service/ui.uc";
 const STATE_DIR = getenv("FORKOP_UI_STATE_DIR") || "/var/run/forkop/ui-state";
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/forkop/reload.pending";
+const RUNTIME_CONFIG_ERROR_FILE = getenv("FORKOP_RUNTIME_CONFIG_ERROR_FILE") || "/var/run/forkop/config-error";
 const SERVICE_ACTION_DIR = getenv("FORKOP_UI_SERVICE_ACTION_DIR") || STATE_DIR + "/service-actions";
 const SERVICE_ACTION_LOCK_DIR = getenv("FORKOP_UI_SERVICE_ACTION_LOCK_DIR") || STATE_DIR + "/service-actions.lock";
 const LATENCY_ACTION_DIR = getenv("FORKOP_UI_LATENCY_ACTION_DIR") || STATE_DIR + "/latency-actions";
@@ -1107,6 +1108,7 @@ function current_ui_state_json() {
     let forkop_status = service_status_text(forkop_is_running, forkop_is_enabled);
     let sing_box_status = service_status_text(sing_box_is_running, sing_box_is_enabled);
     let active_action = active_service_action_value();
+    let config_error = trim(as_string(fs.readfile(RUNTIME_CONFIG_ERROR_FILE)));
 
     if (active_action == "start")
         forkop_status = "starting";
@@ -1131,6 +1133,7 @@ function current_ui_state_json() {
                 status: sing_box_status
             }
         },
+        config_error,
         capabilities,
         actions: action_state_from_dirs()
     });
@@ -1337,7 +1340,9 @@ function finish_service_action_after_command(action, job_id_value, status, spawn
         return 0;
 
     if (status != 0) {
-        write_finished_service_action_state(path, action, false, "Service " + as_string(action) + " failed", status);
+        let config_error = trim(as_string(fs.readfile(RUNTIME_CONFIG_ERROR_FILE)));
+        let message = config_error != "" ? config_error : "Service " + as_string(action) + " failed";
+        write_finished_service_action_state(path, action, false, message, status);
         return 0;
     }
 

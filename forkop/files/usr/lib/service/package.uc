@@ -24,6 +24,7 @@ const SING_BOX_BIN = env("FORKOP_SING_BOX_BIN", "/usr/bin/sing-box");
 const SING_BOX_CRONET = env("FORKOP_SING_BOX_CRONET", "/usr/lib/libcronet.so");
 const SING_BOX_MANAGED_MARKER = env("SB_MANAGED_SERVICE_MARKER", "Forkop managed sing-box service for binary variants");
 const PACKAGE_UPGRADE_STATE = env("FORKOP_PACKAGE_UPGRADE_STATE", "/tmp/forkop-package-was-running");
+const PACKAGE_UPGRADE_QUIESCE_FILE = env("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE", "/var/run/forkop/package-upgrade.quiesce");
 const COMPONENT_UPDATE_CHECK_CACHE_DIR = env("FORKOP_COMPONENT_UPDATE_CHECK_CACHE_DIR", "/var/run/forkop/component-update-checks");
 const COMPONENT_UPDATE_CHECK_STATE_FILE = env("FORKOP_COMPONENT_UPDATE_CHECK_STATE_FILE", "/var/run/forkop/component-update-check.timestamp");
 const PACKAGE_TEST_MODE = env("FORKOP_PACKAGE_TEST_MODE", "") != "";
@@ -129,13 +130,33 @@ function remember_upgrade_state(action) {
         fs.writefile(PACKAGE_UPGRADE_STATE, "1\n");
 }
 
+function current_pid() {
+    let stat = as_string(fs.readfile("/proc/self/stat"));
+    let separator = index(stat, " ");
+    return separator > 0 ? substr(stat, 0, separator) : "";
+}
+
+function begin_upgrade_quiesce(action) {
+    if (as_string(action) != "upgrade")
+        return true;
+    let pid = current_pid();
+    return pid != "" && fs.writefile(PACKAGE_UPGRADE_QUIESCE_FILE, pid + "\n") != null;
+}
+
+function clear_upgrade_quiesce() {
+    unlink_if_exists(PACKAGE_UPGRADE_QUIESCE_FILE);
+}
+
 function prerm_cleanup(action) {
     if (env("IPKG_INSTROOT", "") != "")
         return true;
 
     remember_upgrade_state(action);
+    if (!begin_upgrade_quiesce(action))
+        return false;
     if (!PACKAGE_TEST_MODE) {
-        command_success_from_args([ INIT_PATH, "stop" ]);
+        if (!command_success_from_args([ INIT_PATH, "stop" ]))
+            return false;
         restore_dnsmasq_if_needed();
         remove_managed_sing_box();
     }
@@ -167,13 +188,16 @@ function postinst_restore() {
         return false;
     }
 
-    if (!path_exists(PACKAGE_UPGRADE_STATE))
+    if (!path_exists(PACKAGE_UPGRADE_STATE)) {
+        clear_upgrade_quiesce();
         return true;
+    }
 
     if (!command_success_from_args([ INIT_PATH, "start" ]))
         return false;
 
     unlink_if_exists(PACKAGE_UPGRADE_STATE);
+    clear_upgrade_quiesce();
     return true;
 }
 

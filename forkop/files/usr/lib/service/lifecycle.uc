@@ -31,6 +31,7 @@ const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNT
 const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
 const POST_START_LATENCY_FILE = getenv("FORKOP_POST_START_LATENCY_FILE") || RUNTIME_STATE_DIR + "/post-start-latency.pending";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
+const RUNTIME_CONFIG_ERROR_FILE = getenv("FORKOP_RUNTIME_CONFIG_ERROR_FILE") || RUNTIME_STATE_DIR + "/config-error";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS = int(getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS") || "15");
 const MANAGED_UPGRADE_SING_BOX_MARKER_MAX_AGE_SECONDS = int(getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER_MAX_AGE_SECONDS") || "120");
@@ -574,6 +575,14 @@ function setting_bool(name, fallback) {
 
 function clear_start_failure() {
     remove_file(START_FAILURE_FILE);
+}
+
+function set_runtime_config_error(message) {
+    fs.writefile(RUNTIME_CONFIG_ERROR_FILE, as_string(message) + "\n");
+}
+
+function clear_runtime_config_error() {
+    remove_file(RUNTIME_CONFIG_ERROR_FILE);
 }
 
 function dns_apply_status(args) {
@@ -1124,6 +1133,16 @@ function abort_guarded_transition(status, stage_path, backup_path, guard_active)
     return status == 0 ? 1 : status;
 }
 
+function abort_invalid_staged_config(stage_path) {
+    nft_candidate_finish(false);
+    discard_singbox_config_stage(stage_path);
+    // A configuration which sing-box itself rejects is a hard fail-closed
+    // condition: do not silently retain a previous policy after the user has
+    // applied new settings.
+    cleanup_failed_runtime();
+    return 1;
+}
+
 function start() {
     // A current installer/updater may have recorded one exact, procd-owned
     // pre-upgrade process. Wait only for that process to exit; a legacy direct
@@ -1196,6 +1215,8 @@ function start() {
         cleanup_failed_runtime();
         return status;
     }
+
+    clear_runtime_config_error();
 
     // A queued reload owns the next runtime transition. initd starts it only
     // after this start action has released reload.lock; calling it here would
@@ -1659,6 +1680,14 @@ function reload(reason) {
             as_string(getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15")
         ]) != 0)
             return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
+        // Do not run the eager full-config check while the old runtime is
+        // still resident. On 256 MiB routers their combined peak can trigger
+        // the OOM killer even though either process runs safely on its own.
+        if (!module_success(SINGBOX_UC, [ "validate-config-stage", staged_singbox_config ])) {
+            set_runtime_config_error("Forkop stopped: the generated sing-box configuration is invalid. Correct the settings and apply them again; see the system log for details.");
+            return abort_invalid_staged_config(staged_singbox_config);
+        }
+        clear_runtime_config_error();
         if (!module_success(SINGBOX_UC, [ "commit-config-stage", staged_singbox_config, staged_singbox_backup ]))
             return abort_guarded_transition(1, staged_singbox_config, staged_singbox_backup, transition_guard_active);
         status = module_status(STATE_UC, [
