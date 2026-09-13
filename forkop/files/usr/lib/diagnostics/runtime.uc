@@ -1561,12 +1561,12 @@ function clash_json_error(message) {
     return 1;
 }
 
-function clash_proxy_type_map(base_url, auth) {
+function clash_proxy_entries(base_url, auth) {
     let args = [ "curl", "-s" ];
     for (let item in auth) push(args, item);
     push(args, base_url + "/proxies");
 
-    let value = {};
+    let value = null;
     try {
         value = json(command_output(command_from_args(args)));
     }
@@ -1577,8 +1577,16 @@ function clash_proxy_type_map(base_url, auth) {
     if (type(value) != "object" || type(value.proxies) != "object")
         return null;
 
+    return object_or_empty(value.proxies);
+}
+
+function clash_proxy_type_map(base_url, auth) {
+    let entries = clash_proxy_entries(base_url, auth);
+    if (entries == null)
+        return null;
+
     let result = {};
-    for (let tag, proxy in object_or_empty(value.proxies))
+    for (let tag, proxy in entries)
         result[tag] = as_string(object_or_empty(proxy).type || "");
     return result;
 }
@@ -1592,6 +1600,91 @@ function latency_testable_proxy_type(proxy_type) {
     return proxy_type != "" && proxy_type != "direct" && proxy_type != "selector" &&
         proxy_type != "urltest" && proxy_type != "fallback" && proxy_type != "block" &&
         proxy_type != "dns";
+}
+
+// URLTest periodically measures its members itself and Priority probes them
+// immediately when its supervisor starts. The automatic warm-up is only for
+// independent nodes exposed by a selector, so do not duplicate group-owned
+// probes or touch detached/internal outbounds.
+function automatic_latency_group_member_tags(proxy_entries, priority_groups) {
+    let result = {};
+
+    for (let tag, proxy in object_or_empty(proxy_entries)) {
+        proxy = object_or_empty(proxy);
+        if (lc(as_string(proxy.type || "")) != "urltest")
+            continue;
+        for (let member in type(proxy.all) == "array" ? proxy.all : []) {
+            member = as_string(member);
+            if (member != "")
+                result[member] = true;
+        }
+    }
+
+    for (let tag, group in object_or_empty(priority_groups)) {
+        for (let level in type(object_or_empty(group).levels) == "array" ? group.levels : []) {
+            for (let member in type(object_or_empty(level).outbounds) == "array" ? level.outbounds : []) {
+                member = as_string(member);
+                if (member != "")
+                    result[member] = true;
+            }
+        }
+    }
+
+    return result;
+}
+
+function automatic_latency_priority_groups() {
+    let result = {};
+    let entries = fs.lsdir(SECTION_CACHE_DIR);
+    if (type(entries) != "array")
+        return result;
+
+    for (let entry in entries) {
+        entry = as_string(entry);
+        if (match(entry, /^[A-Za-z0-9_-]+\.json$/) == null)
+            continue;
+        let cache = object_or_empty(read_json_file(SECTION_CACHE_DIR + "/" + entry));
+        for (let tag, group in object_or_empty(cache.priorityGroups))
+            result[tag] = group;
+    }
+    return result;
+}
+
+function automatic_latency_selector_member_tags(proxy_entries) {
+    let result = {};
+    for (let tag, proxy in object_or_empty(proxy_entries)) {
+        proxy = object_or_empty(proxy);
+        if (lc(as_string(proxy.type || "")) != "selector")
+            continue;
+        for (let member in type(proxy.all) == "array" ? proxy.all : []) {
+            member = as_string(member);
+            if (member != "")
+                result[member] = true;
+        }
+    }
+    return result;
+}
+
+function automatic_latency_proxy_tags(proxy_entries, priority_groups) {
+    let group_members = automatic_latency_group_member_tags(proxy_entries, priority_groups);
+    let selector_members = automatic_latency_selector_member_tags(proxy_entries);
+    let selector_member_count = length(keys(selector_members));
+    let result = [];
+    for (let proxy_tag, proxy in object_or_empty(proxy_entries)) {
+        let proxy_type = as_string(object_or_empty(proxy).type || "");
+        if (latency_testable_proxy_type(proxy_type) && !group_members[proxy_tag] &&
+            (selector_member_count == 0 || selector_members[proxy_tag]))
+            push(result, proxy_tag);
+    }
+    return result;
+}
+
+function automatic_latency_proxy_tags_fixture() {
+    let fixture = object_or_empty(parse_json_or_null(ARGV[1] || read_stdin()));
+    write_json(automatic_latency_proxy_tags(
+        object_or_empty(fixture.proxies),
+        object_or_empty(fixture.priorityGroups)
+    ));
 }
 
 function canonical_runtime_value(value) {
@@ -1917,16 +2010,16 @@ function automatic_latency_test(start_kind) {
     }
 
     let sing_box_pid_before = trim(module_output(SERVICE_STATE_UC, [ "sing-box-service-runtime-pid" ]));
-    let proxy_types = null;
+    let proxy_entries = null;
     let readiness_attempts = AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS > 0 ? AUTOMATIC_LATENCY_CLASH_READY_ATTEMPTS : 15;
     for (let readiness_attempt = 0; readiness_attempt < readiness_attempts; readiness_attempt++) {
-        proxy_types = clash_proxy_type_map(clash_api_url(), clash_auth_args());
-        if (proxy_types != null)
+        proxy_entries = clash_proxy_entries(clash_api_url(), clash_auth_args());
+        if (proxy_entries != null)
             break;
         if (readiness_attempt + 1 < readiness_attempts)
             command_success_from_args([ "sleep", "1" ]);
     }
-    if (proxy_types == null) {
+    if (proxy_entries == null) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
         automatic_latency_record_failure(pending_signature);
@@ -1934,10 +2027,10 @@ function automatic_latency_test(start_kind) {
         return 1;
     }
 
-    let proxy_tags = [];
-    for (let proxy_tag, proxy_type in proxy_types)
-        if (latency_testable_proxy_type(proxy_type))
-            push(proxy_tags, proxy_tag);
+    let proxy_tags = automatic_latency_proxy_tags(
+        proxy_entries,
+        automatic_latency_priority_groups()
+    );
 
     if (length(proxy_tags) == 0) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
@@ -2234,6 +2327,8 @@ else if (mode == "check-sing-box")
     exit(check_sing_box());
 else if (mode == "sing-box-standard-ports-listening-fixture")
     sing_box_standard_ports_listening_fixture();
+else if (mode == "automatic-latency-proxy-tags-fixture")
+    automatic_latency_proxy_tags_fixture();
 else if (mode == "check-logs")
     exit(check_logs());
 else if (mode == "check-sing-box-logs")
