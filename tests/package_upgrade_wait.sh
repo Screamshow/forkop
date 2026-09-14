@@ -123,7 +123,7 @@ case "$1" in
 start)
     printf 'start\n' >>"$base/init.log"
     printf 'start\n' >"$base/active"
-    nohup "$base/detached-worker" "$base/running" "$base/active" </dev/null >/dev/null 2>&1 &
+    "$base/detached-worker" "$base/running" "$base/active" </dev/null >/dev/null 2>&1 &
     exit 0
     ;;
 status)
