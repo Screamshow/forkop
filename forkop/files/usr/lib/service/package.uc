@@ -18,6 +18,7 @@ const DEFAULT_CONFIG_PATH = env("FORKOP_DEFAULT_CONFIG_PATH", "/usr/share/forkop
 const RT_TABLES_PATH = env("FORKOP_RT_TABLES", "/etc/iproute2/rt_tables");
 const BIN_PATH = env("FORKOP_BIN", "/usr/bin/forkop");
 const INIT_PATH = env("FORKOP_INIT", "/etc/init.d/forkop");
+const UI_UC = env("FORKOP_UI_UC", LIB_DIR + "/service/ui.uc");
 const DNS_APPLY_UC = env("FORKOP_DNS_APPLY_UC", "/usr/lib/forkop/dns/apply.uc");
 const SING_BOX_INIT = env("FORKOP_SING_BOX_INIT", "/etc/init.d/sing-box");
 const SING_BOX_BIN = env("FORKOP_SING_BOX_BIN", "/usr/bin/sing-box");
@@ -26,6 +27,7 @@ const SING_BOX_MANAGED_MARKER = env("SB_MANAGED_SERVICE_MARKER", "Forkop managed
 const PACKAGE_UPGRADE_STATE = env("FORKOP_PACKAGE_UPGRADE_STATE", "/tmp/forkop-package-was-running");
 const PACKAGE_UPGRADE_QUIESCE_FILE = env("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE", "/var/run/forkop/package-upgrade.quiesce");
 const UPGRADE_SING_BOX_WAIT_SECONDS = int(env("FORKOP_UPGRADE_SING_BOX_WAIT_SECONDS", "15"));
+const UPGRADE_RESTORE_WAIT_SECONDS = int(env("FORKOP_UPGRADE_RESTORE_WAIT_SECONDS", "180"));
 const COMPONENT_UPDATE_CHECK_CACHE_DIR = env("FORKOP_COMPONENT_UPDATE_CHECK_CACHE_DIR", "/var/run/forkop/component-update-checks");
 const COMPONENT_UPDATE_CHECK_STATE_FILE = env("FORKOP_COMPONENT_UPDATE_CHECK_STATE_FILE", "/var/run/forkop/component-update-check.timestamp");
 const PACKAGE_TEST_MODE = env("FORKOP_PACKAGE_TEST_MODE", "") != "";
@@ -48,6 +50,15 @@ function normalize_status(status) {
 
 function command_success_from_args(args) {
     return normalize_status(system(command_from_args(args) + " >/dev/null 2>&1")) == 0;
+}
+
+function command_output_from_args(args) {
+    let pipe = fs.popen(command_from_args(args) + " 2>/dev/null", "r");
+    if (!pipe)
+        return "";
+    let output = pipe.read("all");
+    pipe.close();
+    return output == null ? "" : as_string(output);
 }
 
 function path_exists(path) {
@@ -174,15 +185,53 @@ function current_pid() {
     return separator > 0 ? substr(stat, 0, separator) : "";
 }
 
+function parent_pid() {
+    let stat = as_string(fs.readfile("/proc/self/stat"));
+    let marker = rindex(stat, ") ");
+    if (marker < 0)
+        return "";
+    let fields = split(substr(stat, marker + 2), " ");
+    return length(fields) > 1 && match(as_string(fields[1]), /^[0-9]+$/) != null ? fields[1] : "";
+}
+
 function begin_upgrade_quiesce(action) {
-    if (as_string(action) != "upgrade")
+    // opkg on supported OpenWrt 24 builds can omit the prerm action during an
+    // upgrade.  Treat every non-removal package replacement as an upgrade and
+    // pin the marker to the package-manager parent, which remains alive until
+    // postinst has completed.  A marker owned by this short-lived prerm process
+    // stopped quiescing as soon as prerm exited.
+    if (as_string(action) == "remove")
         return true;
-    let pid = current_pid();
+    let pid = parent_pid();
+    if (pid == "")
+        pid = current_pid();
     return pid != "" && fs.writefile(PACKAGE_UPGRADE_QUIESCE_FILE, pid + "\n") != null;
 }
 
 function clear_upgrade_quiesce() {
     unlink_if_exists(PACKAGE_UPGRADE_QUIESCE_FILE);
+}
+
+function wait_for_restored_service() {
+    let timeout = UPGRADE_RESTORE_WAIT_SECONDS;
+
+    // start_service() deliberately detaches when invoked from a procd package
+    // transaction.  Do not let postinst return while that worker is still
+    // starting: the component updater would otherwise mistake the transient
+    // state for failure and launch a concurrent restart.
+    while (timeout >= 0) {
+        let active = path_exists(UI_UC) ? trim(command_output_from_args([ "ucode", "-L", LIB_DIR, UI_UC, "active-service-action" ])) : "";
+        if (active == "") {
+            if (command_success_from_args([ INIT_PATH, "status" ]))
+                return true;
+        }
+        if (timeout <= 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
+
+    return false;
 }
 
 function prerm_cleanup(action) {
@@ -236,8 +285,14 @@ function postinst_restore() {
         return false;
     }
 
-    if (!command_success_from_args([ INIT_PATH, "start" ]))
+    if (!command_success_from_args([ INIT_PATH, "start" ])) {
+        warn("Forkop package restore could not start the service.\n");
         return false;
+    }
+    if (!wait_for_restored_service()) {
+        warn("Timed out waiting for the Forkop package restore to finish.\n");
+        return false;
+    }
 
     unlink_if_exists(PACKAGE_UPGRADE_STATE);
     clear_upgrade_quiesce();

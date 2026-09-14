@@ -14,6 +14,7 @@ const FORKOP_RELEASE_REPO = getenv("FORKOP_RELEASE_REPO") || constants.FORKOP_RE
 const FORKOP_MIRROR_BASE_URL = getenv("FORKOP_MIRROR_BASE_URL") || constants.FORKOP_MIRROR_BASE_URL || "";
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
+const PACKAGE_UPGRADE_STATE = getenv("FORKOP_PACKAGE_UPGRADE_STATE") || "/tmp/forkop-package-was-running";
 const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIME_STATE_DIR + "/system-info.json";
 const COMPONENT_LOCK_DIR = getenv("UPDATES_LOCK_DIR") || RUNTIME_STATE_DIR + "/component-action.lock";
 const TMP_STALE_TTL_MINUTES = getenv("UPDATES_TMP_STALE_TTL_MINUTES") || "30";
@@ -773,6 +774,31 @@ function forkop_status_running_with_timeout() {
         match(read_file(output_file), /"running"[ \t]*:[ \t]*1/) != null;
     remove_file(output_file);
     return ok;
+}
+
+function forkop_starting() {
+    if (!file_exists(LIB_DIR + "/service/ui.uc"))
+        return false;
+    return trim(module_output([ LIB_DIR + "/service/ui.uc", "active-service-action" ])) == "start";
+}
+
+function wait_for_forkop_restore() {
+    let timeout = 180;
+    while (timeout >= 0) {
+        let starting = forkop_starting();
+        if (!starting && forkop_status_running_with_timeout())
+            return true;
+        // A package postinst may have detached its start worker from procd.
+        // "starting" is an owned transition, not a reason to race it with a
+        // second restart. Keep waiting for its explicit terminal state.
+        if (!starting && !file_exists(PACKAGE_UPGRADE_STATE))
+            return false;
+        if (timeout <= 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
+    return false;
 }
 
 function capture_forkop_running_state() {
@@ -1922,7 +1948,7 @@ function install_forkop() {
     // instance that was running before this release upgrade. Avoid a second
     // full restart and its readiness wait, but retain the restart fallback
     // if the package lifecycle did not leave Forkop healthy.
-    if (forkop_was_running && forkop_status_running_with_timeout())
+    if (forkop_was_running && wait_for_forkop_restore())
         updates_log("Forkop was restored by the package upgrade; final restart skipped");
     else
         restart_forkop_after_successful_change();
