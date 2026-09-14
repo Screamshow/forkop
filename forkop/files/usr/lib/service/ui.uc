@@ -12,6 +12,7 @@ const STATE_UC = LIB_DIR + "/service/state.uc";
 const UI_UC = LIB_DIR + "/service/ui.uc";
 const STATE_DIR = getenv("FORKOP_UI_STATE_DIR") || "/var/run/forkop/ui-state";
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/forkop/reload.pending";
+const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || "/var/run/forkop/package-upgrade.quiesce";
 const RUNTIME_CONFIG_ERROR_FILE = getenv("FORKOP_RUNTIME_CONFIG_ERROR_FILE") || "/var/run/forkop/config-error";
 const SERVICE_ACTION_DIR = getenv("FORKOP_UI_SERVICE_ACTION_DIR") || STATE_DIR + "/service-actions";
 const SERVICE_ACTION_LOCK_DIR = getenv("FORKOP_UI_SERVICE_ACTION_LOCK_DIR") || STATE_DIR + "/service-actions.lock";
@@ -132,6 +133,11 @@ function command_success(command) {
 
 function command_success_from_args(args) {
     return command_success(command_from_args(args));
+}
+
+function package_upgrade_transition_active() {
+    let pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
+    return match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
 }
 
 function module_success(module_path, args) {
@@ -1110,7 +1116,7 @@ function current_ui_state_json() {
     let active_action = active_service_action_value();
     let config_error = trim(as_string(fs.readfile(RUNTIME_CONFIG_ERROR_FILE)));
 
-    if (active_action == "start")
+    if (active_action == "start" || (active_action == "" && package_upgrade_transition_active()))
         forkop_status = "starting";
     else if (active_action == "stop")
         forkop_status = "stopping";
@@ -1182,6 +1188,11 @@ function begin_service_action_if_idle(action, source) {
     source = as_string(source || "ui");
     if (!service_action_valid(action))
         return { status: 1, job_id: "" };
+
+    // Package prerm/postinst owns the complete stop -> detached start ->
+    // stable-runtime transition. Never let a manual LuCI action race it.
+    if (package_upgrade_transition_active())
+        return { status: 2, job_id: "" };
 
     ensure_dirs();
     if (!acquire_dir_lock(SERVICE_ACTION_LOCK_DIR))
@@ -1399,6 +1410,10 @@ function service_action_async(action) {
     }
 
     let started = start_service_action(action, "ui", action == "restart" ? "manual-ui-restart" : "");
+    if (!started.success && package_upgrade_transition_active()) {
+        action_start_response(false, "", "Forkop package upgrade is still restoring the service");
+        exit(1);
+    }
     if (!started.success && active_service_action_value() != "") {
         action_start_response(false, "", "Another service action is already running");
         exit(1);
@@ -1568,6 +1583,8 @@ else if (mode == "action-start-response")
     action_start_response(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "service-action-valid")
     exit(service_action_valid(ARGV[1]) ? 0 : 1);
+else if (mode == "package-upgrade-transition-active")
+    exit(package_upgrade_transition_active() ? 0 : 1);
 else if (mode == "latency-type-valid")
     exit(latency_type_valid(ARGV[1]) ? 0 : 1);
 else if (mode == "service-action-expected-running")

@@ -86,6 +86,7 @@ for mode in \
   get-ui-state \
   component-action-running-for \
   service-action-begin-if-idle \
+  package-upgrade-transition-active \
   service-action-update-pid \
   service-action-finish-after-command \
   latency-progress-state \
@@ -226,6 +227,7 @@ export FORKOP_UI_SERVICE_ACTION_LOCK_DIR="$FORKOP_UI_STATE_DIR/service-actions.l
 export FORKOP_UI_LATENCY_ACTION_DIR="$FORKOP_UI_STATE_DIR/latency-actions"
 export FORKOP_UI_COMPONENT_ACTION_DIR="$FORKOP_UI_STATE_DIR/component-actions"
 export FORKOP_UI_SUBSCRIPTION_ACTION_DIR="$FORKOP_UI_STATE_DIR/subscription-actions"
+export FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE="$WORK_DIR/package-upgrade.quiesce"
 
 latency_start="$(
   FORKOP_BIN=/bin/true \
@@ -244,6 +246,17 @@ if (!value.progress || value.progress.completed !== 0 || value.progress.total !=
   process.exit(1);
 }
 NODE
+
+printf '%s\n' "$$" >"$FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE"
+ui_ucode package-upgrade-transition-active >/dev/null ||
+  fail "live package upgrade owner must expose a UI transition"
+if ui_ucode service-action-begin-if-idle restart test >/dev/null 2>&1; then
+  fail "manual service action must be rejected during package restore"
+fi
+rm -f "$FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE"
+if ui_ucode package-upgrade-transition-active >/dev/null 2>&1; then
+  fail "removed package upgrade marker must clear the UI transition"
+fi
 
 job_id="$(ui_ucode service-action-begin-if-idle reload test)"
 [ -n "$job_id" ] || fail "service-action-begin-if-idle should create a job"
