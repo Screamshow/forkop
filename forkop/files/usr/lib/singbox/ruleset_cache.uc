@@ -146,6 +146,17 @@ function fallback_urls(url) {
     let main_prefix = as_string(constants.SRS_MAIN_URL) + "/";
     if (substr(url, 0, length(main_prefix)) == main_prefix)
         append_unique(result, as_string(constants.SRS_FALLBACK_MAIN_URL) + "/" + substr(url, length(main_prefix)));
+    let mirror_base = as_string(constants.FORKOP_MIRROR_BASE_URL);
+    let secondary_mirror_prefix = mirror_base != "" ? mirror_base + "/forkop/lists/b4geoip-forkop/" : "";
+    let secondary_cdn_prefix = "https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/";
+    let secondary_raw_prefix = "https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/";
+    if (secondary_mirror_prefix != "" && substr(url, 0, length(secondary_mirror_prefix)) == secondary_mirror_prefix) {
+        let suffix = substr(url, length(secondary_mirror_prefix));
+        append_unique(result, secondary_cdn_prefix + suffix);
+        append_unique(result, secondary_raw_prefix + suffix);
+    }
+    else if (substr(url, 0, length(secondary_cdn_prefix)) == secondary_cdn_prefix)
+        append_unique(result, secondary_raw_prefix + substr(url, length(secondary_cdn_prefix)));
     if (url == as_string(constants.SRS_ADS_HAGEZI_PRO_URL))
         append_unique(result, constants.SRS_FALLBACK_ADS_HAGEZI_PRO_URL);
     if (url == as_string(constants.SRS_SUPERCELL_URL))

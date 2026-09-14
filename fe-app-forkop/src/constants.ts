@@ -61,6 +61,7 @@ export const SECONDARY_RULESET_OPTIONS = {
   anthropic: 'Anthropic',
   apple: 'Apple',
   google: 'Google',
+  twitch: 'Twitch',
 };
 
 export const DNS_SERVER_OPTIONS = {

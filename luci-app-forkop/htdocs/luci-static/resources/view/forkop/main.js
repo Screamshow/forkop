@@ -1009,7 +1009,8 @@ var SECONDARY_RULESET_OPTIONS = {
   adobe: "Adobe",
   anthropic: "Anthropic",
   apple: "Apple",
-  google: "Google"
+  google: "Google",
+  twitch: "Twitch"
 };
 var DNS_SERVER_OPTIONS = {
   "77.88.8.8": "77.88.8.8 (Yandex DNS)",

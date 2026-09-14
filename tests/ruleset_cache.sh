@@ -219,6 +219,14 @@ fallback="$({
 [ "$fallback" = 'https://upstream.test/community/youtube.srs' ] ||
   fail "community rule-set fallback must preserve the asset name"
 
+secondary_fallback="$(FORKOP_MIRROR_BASE_URL='https://mirror.test' \
+  ucode -L "$FORKOP_LIB" "$RULESET_CACHE_UC" fallback-urls \
+  'https://mirror.test/forkop/lists/b4geoip-forkop/srs/twitch.srs')"
+[ "$secondary_fallback" = "$(printf '%s\n%s' \
+  'https://cdn.jsdelivr.net/gh/Greeg0ry/b4geoip-forkop@main/srs/twitch.srs' \
+  'https://raw.githubusercontent.com/Greeg0ry/b4geoip-forkop/main/srs/twitch.srs')" ] ||
+  fail "secondary rule-set fallback must use jsDelivr before raw GitHub"
+
 before="$(find "$WORK_DIR/cache" -maxdepth 1 -type f -name '*.srs' -exec md5sum {} \;)"
 PATH="$WORK_DIR/bin:$PATH" \
 RULESET_TEST_SOURCE_JSON="$WORK_DIR/source.json" \

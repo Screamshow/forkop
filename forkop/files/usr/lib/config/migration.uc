@@ -49,6 +49,7 @@ const CURRENT_SECONDARY_RULESET_IDS = {
     adobe: true, anthropic: true, apple: true, blizzard: true, bungie: true,
     ccp: true, electronicarts: true, epicgames: true, google: true,
     nintendo: true, play2go: true, riot: true, roblox: true, sony: true,
+    twitch: true,
     taketwo: true, ubisoft: true, valve: true, wargaming: true, xbox: true
 };
 const RETIRED_SECONDARY_RULESET_IDS = {
