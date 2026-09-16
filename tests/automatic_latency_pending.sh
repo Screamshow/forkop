@@ -205,6 +205,14 @@ rm -f "$TEST_RELOAD_FAIL_FLAG"
 printf '456\n' >"$TEST_PID_FILE"
 : >"$TEST_CURL_LOG"
 ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" automatic-latency-test resume
+# The interruption path schedules its own detached resume.  An explicit resume
+# above may legitimately coalesce behind that worker, so wait for the single
+# owner to finish instead of assuming which process wins the lock race.
+resume_wait=0
+while [ -e "$FORKOP_AUTOMATIC_LATENCY_PENDING_FILE" ] && [ "$resume_wait" -lt 10 ]; do
+  sleep 1
+  resume_wait=$((resume_wait + 1))
+done
 [ ! -e "$FORKOP_AUTOMATIC_LATENCY_PENDING_FILE" ] || fail "resumed test did not complete and clear marker"
 
 # Clash failure retains the marker and an immediate retry performs no requests.
