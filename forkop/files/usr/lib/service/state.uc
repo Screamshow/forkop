@@ -629,6 +629,54 @@ function log_controlled_transition_failure(reason, provenance) {
     ]);
 }
 
+// procd can briefly keep reporting an exited child after /proc no longer has
+// any sing-box executable. This is safe to wait out, but it is not authority
+// to signal the reported PID: it may already have been reused. Fail closed if
+// a real sing-box appears before the stale service state converges.
+function wait_for_stale_sing_box_service_pid(timeout, transition) {
+    timeout = int(timeout || 15);
+
+    while (timeout >= 0) {
+        let process_count = sing_box_process_count();
+        let service_pid = sing_box_service_pid_runtime();
+
+        if (process_count > 0) {
+            log_controlled_transition_failure(
+                "real sing-box appeared while waiting for stale procd PID before " + as_string(transition),
+                null
+            );
+            return false;
+        }
+        if (service_pid <= 0) {
+            // Confirm the converged pair once more. The first process scan and
+            // ubus query are separate snapshots, so a process may have
+            // appeared between them.
+            process_count = sing_box_process_count();
+            service_pid = sing_box_service_pid_runtime();
+            if (process_count > 0) {
+                log_controlled_transition_failure(
+                    "real sing-box appeared while confirming stale procd PID cleanup before " + as_string(transition),
+                    null
+                );
+                return false;
+            }
+            if (service_pid <= 0)
+                return true;
+        }
+
+        if (timeout <= 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
+
+    log_controlled_transition_failure(
+        "timed out waiting for stale procd PID to clear before " + as_string(transition),
+        null
+    );
+    return false;
+}
+
 // Stop only a sole, procd-owned Forkop runtime and wait for that exact
 // PID/starttime to disappear. A foreign or unexpected process is never
 // stopped, and no replacement is allowed while any sing-box remains.
@@ -639,6 +687,9 @@ function stop_managed_sing_box_and_wait(timeout) {
 
     if (process_count == 0 && service_pid <= 0)
         return true;
+
+    if (process_count == 0 && service_pid > 0)
+        return wait_for_stale_sing_box_service_pid(timeout, "stop");
 
     let provenance = sing_box_runtime_provenance();
     if (provenance == null) {
@@ -691,7 +742,15 @@ function stop_managed_sing_box_and_wait(timeout) {
 }
 
 function start_managed_sing_box_and_verify(timeout) {
-    if (sing_box_process_count() != 0 || sing_box_service_pid_runtime() > 0) {
+    timeout = int(timeout || 15);
+    let process_count = sing_box_process_count();
+    let service_pid = sing_box_service_pid_runtime();
+
+    if (process_count == 0 && service_pid > 0) {
+        if (!wait_for_stale_sing_box_service_pid(timeout, "start"))
+            return false;
+    }
+    else if (process_count != 0) {
         log_controlled_transition_failure("unexpected sing-box exists before start", null);
         return false;
     }
@@ -703,7 +762,6 @@ function start_managed_sing_box_and_verify(timeout) {
         return false;
     }
 
-    timeout = int(timeout || 15);
     while (timeout >= 0) {
         if (sing_box_single_owned_service_runtime())
             return true;

@@ -53,6 +53,7 @@ mkdir -p "$WORK/bin"
 export TEST_PROCD_PID_FILE="$WORK/procd.pid"
 export TEST_SINGBOX_PIDS_FILE="$WORK/singbox.pids"
 export TEST_ACTION_LOG="$WORK/actions.log"
+export TEST_LOG="$WORK/forkop.log"
 export TEST_OLD_PID_FILE="$WORK/old.pid"
 export TEST_STOP_MODE=""
 export TEST_STOP_DELAY=0
@@ -80,6 +81,7 @@ esac
 SH
 cat >"$WORK/bin/logger" <<'SH'
 #!/bin/sh
+printf '%s\n' "$*" >>"$TEST_LOG"
 exit 0
 SH
 cat >"$WORK/bin/sing-box-init" <<'SH'
@@ -137,6 +139,10 @@ case "${1:-}" in
 esac
 SH
 chmod 0755 "$WORK/bin/ubus" "$WORK/bin/readlink" "$WORK/bin/logger" "$WORK/bin/sing-box-init"
+: >"$TEST_PROCD_PID_FILE"
+: >"$TEST_SINGBOX_PIDS_FILE"
+: >"$TEST_ACTION_LOG"
+: >"$TEST_LOG"
 
 state() {
   PATH="$WORK/bin:$PATH" FORKOP_SING_BOX_INIT="$WORK/bin/sing-box-init" \
@@ -153,8 +159,62 @@ clear_processes() {
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   done
   managed_pid=""; extra_pid=""; new_pid=""
-  : >"$TEST_SINGBOX_PIDS_FILE"; : >"$TEST_PROCD_PID_FILE"; : >"$TEST_ACTION_LOG"
+  : >"$TEST_SINGBOX_PIDS_FILE"; : >"$TEST_PROCD_PID_FILE"; : >"$TEST_ACTION_LOG"; : >"$TEST_LOG"
 }
+
+# An exited child may remain in procd briefly. Start must wait for that stale
+# PID to disappear, without signalling it or entering the caller's retry path.
+printf '%s\n' 424242 >"$TEST_PROCD_PID_FILE"
+: >"$TEST_SINGBOX_PIDS_FILE"
+( sleep 1; : >"$TEST_PROCD_PID_FILE" ) &
+state start-managed-sing-box-runtime 4 ||
+  fail "start rejected a stale procd PID that cleared within the timeout"
+[ "$(grep -c '^start$' "$TEST_ACTION_LOG")" -eq 1 ] ||
+  fail "stale procd PID caused repeated start attempts"
+! grep -Fq '[fatal]' "$TEST_LOG" || fail "successful stale PID wait emitted a fatal transition log"
+new_pid="$(cat "$TEST_PROCD_PID_FILE")"
+kill -0 "$new_pid" 2>/dev/null || fail "runtime did not start after stale PID cleared"
+clear_processes
+
+# Cleanup/stop has the same convergence window. With no real sing-box it must
+# wait for procd to clear and finish without calling stop or killing by PID.
+printf '%s\n' 424243 >"$TEST_PROCD_PID_FILE"
+: >"$TEST_SINGBOX_PIDS_FILE"
+( sleep 1; : >"$TEST_PROCD_PID_FILE" ) &
+state stop-managed-sing-box-runtime 4 ||
+  fail "stop rejected a stale procd PID that cleared within the timeout"
+[ ! -s "$TEST_ACTION_LOG" ] || fail "stale-only cleanup invoked the sing-box init script"
+! grep -Fq '[fatal]' "$TEST_LOG" || fail "successful stale PID cleanup emitted a fatal transition log"
+clear_processes
+
+# A stale PID that does not converge remains fail-closed and logs the complete
+# observed state. It must never reach init.d start.
+printf '%s\n' 424244 >"$TEST_PROCD_PID_FILE"
+: >"$TEST_SINGBOX_PIDS_FILE"
+if state start-managed-sing-box-runtime 1; then
+  fail "stale procd PID timeout unexpectedly succeeded"
+fi
+[ ! -s "$TEST_ACTION_LOG" ] || fail "stale PID timeout reached init.d start"
+grep -Fq 'timed out waiting for stale procd PID to clear before start' "$TEST_LOG" ||
+  fail "stale PID timeout did not emit a detailed fatal reason"
+grep -Fq 'observed_procd_pid=424244, sing_box_process_count=0' "$TEST_LOG" ||
+  fail "stale PID timeout log omitted observed runtime state"
+clear_processes
+
+# Convergence is accepted only while there is no real sing-box. If one
+# appears, fail immediately and leave it untouched.
+printf '%s\n' 424245 >"$TEST_PROCD_PID_FILE"
+: >"$TEST_SINGBOX_PIDS_FILE"
+sleep 60 & extra_pid=$!
+( sleep 1; printf '%s\n' "$extra_pid" >"$TEST_SINGBOX_PIDS_FILE" ) &
+if state start-managed-sing-box-runtime 4; then
+  fail "real sing-box appearing during stale PID wait was accepted"
+fi
+kill -0 "$extra_pid" 2>/dev/null || fail "stale PID guard killed an unexpected sing-box"
+[ ! -s "$TEST_ACTION_LOG" ] || fail "unexpected sing-box reached init.d start"
+grep -Fq 'real sing-box appeared while waiting for stale procd PID before start' "$TEST_LOG" ||
+  fail "appearing sing-box did not emit a detailed fatal reason"
+clear_processes
 
 # A deliberately slow old process must be gone before init.d start is called.
 start_managed
