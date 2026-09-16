@@ -225,7 +225,13 @@ function trim(value) {
 }
 
 function owner_pid() {
-    let pid = trim(command_output_from_args([ "sh", "-c", "echo $PPID" ]));
+    // fs.popen() spawns an intermediate shell, so querying $PPID from that
+    // shell records a PID which exits immediately.  A tracked reload can run
+    // longer than the stale-job grace period and LuCI would then expose Start
+    // while the reload is still changing the runtime.
+    let stat = as_string(fs.readfile("/proc/self/stat"));
+    let separator = index(stat, " ");
+    let pid = separator > 0 ? substr(stat, 0, separator) : "";
     return match(pid, /^[0-9]+$/) != null ? pid : "0";
 }
 

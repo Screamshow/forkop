@@ -30,6 +30,12 @@ grep -Fq 'fs.readfile("/proc/self/stat")' <<<"$owner_pid_body" ||
 if grep -Fq 'echo $PPID' <<<"$owner_pid_body"; then
   fail "external service action owner must not be a short-lived popen child"
 fi
+lifecycle_owner_pid_body="$(sed -n '/^function owner_pid(/,/^}/p' "$FORKOP_LIB/service/lifecycle.uc")"
+grep -Fq 'fs.readfile("/proc/self/stat")' <<<"$lifecycle_owner_pid_body" ||
+  fail "tracked runtime reload must use its live ucode worker pid"
+if grep -Fq 'echo $PPID' <<<"$lifecycle_owner_pid_body"; then
+  fail "tracked runtime reload must not use a short-lived popen child"
+fi
 
 initd_ucode() {
   ucode -L "$FORKOP_LIB" "$INITD_UC" "$@"
