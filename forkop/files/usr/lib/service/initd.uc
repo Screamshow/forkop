@@ -432,7 +432,12 @@ function restore_dnsmasq_failsafe() {
 }
 
 function owner_pid_value() {
-    let pid = trim(command_output_from_args([ "sh", "-c", "echo $PPID" ]));
+    // Do not obtain $PPID through fs.popen()/a shell command: that yields the
+    // short-lived popen child, not this ucode worker.  Once that child exits,
+    // UI job cleanup treats the still-running service transition as stale.
+    let stat = as_string(fs.readfile("/proc/self/stat"));
+    let separator = index(stat, " ");
+    let pid = separator > 0 ? substr(stat, 0, separator) : "";
     return match(pid, /^[0-9]+$/) != null ? pid : "0";
 }
 

@@ -24,6 +24,12 @@ grep -Fq 'service-action-update-pid", job_id, owner_pid_value()' <<<"$begin_exte
 if grep -Fq 'owner_pid || owner_pid_value()' <<<"$begin_external_body"; then
   fail "external service actions must not track the short-lived rc.common caller"
 fi
+owner_pid_body="$(sed -n '/^function owner_pid_value(/,/^}/p' "$INITD_UC")"
+grep -Fq 'fs.readfile("/proc/self/stat")' <<<"$owner_pid_body" ||
+  fail "external service action owner must be the ucode worker itself"
+if grep -Fq 'echo $PPID' <<<"$owner_pid_body"; then
+  fail "external service action owner must not be a short-lived popen child"
+fi
 
 initd_ucode() {
   ucode -L "$FORKOP_LIB" "$INITD_UC" "$@"
