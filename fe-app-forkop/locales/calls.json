@@ -354,22 +354,22 @@
     "call": "Browser FakeIP check could not be completed",
     "key": "Browser FakeIP check could not be completed",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:67",
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:95"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:69",
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:97"
     ]
   },
   {
     "call": "Browser is not using FakeIP",
     "key": "Browser is not using FakeIP",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:98"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:100"
     ]
   },
   {
     "call": "Browser is using FakeIP correctly",
     "key": "Browser is using FakeIP correctly",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:97"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:99"
     ]
   },
   {
@@ -591,7 +591,7 @@
     "places": [
       "src/forkop/tabs/diagnostic/helpers/getMeta.ts:13",
       "src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:23",
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:57"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:59"
     ]
   },
   {
@@ -614,10 +614,10 @@
     "places": [
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:3202",
       "src/partials/modal/renderModal.ts:263",
-      "src/forkop/tabs/monitoring/initController.ts:747",
-      "src/forkop/tabs/monitoring/initController.ts:797",
       "src/forkop/tabs/dashboard/initController.ts:1020",
-      "src/forkop/tabs/dashboard/initController.ts:1398"
+      "src/forkop/tabs/dashboard/initController.ts:1398",
+      "src/forkop/tabs/monitoring/initController.ts:747",
+      "src/forkop/tabs/monitoring/initController.ts:797"
     ]
   },
   {
@@ -746,7 +746,7 @@
     "call": "Could not compare FakeIP and control public IPs",
     "key": "Could not compare FakeIP and control public IPs",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:113"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:115"
     ]
   },
   {
@@ -1578,12 +1578,12 @@
     "call": "Failed to execute",
     "key": "Failed to execute",
     "places": [
+      "src/forkop/methods/shell/index.ts:171",
+      "src/forkop/methods/shell/index.ts:178",
       "src/forkop/tabs/updates/initController.ts:524",
       "src/forkop/tabs/updates/initController.ts:525",
       "src/forkop/tabs/updates/initController.ts:585",
-      "src/forkop/tabs/updates/initController.ts:735",
-      "src/forkop/methods/shell/index.ts:171",
-      "src/forkop/methods/shell/index.ts:178"
+      "src/forkop/tabs/updates/initController.ts:735"
     ]
   },
   {
@@ -1608,28 +1608,28 @@
     "call": "FakeIP and control checks use different public IPs",
     "key": "FakeIP and control checks use different public IPs",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:115"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:117"
     ]
   },
   {
     "call": "FakeIP and control checks use the same public IP",
     "key": "FakeIP and control checks use the same public IP",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:116"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:118"
     ]
   },
   {
     "call": "FakeIP works; public IP comparison is inconclusive",
     "key": "FakeIP works; public IP comparison is inconclusive",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:60"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:62"
     ]
   },
   {
     "call": "FakeIP works; public IP comparison was skipped because no proxy connection is configured",
     "key": "FakeIP works; public IP comparison was skipped because no proxy connection is configured",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:52"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:54"
     ]
   },
   {
@@ -2540,10 +2540,10 @@
     "call": "Latency test failed",
     "key": "Latency test failed",
     "places": [
-      "src/forkop/tabs/dashboard/initController.ts:752",
-      "src/forkop/tabs/dashboard/initController.ts:760",
       "src/forkop/methods/shell/index.ts:477",
-      "src/forkop/methods/shell/index.ts:498"
+      "src/forkop/methods/shell/index.ts:498",
+      "src/forkop/tabs/dashboard/initController.ts:752",
+      "src/forkop/tabs/dashboard/initController.ts:760"
     ]
   },
   {
@@ -3253,7 +3253,7 @@
     "call": "Public IP comparison skipped because no proxy connection is configured",
     "key": "Public IP comparison skipped because no proxy connection is configured",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:105"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:107"
     ]
   },
   {
@@ -3765,9 +3765,9 @@
     "call": "Service action failed",
     "key": "Service action failed",
     "places": [
-      "src/forkop/tabs/diagnostic/initController.ts:610",
       "src/forkop/methods/shell/index.ts:369",
-      "src/forkop/methods/shell/index.ts:419"
+      "src/forkop/methods/shell/index.ts:419",
+      "src/forkop/tabs/diagnostic/initController.ts:610"
     ]
   },
   {
@@ -3813,14 +3813,14 @@
     "call": "Sing-box FakeIP DNS does not work",
     "key": "Sing-box FakeIP DNS does not work",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:85"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:87"
     ]
   },
   {
     "call": "Sing-box FakeIP DNS works",
     "key": "Sing-box FakeIP DNS works",
     "places": [
-      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:84"
+      "src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:86"
     ]
   },
   {
@@ -3965,8 +3965,8 @@
     ]
   },
   {
-    "call": "Start Forkop",
-    "key": "Start Forkop",
+    "call": "Start Forkop X",
+    "key": "Start Forkop X",
     "places": [
       "src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:72"
     ]

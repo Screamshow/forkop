@@ -431,6 +431,11 @@ function restore_dnsmasq_failsafe() {
     return module_status(DNS_APPLY_UC, [ "failsafe-restore" ]);
 }
 
+function owner_pid_value() {
+    let pid = trim(command_output_from_args([ "sh", "-c", "echo $PPID" ]));
+    return match(pid, /^[0-9]+$/) != null ? pid : "0";
+}
+
 function begin_external_service_action(action, source, owner_pid) {
     if (as_string(getenv("FORKOP_UI_ACTION_TRACKED") || "0") == "1")
         return "";
@@ -438,8 +443,14 @@ function begin_external_service_action(action, source, owner_pid) {
         return "";
 
     let job_id = trim(module_output(UI_UC, [ "service-action-begin-if-idle", action, source || "initd" ]));
-    if (job_id != "")
-        module_status(UI_UC, [ "service-action-update-pid", job_id, owner_pid || owner_pid_value() ]);
+    if (job_id != "") {
+        // start_service() may be detached from procd while the rc.common
+        // wrapper which supplied owner_pid exits immediately.  The ucode
+        // worker is the process that really owns the complete transition;
+        // tracking the short-lived wrapper makes LuCI mark the action stale
+        // and briefly expose a second Start button during package restore.
+        module_status(UI_UC, [ "service-action-update-pid", job_id, owner_pid_value() ]);
+    }
 
     return job_id;
 }
@@ -448,11 +459,6 @@ function finish_external_service_action(action, job_id, status) {
     if (as_string(job_id) == "" || !file_exists(UI_UC))
         return 0;
     return module_status(UI_UC, [ "service-action-finish-after-command", action, job_id, as_string(status) ]);
-}
-
-function owner_pid_value() {
-    let pid = trim(command_output_from_args([ "sh", "-c", "echo $PPID" ]));
-    return match(pid, /^[0-9]+$/) != null ? pid : "0";
 }
 
 function runtime_status_object() {

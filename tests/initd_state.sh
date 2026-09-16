@@ -18,6 +18,13 @@ fail() {
   exit 1
 }
 
+begin_external_body="$(sed -n '/^function begin_external_service_action(/,/^}/p' "$INITD_UC")"
+grep -Fq 'service-action-update-pid", job_id, owner_pid_value()' <<<"$begin_external_body" ||
+  fail "external service actions must track the live ucode worker"
+if grep -Fq 'owner_pid || owner_pid_value()' <<<"$begin_external_body"; then
+  fail "external service actions must not track the short-lived rc.common caller"
+fi
+
 initd_ucode() {
   ucode -L "$FORKOP_LIB" "$INITD_UC" "$@"
 }

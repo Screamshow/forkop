@@ -69,7 +69,7 @@ export function renderAvailableActions({
         classNames: ['cbi-button-save'],
         onClick: start.onClick,
         icon: renderCirclePlayIcon24,
-        text: _('Start Forkop'),
+        text: _('Start Forkop X'),
         loading: start.loading,
         disabled: start.disabled,
       }),

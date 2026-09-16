@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-16 10:05+0300\n"
-"PO-Revision-Date: 2026-09-16 10:05+0300\n"
+"POT-Creation-Date: 2026-09-16 11:58+0300\n"
+"PO-Revision-Date: 2026-09-16 11:58+0300\n"
 "Last-Translator: Screamshow <235684779+Screamshow@users.noreply.github.com>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -223,16 +223,16 @@ msgstr ""
 msgid "Bootstrap DNS Servers"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:67
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:95
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:69
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:97
 msgid "Browser FakeIP check could not be completed"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:98
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:100
 msgid "Browser is not using FakeIP"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:97
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:99
 msgid "Browser is using FakeIP correctly"
 msgstr ""
 
@@ -370,7 +370,7 @@ msgstr ""
 
 #: src/forkop/tabs/diagnostic/helpers/getMeta.ts:13
 #: src/forkop/tabs/diagnostic/checks/getCheckItemsMeta.ts:23
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:57
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:59
 msgid "Checks passed"
 msgstr ""
 
@@ -384,10 +384,10 @@ msgstr ""
 
 #: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:3202
 #: src/partials/modal/renderModal.ts:263
-#: src/forkop/tabs/monitoring/initController.ts:747
-#: src/forkop/tabs/monitoring/initController.ts:797
 #: src/forkop/tabs/dashboard/initController.ts:1020
 #: src/forkop/tabs/dashboard/initController.ts:1398
+#: src/forkop/tabs/monitoring/initController.ts:747
+#: src/forkop/tabs/monitoring/initController.ts:797
 msgid "Close"
 msgstr ""
 
@@ -462,7 +462,7 @@ msgstr ""
 msgid "Copy address"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:113
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:115
 msgid "Could not compare FakeIP and control public IPs"
 msgstr ""
 
@@ -949,12 +949,12 @@ msgstr ""
 msgid "Failed to create support report"
 msgstr ""
 
+#: src/forkop/methods/shell/index.ts:171
+#: src/forkop/methods/shell/index.ts:178
 #: src/forkop/tabs/updates/initController.ts:524
 #: src/forkop/tabs/updates/initController.ts:525
 #: src/forkop/tabs/updates/initController.ts:585
 #: src/forkop/tabs/updates/initController.ts:735
-#: src/forkop/methods/shell/index.ts:171
-#: src/forkop/methods/shell/index.ts:178
 msgid "Failed to execute"
 msgstr ""
 
@@ -970,19 +970,19 @@ msgstr ""
 msgid "Failed to update subscriptions"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:115
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:117
 msgid "FakeIP and control checks use different public IPs"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:116
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:118
 msgid "FakeIP and control checks use the same public IP"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:60
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:62
 msgid "FakeIP works; public IP comparison is inconclusive"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:52
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:54
 msgid "FakeIP works; public IP comparison was skipped because no proxy connection is configured"
 msgstr ""
 
@@ -1515,10 +1515,10 @@ msgstr ""
 msgid "Keyword must not contain spaces or commas"
 msgstr ""
 
-#: src/forkop/tabs/dashboard/initController.ts:752
-#: src/forkop/tabs/dashboard/initController.ts:760
 #: src/forkop/methods/shell/index.ts:477
 #: src/forkop/methods/shell/index.ts:498
+#: src/forkop/tabs/dashboard/initController.ts:752
+#: src/forkop/tabs/dashboard/initController.ts:760
 msgid "Latency test failed"
 msgstr ""
 
@@ -1943,7 +1943,7 @@ msgstr ""
 msgid "Protocol"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:105
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:107
 msgid "Public IP comparison skipped because no proxy connection is configured"
 msgstr ""
 
@@ -2239,9 +2239,9 @@ msgstr ""
 msgid "server_port must be a number from 1 to 65535"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/initController.ts:610
 #: src/forkop/methods/shell/index.ts:369
 #: src/forkop/methods/shell/index.ts:419
+#: src/forkop/tabs/diagnostic/initController.ts:610
 msgid "Service action failed"
 msgstr ""
 
@@ -2269,11 +2269,11 @@ msgstr ""
 msgid "Sing-box autostart disabled"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:85
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:87
 msgid "Sing-box FakeIP DNS does not work"
 msgstr ""
 
-#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:84
+#: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:86
 msgid "Sing-box FakeIP DNS works"
 msgstr ""
 
@@ -2359,7 +2359,7 @@ msgid "Standalone Zapret2 service is inactive"
 msgstr ""
 
 #: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts:72
-msgid "Start Forkop"
+msgid "Start Forkop X"
 msgstr ""
 
 #: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:2450
