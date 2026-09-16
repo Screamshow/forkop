@@ -234,9 +234,30 @@ no_proxy_check_section="$(printf '%s\n' '[
 cat >"$WORK_DIR/fakeip-comparison-proxy.json" <<'JSON'
 {"route":{"rules":[{"action":"route","outbound":"Flint-out","domain":"ip.podkop.fyi"}]}}
 JSON
-ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" \
-  fakeip-public-ip-comparison-available-fixture "$WORK_DIR/fakeip-comparison-proxy.json" ||
-  fail "FakeIP diagnostics did not detect the generated proxy comparison route"
+mkdir -p "$WORK_DIR/fakeip-bin"
+cat >"$WORK_DIR/fakeip-bin/dig" <<'EOF_FAKEIP_DIG'
+#!/bin/sh
+case " $* " in
+  *' A '*) printf '%s\n' '198.18.0.42' ;;
+  *' AAAA '*) printf '%s\n' 'fc00::42' ;;
+esac
+EOF_FAKEIP_DIG
+chmod +x "$WORK_DIR/fakeip-bin/dig"
+PATH="$WORK_DIR/fakeip-bin:$PATH" \
+  ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" \
+    check-fakeip-fixture "$WORK_DIR/fakeip-comparison-proxy.json" \
+    >"$WORK_DIR/fakeip-check.json" 2>"$WORK_DIR/fakeip-check.stderr" ||
+  fail "FakeIP diagnostics full check failed"
+[ ! -s "$WORK_DIR/fakeip-check.stderr" ] ||
+  fail "FakeIP diagnostics full check emitted a ucode runtime error"
+ucode -e '
+  let fs = require("fs");
+  let value = json(fs.readfile(ARGV[0]));
+  if (!value.fakeip || !value.public_ip_comparison_available ||
+      value.IPv4 != "198.18.0.42" || value.IPv6 != "fc00::42")
+    exit(1);
+' "$WORK_DIR/fakeip-check.json" ||
+  fail "FakeIP diagnostics full check returned an invalid result"
 
 cat >"$WORK_DIR/fakeip-comparison-direct.json" <<'JSON'
 {"route":{"rules":[{"action":"route-options","domain":"fakeip.podkop.fyi","override_port":8443}]}}

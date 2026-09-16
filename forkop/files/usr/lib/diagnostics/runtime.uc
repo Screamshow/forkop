@@ -1503,39 +1503,6 @@ function check_sing_box() {
     return 0;
 }
 
-function check_fakeip() {
-    let fakeip_address = "";
-    let fakeip6_address = "";
-    for (let line in split(command_output_from_args([
-        "dig", "+short", "@" + SB_DNS_INBOUND_ADDRESS, FAKEIP_TEST_DOMAIN, "A", "+timeout=2", "+tries=1"
-    ]), "\n")) {
-        line = trim(as_string(line));
-        if (valid_ipv4(line)) {
-            fakeip_address = line;
-            break;
-        }
-    }
-    for (let line in split(command_output_from_args([
-        "dig", "+short", "@" + SB_DNS_INBOUND_ADDRESS, FAKEIP_TEST_DOMAIN, "AAAA", "+timeout=2", "+tries=1"
-    ]), "\n")) {
-        line = lc(trim(as_string(line)));
-        if (core_ip.valid_ipv6(line)) {
-            fakeip6_address = line;
-            break;
-        }
-    }
-    write_json({
-        fakeip: match(fakeip_address, /^198\.(18|19)\./) != null || match(fakeip6_address, /^fc[0-3][0-9a-f]:/) != null,
-        public_ip_comparison_available: fakeip_public_ip_comparison_available(
-            read_json_file(option(settings(), "config_path", ""))
-        ),
-        IP: fakeip_address != "" ? fakeip_address : fakeip6_address,
-        IPv4: fakeip_address,
-        IPv6: fakeip6_address
-    });
-    return 0;
-}
-
 function rule_matches_domain(rule, domain) {
     let value = object_or_empty(rule).domain;
     if (type(value) == "array") {
@@ -1560,8 +1527,48 @@ function fakeip_public_ip_comparison_available(config) {
     return false;
 }
 
+function fakeip_check_result(config) {
+    let fakeip_address = "";
+    let fakeip6_address = "";
+    for (let line in split(command_output_from_args([
+        "dig", "+short", "@" + SB_DNS_INBOUND_ADDRESS, FAKEIP_TEST_DOMAIN, "A", "+timeout=2", "+tries=1"
+    ]), "\n")) {
+        line = trim(as_string(line));
+        if (valid_ipv4(line)) {
+            fakeip_address = line;
+            break;
+        }
+    }
+    for (let line in split(command_output_from_args([
+        "dig", "+short", "@" + SB_DNS_INBOUND_ADDRESS, FAKEIP_TEST_DOMAIN, "AAAA", "+timeout=2", "+tries=1"
+    ]), "\n")) {
+        line = lc(trim(as_string(line)));
+        if (core_ip.valid_ipv6(line)) {
+            fakeip6_address = line;
+            break;
+        }
+    }
+    return {
+        fakeip: match(fakeip_address, /^198\.(18|19)\./) != null || match(fakeip6_address, /^fc[0-3][0-9a-f]:/) != null,
+        public_ip_comparison_available: fakeip_public_ip_comparison_available(config),
+        IP: fakeip_address != "" ? fakeip_address : fakeip6_address,
+        IPv4: fakeip_address,
+        IPv6: fakeip6_address
+    };
+}
+
+function check_fakeip() {
+    write_json(fakeip_check_result(read_json_file(option(settings(), "config_path", ""))));
+    return 0;
+}
+
 function fakeip_public_ip_comparison_available_fixture(path) {
     exit(fakeip_public_ip_comparison_available(read_json_file(path)) ? 0 : 1);
+}
+
+function check_fakeip_fixture(path) {
+    write_json(fakeip_check_result(read_json_file(path)));
+    return 0;
 }
 
 function clash_json_output(args) {
@@ -2388,6 +2395,8 @@ else if (mode == "check-fakeip")
     exit(check_fakeip());
 else if (mode == "fakeip-public-ip-comparison-available-fixture")
     fakeip_public_ip_comparison_available_fixture(ARGV[1]);
+else if (mode == "check-fakeip-fixture")
+    exit(check_fakeip_fixture(ARGV[1]));
 else if (mode == "check-zapret-runtime")
     exit(module_passthrough(ZAPRET_RUNTIME_UC, [ "check" ]));
 else if (mode == "check-zapret2-runtime")
