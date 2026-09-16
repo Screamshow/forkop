@@ -58,6 +58,10 @@ grep -Fq 'completed % batch_size == 0' "$DIAGNOSTICS_UC" ||
   fail "automatic latency warm-up must yield between bounded batches"
 grep -Fq 'automatic_latency_yield_to_pending_reload()' "$DIAGNOSTICS_UC" ||
   fail "automatic latency warm-up must hand pending reload ownership to init.d"
+grep -Fq 'automatic_latency_marker_matches(pending_signature, pending_generation)' "$DIAGNOSTICS_UC" ||
+  fail "automatic latency worker must stop when manual restart replaces its generation"
+grep -Fq 'Canceled the previous automatic latency test before manual Forkop restart' "$LIFECYCLE_UC" ||
+  fail "manual restart must invalidate an in-flight automatic latency generation"
 grep -Fq 'function automatic_latency_schedule_resume()' "$DIAGNOSTICS_UC" ||
   fail "automatic latency resume must use its local background launcher"
 if grep -Fq 'module_background(' "$DIAGNOSTICS_UC"; then
@@ -76,9 +80,9 @@ grep -Fq 'resuming automatically after sing-box is ready' "$DIAGNOSTICS_UC" ||
 if grep -Fq 'attempt < 20' "$DIAGNOSTICS_UC"; then
   fail "duplicate automatic latency tests must skip instead of queuing"
 fi
-grep -Fq 'automatic_latency_remove_marker(pending_signature)' "$DIAGNOSTICS_UC" ||
+grep -Fq 'automatic_latency_remove_marker(pending_signature, pending_generation)' "$DIAGNOSTICS_UC" ||
   fail "successful latency completion must remove its matching marker"
-grep -Fq 'automatic_latency_record_failure(pending_signature)' "$DIAGNOSTICS_UC" ||
+grep -Fq 'automatic_latency_record_failure(pending_signature, pending_generation)' "$DIAGNOSTICS_UC" ||
   fail "failed latency tests must retain a marker with retry state"
 grep -Fq 'AUTOMATIC_LATENCY_RETRY_BASE_SECONDS' "$DIAGNOSTICS_UC" ||
   fail "Clash API failures must have a retry pause"

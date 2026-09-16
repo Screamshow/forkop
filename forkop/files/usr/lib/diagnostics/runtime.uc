@@ -1808,9 +1808,16 @@ function automatic_latency_write_marker(marker) {
     return true;
 }
 
-function automatic_latency_remove_marker(signature) {
+function automatic_latency_marker_matches(signature, generation) {
     let marker = automatic_latency_pending_marker();
-    if (marker != null && as_string(marker.signature) == as_string(signature))
+    return marker != null && as_string(marker.signature) == as_string(signature) &&
+        as_string(marker.generation) == as_string(generation);
+}
+
+function automatic_latency_remove_marker(signature, generation) {
+    let marker = automatic_latency_pending_marker();
+    if (marker != null && as_string(marker.signature) == as_string(signature) &&
+        (generation == null || as_string(marker.generation) == as_string(generation)))
         remove_file(AUTOMATIC_LATENCY_PENDING_FILE);
 }
 
@@ -1829,9 +1836,10 @@ function automatic_latency_schedule_resume() {
     return system(command) == 0;
 }
 
-function automatic_latency_record_failure(signature) {
+function automatic_latency_record_failure(signature, generation) {
     let marker = automatic_latency_pending_marker();
-    if (marker == null || as_string(marker.signature) != as_string(signature))
+    if (marker == null || as_string(marker.signature) != as_string(signature) ||
+        as_string(marker.generation) != as_string(generation))
         return;
     let failures = int(marker.failures || 0) + 1;
     let delay = AUTOMATIC_LATENCY_RETRY_BASE_SECONDS > 0 ? AUTOMATIC_LATENCY_RETRY_BASE_SECONDS : 300;
@@ -2009,10 +2017,11 @@ function automatic_latency_test(start_kind) {
     }
 
     let pending_signature = as_string(marker.signature);
+    let pending_generation = as_string(marker.generation);
     let config_path = option(settings(), "config_path", "");
     let current_signature = proxy_outbounds_signature_value(config_path);
     if (current_signature == "" || current_signature != pending_signature) {
-        automatic_latency_remove_marker(pending_signature);
+        automatic_latency_remove_marker(pending_signature, pending_generation);
         log_message("Discarded stale automatic latency test pending marker because the proxy set no longer matches", "info");
         return 0;
     }
@@ -2044,7 +2053,8 @@ function automatic_latency_test(start_kind) {
         command_success_from_args([ "sleep", as_string(retry_delay) ]);
         marker = automatic_latency_pending_marker();
         current_signature = proxy_outbounds_signature_value(config_path);
-        if (marker == null || as_string(marker.signature) != pending_signature || current_signature != pending_signature) {
+        if (marker == null || as_string(marker.signature) != pending_signature ||
+            as_string(marker.generation) != pending_generation || current_signature != pending_signature) {
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
             return 0;
         }
@@ -2078,7 +2088,7 @@ function automatic_latency_test(start_kind) {
     if (proxy_entries == null) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
-        automatic_latency_record_failure(pending_signature);
+        automatic_latency_record_failure(pending_signature, pending_generation);
         log_message("Automatic latency test deferred because the Clash API is not ready; the pending marker was retained with a retry pause", "warn");
         return 1;
     }
@@ -2091,7 +2101,7 @@ function automatic_latency_test(start_kind) {
     if (length(proxy_tags) == 0) {
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
         module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
-        automatic_latency_record_failure(pending_signature);
+        automatic_latency_record_failure(pending_signature, pending_generation);
         log_message("Automatic latency test could not find the pending proxy set in the Clash API; the pending marker was retained with a retry pause", "warn");
         return 1;
     }
@@ -2102,6 +2112,12 @@ function automatic_latency_test(start_kind) {
     let completed = 0;
     let batch_size = AUTOMATIC_LATENCY_BATCH_SIZE > 0 ? AUTOMATIC_LATENCY_BATCH_SIZE : 4;
     for (let proxy_tag in proxy_tags) {
+        if (!automatic_latency_marker_matches(pending_signature, pending_generation)) {
+            module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
+            module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
+            log_message("Automatic latency test was canceled because its pending generation was replaced", "info");
+            return 0;
+        }
         package_upgrade_pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
         if (package_upgrade_pid != "" && command_success_from_args([ "kill", "-0", package_upgrade_pid ])) {
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
@@ -2152,11 +2168,11 @@ function automatic_latency_test(start_kind) {
         return 0;
     }
     if (status == 0) {
-        automatic_latency_remove_marker(pending_signature);
+        automatic_latency_remove_marker(pending_signature, pending_generation);
         log_message("Automatic latency test completed successfully; the pending marker was removed", "info");
     }
     else {
-        automatic_latency_record_failure(pending_signature);
+        automatic_latency_record_failure(pending_signature, pending_generation);
         log_message("Automatic latency test completed with errors; the pending marker was retained with a retry pause", "warn");
     }
     return status;

@@ -121,6 +121,7 @@ const STATE_UC = LIB_DIR + "/service/state.uc";
 const RELOAD_UC = LIB_DIR + "/service/reload.uc";
 const UI_UC = LIB_DIR + "/service/ui.uc";
 const DIAGNOSTICS_UC = LIB_DIR + "/diagnostics/runtime.uc";
+const AUTOMATIC_LATENCY_PENDING_FILE = getenv("FORKOP_AUTOMATIC_LATENCY_PENDING_FILE") || "/etc/forkop/automatic-latency-test.pending";
 const ZAPRET_UC = LIB_DIR + "/providers/zapret/runtime.uc";
 const ZAPRET2_UC = LIB_DIR + "/providers/zapret2/runtime.uc";
 const BYEDPI_UC = LIB_DIR + "/providers/byedpi/runtime.uc";
@@ -1907,6 +1908,14 @@ function restart() {
 // stop/start transition. None of the prepare modes reload the live runtime.
 function manual_restart() {
     log_message("Preparing fresh remote data for manual Forkop restart", "info");
+
+    // A new runtime may schedule its own latency test. Invalidate the previous
+    // generation first so its worker exits at the next batch boundary instead
+    // of resuming alongside the new runtime.
+    if (fs.stat(AUTOMATIC_LATENCY_PENDING_FILE) != null) {
+        remove_file(AUTOMATIC_LATENCY_PENDING_FILE);
+        log_message("Canceled the previous automatic latency test before manual Forkop restart", "info");
+    }
 
     // Keep lifecycle reloads out of the interval between atomic cache
     // publication and the final stop/start. The prepare workers inherit this

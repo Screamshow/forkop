@@ -1185,6 +1185,7 @@ function schedule_automatic_latency_test(signature) {
     if (!ensure_parent_dir(AUTOMATIC_LATENCY_PENDING_FILE) || !write_state_file(AUTOMATIC_LATENCY_PENDING_FILE, {
         format: AUTOMATIC_LATENCY_PENDING_FORMAT,
         signature,
+        generation: sprintf("%d-%d", clock()[0], clock()[1]),
         scheduled_at: now_seconds(),
         failures: 0,
         retry_after: 0

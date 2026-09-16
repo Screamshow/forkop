@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-FORKOP_LIB="$ROOT_DIR/forkop/files/usr/lib"
+FORKOP_LIB="${FORKOP_LIB:-$ROOT_DIR/forkop/files/usr/lib}"
 DIAGNOSTICS_UC="$FORKOP_LIB/diagnostics/runtime.uc"
 UPDATES_UC="$FORKOP_LIB/components/updates.uc"
 WORK_DIR="$(mktemp -d)"
@@ -44,7 +44,8 @@ cat >"$WORK_DIR/state-stub.uc" <<'EOF_STATE'
 let fs = require("fs");
 let mode = ARGV[0] || "";
 let path = ARGV[1] || "";
-if (mode == "acquire-runtime-dir-lock" || mode == "acquire-runtime-dir-lock-wait") {
+if (mode == "acquire-runtime-dir-lock" || mode == "acquire-runtime-dir-lock-wait" ||
+    mode == "acquire-runtime-dir-lock-wait-until-package-upgrade") {
     if (index(path, "reload.lock") >= 0 && fs.stat(getenv("TEST_RELOAD_FAIL_FLAG")) != null) {
         let count_path = getenv("TEST_RELOAD_COUNT_FILE");
         let count = int(fs.readfile(count_path) || "0") + 1;
@@ -82,6 +83,9 @@ case "$*" in
     fi
     if [ -n "${TEST_CHANGE_CONFIG_FILE:-}" ] && [ "$(wc -l <"$TEST_CURL_LOG")" -eq 1 ]; then
       cp "$TEST_CHANGED_CONFIG" "$TEST_CHANGE_CONFIG_FILE"
+    fi
+    if [ -n "${TEST_CANCEL_MARKER_FILE:-}" ] && [ "$(wc -l <"$TEST_CURL_LOG")" -eq 1 ]; then
+      rm -f "$TEST_CANCEL_MARKER_FILE"
     fi
     [ -n "${TEST_CURL_DELAY:-}" ] && sleep "$TEST_CURL_DELAY"
     [ "${TEST_CURL_FAIL:-0}" = 1 ] && { printf 'not-json\n'; exit 0; }
@@ -155,6 +159,19 @@ wait "$second_pid"
 [ ! -e "$FORKOP_AUTOMATIC_LATENCY_PENDING_FILE" ] || fail "successful full test did not remove marker"
 [ "$(grep -Fc 'Automatic latency test progress:' "$TEST_LOG" || true)" -eq 0 ] ||
   fail "latency batching emitted intermediate syslog progress"
+
+# A manual restart invalidates the pending marker before it creates a new
+# runtime. Its old worker must stop at the next batch boundary rather than
+# continue or schedule a background resume alongside that runtime.
+: >"$TEST_CURL_LOG"
+ucode -L "$FORKOP_LIB" "$UPDATES_UC" schedule-automatic-latency-test "$sig_changed"
+TEST_CANCEL_MARKER_FILE="$FORKOP_AUTOMATIC_LATENCY_PENDING_FILE" \
+  FORKOP_AUTOMATIC_LATENCY_BATCH_SIZE=1 \
+  ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" automatic-latency-test new
+[ "$(wc -l <"$TEST_CURL_LOG")" -eq 1 ] || fail "canceled automatic latency worker continued after manual restart"
+[ ! -e "$FORKOP_AUTOMATIC_LATENCY_PENDING_FILE" ] || fail "manual restart cancellation retained the old latency marker"
+grep -Fq 'pending generation was replaced' "$TEST_LOG" ||
+  fail "canceled automatic latency worker did not report its generation change"
 
 # A semantic proxy change without a PID change cannot let an old worker
 # acknowledge its marker; the next worker discards that stale marker.
