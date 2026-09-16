@@ -9,6 +9,7 @@ SING_BOX_RUNTIME_SH="$FORKOP_LIB/sing_box_runtime.sh"
 LIFECYCLE_UC="$FORKOP_LIB/service/lifecycle.uc"
 SINGBOX_RUNTIME_UC="$FORKOP_LIB/singbox/runtime.uc"
 SINGBOX_GENERATOR_UC="$FORKOP_LIB/singbox/generator.uc"
+DIAGNOSTICS_UC="$FORKOP_LIB/diagnostics/runtime.uc"
 WORK_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -212,6 +213,38 @@ generate_config_with_subscription_cache() {
     ucode -L "$FORKOP_LIB" "$FORKOP_LIB/singbox/generator.uc" generate-config-fixture \
       "$fixture" "$output" "127.0.0.1" "0" "$supports_xhttp"
 }
+
+check_section="$(printf '%s\n' '[
+  {".name":"youtube-zapret","action":"zapret"},
+  {".name":"legacy-zapret2","action":"zapret2"},
+  {".name":"local-byedpi","action":"byedpi"},
+  {".name":"Flint","action":"connection"},
+  {".name":"later-proxy","action":"connection"}
+]' | ucode -L "$FORKOP_LIB" "$SINGBOX_GENERATOR_UC" service-route-check-section-fixture)"
+[ "$check_section" = "Flint" ] ||
+  fail "public-IP control route must skip DPI bypass providers and select the first connection"
+
+no_proxy_check_section="$(printf '%s\n' '[
+  {".name":"youtube-zapret","action":"zapret"},
+  {".name":"local-byedpi","action":"byedpi"}
+]' | ucode -L "$FORKOP_LIB" "$SINGBOX_GENERATOR_UC" service-route-check-section-fixture)"
+[ -z "$no_proxy_check_section" ] ||
+  fail "public-IP control route must not treat a DPI bypass provider as a remote proxy"
+
+cat >"$WORK_DIR/fakeip-comparison-proxy.json" <<'JSON'
+{"route":{"rules":[{"action":"route","outbound":"Flint-out","domain":"ip.podkop.fyi"}]}}
+JSON
+ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" \
+  fakeip-public-ip-comparison-available-fixture "$WORK_DIR/fakeip-comparison-proxy.json" ||
+  fail "FakeIP diagnostics did not detect the generated proxy comparison route"
+
+cat >"$WORK_DIR/fakeip-comparison-direct.json" <<'JSON'
+{"route":{"rules":[{"action":"route-options","domain":"fakeip.podkop.fyi","override_port":8443}]}}
+JSON
+if ucode -L "$FORKOP_LIB" "$DIAGNOSTICS_UC" \
+  fakeip-public-ip-comparison-available-fixture "$WORK_DIR/fakeip-comparison-direct.json"; then
+  fail "FakeIP diagnostics exposed public-IP comparison without a proxy route"
+fi
 
 cat >"$WORK_DIR/no-enabled-fixture.json" <<'JSON'
 {

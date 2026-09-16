@@ -3190,16 +3190,21 @@ function add_route_for_section(config, section) {
         add_combined_route_for_section(config, section);
 }
 
-function add_service_route_rules(config, sections) {
-    let first = null;
+function service_route_check_section(sections) {
     for (let section in sections) {
         let action = option(section, "action", "");
-        if (connections.is_connections_action(action) ||
-            action == "byedpi" || action == "zapret" || action == "zapret2") {
-            first = section;
-            break;
-        }
+        // Public-IP comparison is meaningful only for a remote proxy/VPN.
+        // DPI bypass providers keep the direct public IP, which made a valid
+        // FakeIP setup look inconclusive whenever one preceded a connection.
+        if (connections.is_connections_action(action))
+            return section;
     }
+
+    return null;
+}
+
+function add_service_route_rules(config, sections) {
+    let first = service_route_check_section(sections);
     if (first != null) {
         push(config.route.rules, {
             action: "route",
@@ -3404,6 +3409,12 @@ function object_nonempty_stdin() {
     return (type(value) == "array" || type(value) == "object") && length(value) > 0;
 }
 
+function service_route_check_section_fixture() {
+    let section = service_route_check_section(array_or_empty(read_stdin_json()));
+    if (section != null)
+        print(as_string(section[".name"]), "\n");
+}
+
 let mode = ARGV[0] || "";
 
 if (mode == "generate-config")
@@ -3436,6 +3447,8 @@ else if (mode == "urltest-filter")
     urltest_filter(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7]);
 else if (mode == "object-nonempty")
     exit(object_nonempty_stdin() ? 0 : 1);
+else if (mode == "service-route-check-section-fixture")
+    service_route_check_section_fixture();
 else {
     warn("Usage: singbox/generator.uc <operation> ...\n");
     exit(1);

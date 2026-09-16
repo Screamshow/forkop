@@ -1526,11 +1526,42 @@ function check_fakeip() {
     }
     write_json({
         fakeip: match(fakeip_address, /^198\.(18|19)\./) != null || match(fakeip6_address, /^fc[0-3][0-9a-f]:/) != null,
+        public_ip_comparison_available: fakeip_public_ip_comparison_available(
+            read_json_file(option(settings(), "config_path", ""))
+        ),
         IP: fakeip_address != "" ? fakeip_address : fakeip6_address,
         IPv4: fakeip_address,
         IPv6: fakeip6_address
     });
     return 0;
+}
+
+function rule_matches_domain(rule, domain) {
+    let value = object_or_empty(rule).domain;
+    if (type(value) == "array") {
+        for (let item in value)
+            if (as_string(item) == as_string(domain))
+                return true;
+        return false;
+    }
+    return as_string(value) == as_string(domain);
+}
+
+function fakeip_public_ip_comparison_available(config) {
+    let route = object_or_empty(object_or_empty(config).route);
+    let rules = type(route.rules) == "array" ? route.rules : [];
+    for (let rule in rules) {
+        rule = object_or_empty(rule);
+        if (option(rule, "action", "") == "route" &&
+            option(rule, "outbound", "") != "" &&
+            rule_matches_domain(rule, CHECK_PROXY_IP_DOMAIN))
+            return true;
+    }
+    return false;
+}
+
+function fakeip_public_ip_comparison_available_fixture(path) {
+    exit(fakeip_public_ip_comparison_available(read_json_file(path)) ? 0 : 1);
 }
 
 function clash_json_output(args) {
@@ -2355,6 +2386,8 @@ else if (mode == "forkop-logs-fixture")
     exit(forkop_logs_fixture());
 else if (mode == "check-fakeip")
     exit(check_fakeip());
+else if (mode == "fakeip-public-ip-comparison-available-fixture")
+    fakeip_public_ip_comparison_available_fixture(ARGV[1]);
 else if (mode == "check-zapret-runtime")
     exit(module_passthrough(ZAPRET_RUNTIME_UC, [ "check" ]));
 else if (mode == "check-zapret2-runtime")

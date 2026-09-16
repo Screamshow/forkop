@@ -381,6 +381,7 @@ export namespace Forkop {
 
   export interface FakeIPCheckResult {
     fakeip: boolean;
+    public_ip_comparison_available?: boolean;
     IP: string;
   }
 

@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: FORKOP\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-10 09:05+0300\n"
-"PO-Revision-Date: 2026-09-10 09:05+0300\n"
+"POT-Creation-Date: 2026-09-16 13:05+0300\n"
+"PO-Revision-Date: 2026-09-16 13:05+0300\n"
 "Last-Translator: Screamshow\n"
 "Language-Team: none\n"
 "Language: ru\n"
@@ -37,6 +37,9 @@ msgstr "✔ Работает"
 
 msgid "✘ Stopped"
 msgstr "✘ Остановлен"
+
+msgid "A startup attempt was interrupted. Forkop will retry automatically; no action is needed yet."
+msgstr ""
 
 msgid "Action"
 msgstr "Действие"
@@ -674,6 +677,9 @@ msgstr "FakeIP и контрольная проверка используют �
 msgid "FakeIP works; public IP comparison is inconclusive"
 msgstr "FakeIP работает; сравнение публичных IP не дает однозначного результата"
 
+msgid "FakeIP works; public IP comparison was skipped because no proxy connection is configured"
+msgstr "FakeIP работает; сравнение публичного IP пропущено, потому что прокси-подключение не настроено"
+
 msgid "Faster server search interval"
 msgstr "Интервал поиска более быстрого сервера"
 
@@ -689,6 +695,9 @@ msgstr "Принудительная маршрутизация устройст
 msgid "Forkop Error"
 msgstr "Ошибка Forkop"
 
+msgid "Forkop is restarting automatically"
+msgstr ""
+
 msgid "Forkop manages ciadpi pid files itself, so pidfile options are not allowed here."
 msgstr "Forkop сам управляет pid-файлами ciadpi, поэтому параметры pidfile здесь запрещены."
 
@@ -700,6 +709,12 @@ msgstr "Forkop сам управляет жизненным циклом nfqws, 
 
 msgid "Forkop manages the nfqws2 process lifecycle itself, so daemon mode is not allowed here."
 msgstr "Forkop сам управляет жизненным циклом nfqws2, поэтому режим daemon здесь запрещён."
+
+msgid "Forkop recovered automatically"
+msgstr ""
+
+msgid "Forkop restarted successfully after a temporary startup failure."
+msgstr ""
 
 msgid "Forkop service is stopped. Start the service to display connections."
 msgstr "Служба Forkop остановлена. Запустите сервис для отображения подключений."
@@ -1324,6 +1339,9 @@ msgstr "Профиль"
 
 msgid "Protocol"
 msgstr "Протокол"
+
+msgid "Public IP comparison skipped because no proxy connection is configured"
+msgstr "Сравнение публичного IP пропущено: прокси-подключение не настроено"
 
 msgid "Refill"
 msgstr "Сброс"

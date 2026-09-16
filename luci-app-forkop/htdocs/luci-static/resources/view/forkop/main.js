@@ -8198,20 +8198,28 @@ async function runFakeIPCheck() {
     items: []
   });
   const routerFakeIPResponse = await ForkopShellMethods.checkFakeIP();
+  const publicIPComparisonAvailable = !routerFakeIPResponse.success || routerFakeIPResponse.data.public_ip_comparison_available !== false;
   const checkFakeIPResponse = await RemoteFakeIPMethods.getFakeIpCheck();
-  const checkIPResponse = await RemoteFakeIPMethods.getIpCheck();
+  const checkIPResponse = publicIPComparisonAvailable ? await RemoteFakeIPMethods.getIpCheck() : null;
   const browserFakeIPCheckUnavailable = !checkFakeIPResponse.success;
   const browserFakeIPCheckMessage = checkFakeIPResponse.success ? "" : checkFakeIPResponse.message;
   const checks = {
     singBoxFakeIP: routerFakeIPResponse.success && routerFakeIPResponse.data.fakeip,
     browserFakeIP: checkFakeIPResponse.success && checkFakeIPResponse.data.fakeip,
-    canComparePublicIP: checkFakeIPResponse.success && checkIPResponse.success,
-    differentIP: checkFakeIPResponse.success && checkIPResponse.success && checkFakeIPResponse.data.IP !== checkIPResponse.data.IP
+    canComparePublicIP: publicIPComparisonAvailable && checkFakeIPResponse.success && checkIPResponse?.success === true,
+    differentIP: publicIPComparisonAvailable && checkFakeIPResponse.success && checkIPResponse?.success === true && checkFakeIPResponse.data.IP !== checkIPResponse.data.IP
   };
   const fakeIPWorks = checks.singBoxFakeIP && checks.browserFakeIP;
-  const { state, description } = fakeIPWorks ? checks.differentIP ? { state: "success", description: _("Checks passed") } : {
+  const { state, description } = fakeIPWorks ? !publicIPComparisonAvailable ? {
+    state: "success",
+    description: _(
+      "FakeIP works; public IP comparison was skipped because no proxy connection is configured"
+    )
+  } : checks.differentIP ? { state: "success", description: _("Checks passed") } : {
     state: "warning",
-    description: _("FakeIP works; public IP comparison is inconclusive")
+    description: _(
+      "FakeIP works; public IP comparison is inconclusive"
+    )
   } : browserFakeIPCheckUnavailable && checks.singBoxFakeIP ? {
     state: "warning",
     description: _("Browser FakeIP check could not be completed")
@@ -8237,7 +8245,13 @@ async function runFakeIPCheck() {
         value: browserFakeIPCheckMessage
       },
       ...insertIf(checks.browserFakeIP, [
-        {
+        !publicIPComparisonAvailable ? {
+          state: "success",
+          key: _(
+            "Public IP comparison skipped because no proxy connection is configured"
+          ),
+          value: ""
+        } : {
           state: checks.differentIP ? "success" : "warning",
           key: !checks.canComparePublicIP ? _("Could not compare FakeIP and control public IPs") : checks.differentIP ? _("FakeIP and control checks use different public IPs") : _("FakeIP and control checks use the same public IP"),
           value: ""
