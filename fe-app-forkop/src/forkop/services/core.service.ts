@@ -35,6 +35,22 @@ function componentDisplayName(component: string) {
 }
 
 function showLogNotification(notification: ForkopLogNotification) {
+  if (notification.kind === 'discord-cloudflare-overlap') {
+    ui.addNotification(
+      _('Discord and Cloudflare lists overlap'),
+      E(
+        'div',
+        {},
+        _(
+          'Both built-in lists are enabled. Broad Cloudflare ranges may route unrelated traffic, including torrents, through a proxy or VPN depending on section order.',
+        ),
+      ),
+      'warning',
+      'fkp-discord-cloudflare-overlap-notification',
+    );
+    return;
+  }
+
   if (notification.kind === 'component-update') {
     const message = _('New version %s is available for %s')
       .replace('%s', notification.version)

@@ -4732,6 +4732,9 @@ function getForkopLogNotification(line) {
   if (isErrorLogLine(line)) {
     return { kind: "error", line };
   }
+  if (line.toLowerCase().includes("[routing-warning] discord-cloudflare-overlap")) {
+    return { kind: "discord-cloudflare-overlap", line };
+  }
   const update = line.match(
     /\[component-update\]\s+(forkop|sing_box|zapret|zapret2|byedpi|zapret_manager)\s+(\S+)/i
   );
@@ -4746,6 +4749,9 @@ function getForkopLogNotification(line) {
   };
 }
 function getLogNotificationKey(line) {
+  if (line.toLowerCase().includes("[routing-warning] discord-cloudflare-overlap")) {
+    return "routing-warning:discord-cloudflare-overlap";
+  }
   return line.trim();
 }
 var LogNotificationDeduper = class {
@@ -5211,6 +5217,21 @@ function componentDisplayName(component) {
   return names[component] || component;
 }
 function showLogNotification(notification) {
+  if (notification.kind === "discord-cloudflare-overlap") {
+    ui.addNotification(
+      _("Discord and Cloudflare lists overlap"),
+      E(
+        "div",
+        {},
+        _(
+          "Both built-in lists are enabled. Broad Cloudflare ranges may route unrelated traffic, including torrents, through a proxy or VPN depending on section order."
+        )
+      ),
+      "warning",
+      "fkp-discord-cloudflare-overlap-notification"
+    );
+    return;
+  }
   if (notification.kind === "component-update") {
     const message = _("New version %s is available for %s").replace("%s", notification.version).replace("%s", componentDisplayName(notification.component));
     ui.addNotification(

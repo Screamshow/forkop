@@ -61,6 +61,14 @@ describe('LogNotificationDeduper', () => {
       version: 'v1.2.3',
     });
     expect(getForkopLogNotification('forkop: [info] ok')).toBeNull();
+    expect(
+      getForkopLogNotification(
+        'forkop: [warn] [routing-warning] discord-cloudflare-overlap: details',
+      ),
+    ).toEqual({
+      kind: 'discord-cloudflare-overlap',
+      line: 'forkop: [warn] [routing-warning] discord-cloudflare-overlap: details',
+    });
   });
 
   it('dedupes already shown log lines through session storage', () => {
@@ -72,6 +80,11 @@ describe('LogNotificationDeduper', () => {
     expect(first.shouldNotify('forkop: [error] another failure')).toBe(true);
     expect(
       first.shouldNotify('forkop: [info] [component-update] forkop 1.2.3'),
+    ).toBe(true);
+    expect(
+      first.shouldNotify(
+        'forkop: [warn] [routing-warning] discord-cloudflare-overlap',
+      ),
     ).toBe(true);
 
     const afterReload = new LogNotificationDeduper(storage);
@@ -86,5 +99,10 @@ describe('LogNotificationDeduper', () => {
     expect(getLogNotificationKey('  Jun 06 forkop: [error] failed  ')).toBe(
       'Jun 06 forkop: [error] failed',
     );
+    expect(
+      getLogNotificationKey(
+        'Jun 06 forkop: [warn] [routing-warning] discord-cloudflare-overlap',
+      ),
+    ).toBe('routing-warning:discord-cloudflare-overlap');
   });
 });

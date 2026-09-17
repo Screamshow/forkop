@@ -494,6 +494,35 @@ function has_domain_matchers(path) {
     return value_has_domain_matchers(read_json_file(path));
 }
 
+function value_has_ip_matchers(value) {
+    if (type(value) == "array") {
+        for (let item in value) {
+            if (value_has_ip_matchers(item))
+                return true;
+        }
+        return false;
+    }
+
+    if (type(value) != "object")
+        return false;
+
+    for (let key, item in value) {
+        if (key == "ip_cidr" || key == "source_ip_cidr") {
+            if (type(item) == "array" && length(item) > 0)
+                return true;
+            if (type(item) == "string" && item != "")
+                return true;
+        }
+        if (value_has_ip_matchers(item))
+            return true;
+    }
+    return false;
+}
+
+function has_ip_matchers(path) {
+    return value_has_ip_matchers(read_json_file(path));
+}
+
 function has_rules(path) {
     let ruleset = object_or_empty(read_json_file(path));
     return length(array_or_empty(ruleset.rules)) > 0;
@@ -508,6 +537,7 @@ function module_exports() {
         extract_ip_cidr,
         extract_ip_cidr_nft_elements,
         has_domain_matchers,
+        has_ip_matchers,
         has_rules,
         ruleset_tag,
         read_json_file,

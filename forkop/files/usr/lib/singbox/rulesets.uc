@@ -37,6 +37,22 @@ const COMMUNITY_SERVICES = {
     github: true
 };
 
+// These community rule-sets contain address matchers in addition to domains.
+// sing-box 1.14 requires address rule-sets to be evaluated against a DNS
+// response instead of being used as legacy query filters.
+const COMMUNITY_MIXED_SERVICES = {
+    discord: true,
+    meta: true,
+    twitter: true,
+    cloudflare: true,
+    cloudfront: true,
+    digitalocean: true,
+    hetzner: true,
+    ovh: true,
+    telegram: true,
+    roblox: true
+};
+
 function as_string(value) {
     return value == null ? "" : "" + value;
 }
@@ -54,6 +70,13 @@ function community_url(name) {
     if (name == "github")
         return SRS_GITHUB_URL;
     return SRS_MAIN_URL + "/" + name + ".srs";
+}
+
+function community_kind(name) {
+    name = as_string(name);
+    if (!is_community(name))
+        return "unknown";
+    return COMMUNITY_MIXED_SERVICES[name] === true ? "mixed" : "domains";
 }
 
 function hash12(value) {
@@ -90,12 +113,18 @@ function file_extension(value) {
 
 function kind_from_reference_hint(reference) {
     reference = lc(as_string(reference));
-    if (index(reference, "geosite") >= 0 || index(reference, "domain") >= 0 ||
+    let domains = index(reference, "geosite") >= 0 || index(reference, "domain") >= 0 ||
         index(reference, "domains") >= 0 || index(reference, "adguard") >= 0 ||
-        index(reference, "filter") >= 0)
+        index(reference, "adblock") >= 0 || index(reference, "host") >= 0 ||
+        index(reference, "filter") >= 0;
+    let addresses = index(reference, "geoip") >= 0 || index(reference, "subnet") >= 0 ||
+        index(reference, "subnets") >= 0 || index(reference, "cidr") >= 0 ||
+        match(reference, /(^|[^a-z])ips?([^a-z]|$)/) != null;
+    if (domains && addresses)
+        return "mixed";
+    if (domains)
         return "domains";
-    if (index(reference, "geoip") >= 0 || index(reference, "subnet") >= 0 ||
-        index(reference, "subnets") >= 0 || index(reference, "cidr") >= 0)
+    if (addresses)
         return "subnets";
     return "unknown";
 }
@@ -107,6 +136,7 @@ function remote_format(reference) {
 function module_exports() {
     return {
         is_community,
+        community_kind,
         community_url,
         hash12,
         file_extension,
@@ -124,6 +154,8 @@ if (mode == "file-extension")
     print(file_extension(ARGV[1]), "\n");
 else if (mode == "is-community")
     exit(is_community(ARGV[1]) ? 0 : 1);
+else if (mode == "community-kind")
+    print(community_kind(ARGV[1]), "\n");
 else if (mode == "kind-from-reference-hint")
     print(kind_from_reference_hint(ARGV[1]), "\n");
 else if (mode == "remote-format")
@@ -131,6 +163,6 @@ else if (mode == "remote-format")
 else if (mode == "community-url")
     print(community_url(ARGV[1]), "\n");
 else {
-    warn("Usage: singbox/rulesets.uc <file-extension|is-community|kind-from-reference-hint|remote-format|community-url> ...\n");
+    warn("Usage: singbox/rulesets.uc <file-extension|is-community|community-kind|kind-from-reference-hint|remote-format|community-url> ...\n");
     exit(1);
 }

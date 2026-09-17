@@ -138,6 +138,28 @@ function format_ipv6_tproxy_target(address, port) {
     return "[" + address + "]:" + as_string(port);
 }
 
+// Discord's community subnet list also contains shared Cloudflare Anycast
+// ranges.  They host unrelated services, so routing them as ordinary Discord
+// networks can capture large amounts of unrelated traffic (including P2P).
+const CLOUDFLARE_SHARED_CIDRS = [
+    "104.16.0.0/12", "104.24.0.0/14", "172.64.0.0/13", "162.158.0.0/15",
+    "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22",
+    "198.41.128.0/17", "162.159.0.0/16", "173.245.48.0/20", "103.21.244.0/22",
+    "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+    "2606:4700::/32", "2400:cb00::/32", "2405:b500::/32", "2803:f800::/32",
+    "2a06:98c0::/29", "2c0f:f248::/32"
+];
+
+function is_cloudflare_shared_cidr(value) {
+    value = lc(trim(as_string(value)));
+    for (let cidr in CLOUDFLARE_SHARED_CIDRS)
+        if (value == lc(cidr))
+            return true;
+    return false;
+}
+
+const DISCORD_VOICE_PORTS_NFT = "5000-5020,3478,19294-19344,50000-65535";
+
 return {
     valid_ipv4,
     valid_ipv4_cidr,
@@ -148,5 +170,8 @@ return {
     valid_ip_or_cidr,
     nft_ip_or_cidr,
     ip_family,
-    format_ipv6_tproxy_target
+    format_ipv6_tproxy_target,
+    CLOUDFLARE_SHARED_CIDRS,
+    is_cloudflare_shared_cidr,
+    DISCORD_VOICE_PORTS_NFT
 };

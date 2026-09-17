@@ -1863,6 +1863,25 @@ function has_outbound_section(ctx) {
     return false;
 }
 
+function has_discord_cloudflare_overlap() {
+    let discord = false;
+    let cloudflare = false;
+
+    for (let section in sections_by_type("section")) {
+        if (!section_enabled(section))
+            continue;
+        for (let service in connections.community_lists(section)) {
+            service = lc(as_string(service));
+            if (service == "discord")
+                discord = true;
+            else if (service == "cloudflare")
+                cloudflare = true;
+        }
+    }
+
+    return discord && cloudflare;
+}
+
 function has_enabled_rule_action(action) {
     action = as_string(action);
 
@@ -1940,6 +1959,11 @@ function check_runtime_requirements() {
     log_message("Checking required packages and runtime settings", "info");
 
     let ctx = context_from_runtime();
+
+    // Advisory only: Cloudflare is intentionally broad, but combining it
+    // with Discord makes the overlap easy to miss when sections differ.
+    if (has_discord_cloudflare_overlap())
+        log_message("[routing-warning] discord-cloudflare-overlap: Discord and Cloudflare built-in lists are enabled together; broad Cloudflare ranges may route unrelated traffic, including torrents, through a proxy or VPN depending on section order", "warn");
 
     if (!command_exists("nft"))
         fail_requirement("Required nftables executable 'nft' is missing. Install package 'nftables-json' and start Forkop again. Aborted.", "error");

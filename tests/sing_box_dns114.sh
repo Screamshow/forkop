@@ -41,7 +41,8 @@ cat >"$WORK_DIR/fixture.json" <<'JSON'
       "enabled": "1",
       "action": "connection",
       "outbound_jsons": [ "{\"type\":\"direct\"}" ],
-      "domain_suffix": [ "vpn.example" ]
+      "domain_suffix": [ "vpn.example" ],
+      "community_lists": [ "youtube", "discord" ]
     }
   ]
 }
@@ -58,6 +59,7 @@ generate() {
 generate 1.12.25
 generate 1.13.18
 generate 1.14.0
+generate 1.14.1
 
 DNS114_WORK_DIR="$WORK_DIR" ucode -e '
 let fs = require("fs");
@@ -94,9 +96,11 @@ for (let version in [ "1.12.25", "1.13.18" ]) {
     assert(probe != null && probe.rules[1].match_response == null, version + " must retain the legacy dnsmasq route filter");
     assert(fallback != null, version + " must retain the normal resolver fallback");
     assert(find(value, r => (r.action == "evaluate" || r.action == "respond") && domain_rule(r)) == null, version + " emitted unsupported 1.14 DNS actions");
+    assert(find(value, r => contains(r.rule_set, "vpn-discord-community-ruleset") && r.match_response == null) != null, version + " must retain legacy mixed rule-set matching");
 }
 
-let value = config("1.14.0");
+for (let version in [ "1.14.0", "1.14.1" ]) {
+let value = config(version);
 let evaluate_index = index(value, r => r.action == "evaluate" && r.server == "dnsmasq-server" && domain_rule(r));
 let respond_index = index(value, r => r.action == "respond" && r.type == "logical" && domain_rule(r));
 let fallback_index = index(value, r => r.action == "route" && r.server == "dns-server" && domain_rule(r));
@@ -107,6 +111,21 @@ let respond = rules(value)[respond_index];
 assert(respond.server == null, "1.14 respond must return the evaluated response, not query another server");
 assert(respond.rules[1].match_response === true && respond.rules[1].invert === true, "1.14 response filter must inspect the evaluated non-FakeIP response");
 assert(find(value, r => r.action == "evaluate" && r.server == "dns-server" && domain_rule(r)) == null, "1.14 must not evaluate the fallback resolver before dnsmasq");
+
+let youtube = find(value, r => contains(r.rule_set, "vpn-youtube-community-ruleset"));
+assert(youtube != null && youtube.match_response == null, version + " must keep domain-only rule-sets on query matching");
+let discord_index = index(value, r => contains(r.rule_set, "vpn-discord-community-ruleset") && r.match_response === true);
+assert(discord_index >= 0, version + " must match mixed rule-sets on the DNS response");
+let discord_evaluate_index = -1;
+for (let i = discord_index - 1; i >= 0; i--) {
+    if (rules(value)[i].action == "evaluate" && rules(value)[i].server == "dns-server") {
+        discord_evaluate_index = i;
+        break;
+    }
+}
+assert(discord_evaluate_index >= 0, version + " must evaluate an upstream response before mixed rule-set matching");
+assert(find(value, r => contains(r.rule_set, "vpn-discord-community-ruleset") && r.match_response == null) == null, version + " must not use a mixed rule-set as a legacy query filter");
+}
 ' || fail "DNS 1.12/1.13/1.14 semantic chain assertion failed"
 
 printf 'sing-box DNS 1.14 semantic generation checks passed\n'

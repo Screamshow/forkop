@@ -124,6 +124,11 @@ grep -Fq 'current_list_update_signature() != list_update_signature_at_start' "$U
   fail "a concurrent source edit must discard the stale downloaded generation"
 grep -Fq 'module_background(UPDATES_UC, [ "list-update-after-start" ])' "$LIFECYCLE_UC" ||
   fail "startup must use cache-aware due scheduling instead of unconditional downloads"
+if grep -Fq 'command_output_from_args([ "crontab", "-l" ])' "$UPDATES_UC"; then
+  fail "cron refresh must not risk replacing user jobs after a failed BusyBox crontab read"
+fi
+grep -Fq 'fs.readfile(CRONTAB_FILE)' "$UPDATES_UC" ||
+  fail "cron refresh must preserve user jobs by reading the backing file directly"
 
 grep -Fq 'if (status == 0)' "$UPDATES_UC" ||
   fail "list_update_if_due scheduling contract is missing"

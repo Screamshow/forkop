@@ -9,6 +9,7 @@ const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const STATE_UC = getenv("FORKOP_STATE_UC") || LIB_DIR + "/service/state.uc";
 const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
+const CRONTAB_FILE = getenv("FORKOP_CRONTAB_FILE") || "/etc/crontabs/root";
 const TMP_SING_BOX_FOLDER = getenv("TMP_SING_BOX_FOLDER") || "/tmp/sing-box";
 const TMP_RULESET_FOLDER = getenv("TMP_RULESET_FOLDER") || TMP_SING_BOX_FOLDER + "/rulesets";
 const RUNTIME_LIST_GENERATION_DIR = getenv("FORKOP_RUNTIME_LIST_GENERATION_DIR") || TMP_SING_BOX_FOLDER + "/list-generation";
@@ -1644,7 +1645,9 @@ function log_cron_apply_result(result) {
 }
 
 function remove_cron_jobs(list_marker, subscription_marker, component_marker) {
-    let crontab = command_output_from_args([ "crontab", "-l" ]);
+    // Read BusyBox's backing file directly. `crontab -l` may fail and return
+    // an empty string; writing that result back would erase unrelated jobs.
+    let crontab = as_string(fs.readfile(CRONTAB_FILE) || "");
     let result = {
         crontab: filter_cron_markers_text(crontab, [ list_marker, subscription_marker, component_marker ]),
         logs: [ { level: "info", message: "The cron job removed" } ]
@@ -1660,7 +1663,7 @@ function refresh_cron_from_sources(settings, sections, bin, list_marker, subscri
     let result = cron_refresh_apply_result(
         settings,
         sections,
-        command_output_from_args([ "crontab", "-l" ]),
+        as_string(fs.readfile(CRONTAB_FILE) || ""),
         bin,
         list_marker,
         subscription_marker,
@@ -3817,7 +3820,7 @@ function finish_list_update(status, applied, generation_changed) {
         if (pending_reload != null)
             service_state_success([ "consume-pending-reload", PENDING_RELOAD_FILE ]);
 
-        let reload_result = command_capture(command_from_args([ SERVICE_INIT, "reload", "list-content" ]) + " 2>/dev/null 1000>&-");
+        let reload_result = command_capture(command_from_args([ SERVICE_INIT, "reload", "list-content" ]) + " 2>/dev/null 0<&-");
         let reload_status = reload_result.status;
         if (reload_status != 0) {
             // The generation is valid and remains active. Retain an explicit

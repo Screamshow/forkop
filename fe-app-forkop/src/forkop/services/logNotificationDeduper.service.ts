@@ -3,6 +3,7 @@ const MAX_STORED_LOG_NOTIFICATIONS = 500;
 
 export type ForkopLogNotification =
   | { kind: 'error'; line: string }
+  | { kind: 'discord-cloudflare-overlap'; line: string }
   | { kind: 'start-recovery-pending'; line: string }
   | { kind: 'start-recovery-succeeded'; line: string }
   | {
@@ -75,6 +76,14 @@ export function getForkopLogNotification(
     return { kind: 'error', line };
   }
 
+  if (
+    line
+      .toLowerCase()
+      .includes('[routing-warning] discord-cloudflare-overlap')
+  ) {
+    return { kind: 'discord-cloudflare-overlap', line };
+  }
+
   const update = line.match(
     /\[component-update\]\s+(forkop|sing_box|zapret|zapret2|byedpi|zapret_manager)\s+(\S+)/i,
   );
@@ -92,6 +101,13 @@ export function getForkopLogNotification(
 }
 
 export function getLogNotificationKey(line: string) {
+  if (
+    line
+      .toLowerCase()
+      .includes('[routing-warning] discord-cloudflare-overlap')
+  ) {
+    return 'routing-warning:discord-cloudflare-overlap';
+  }
   return line.trim();
 }
 

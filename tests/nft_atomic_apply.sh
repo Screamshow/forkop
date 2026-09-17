@@ -80,5 +80,55 @@ grep -Fq 'add chain inet ForkopTable forkop_transition_guard { type filter hook 
 grep -Fq 'meta mark & 0x04000000 == 0x04000000 counter drop' "$WORK_DIR/guard.nft" ||
   fail "transition guard does not fail closed for protected traffic"
 
+cat >"$WORK_DIR/discord-fixture.json" <<'JSON'
+{
+  "section": [{
+    ".name": "discord",
+    ".type": "section",
+    "enabled": "1",
+    "action": "outbound",
+    "community_lists": ["discord"]
+  }]
+}
+JSON
+cat >"$WORK_DIR/discord.lst" <<'EOF_DISCORD'
+104.16.0.0/12
+2606:4700::/32
+66.22.196.0/22
+162.159.128.0/21
+EOF_DISCORD
+
+ucode -L "$FORKOP_LIB" -e '
+let ip = require("core.ip");
+if (!ip.is_cloudflare_shared_cidr("104.16.0.0/12")) exit(1);
+if (!ip.is_cloudflare_shared_cidr("2606:4700::/32")) exit(2);
+if (ip.is_cloudflare_shared_cidr("162.159.128.0/21")) exit(3);
+' || fail "Cloudflare shared-range classification is incorrect"
+
+FORKOP_NFT_BATCH_FILE="$WORK_DIR/discord.nft" \
+  ucode -L "$FORKOP_LIB" "$NFT_UC" nft-add-community-subnet-file-for-section-fixture \
+    "$WORK_DIR/discord-fixture.json" discord discord "$WORK_DIR/discord.lst" \
+    ForkopTable forkop_subnets forkop_ip_ports source_interfaces \
+    forkop_discord_subnets 0x04000000 5000 forkop_subnets6 forkop_ip6_ports forkop_discord_subnets6
+grep -Fq 'discord_subnets { 66.22.196.0/22,162.159.128.0/21 }' "$WORK_DIR/discord.nft" ||
+  fail "Discord-owned IPv4 ranges were not kept as ordinary subnets"
+grep -Fq 'discord_udp_ip_ports { 104.16.0.0/12 . 5000-5020' "$WORK_DIR/discord.nft" ||
+  fail "shared Cloudflare IPv4 range was not scoped to Discord voice ports"
+grep -Fq 'discord_udp_ip6_ports { 2606:4700::/32 . 5000-5020' "$WORK_DIR/discord.nft" ||
+  fail "shared Cloudflare IPv6 range was not scoped to Discord voice ports"
+if grep -Fq 'discord_subnets { 104.16.0.0/12' "$WORK_DIR/discord.nft"; then
+  fail "104.16.0.0/12 leaked into the ordinary Discord subnet set"
+fi
+grep -Fq '19294-19344' "$WORK_DIR/discord.nft" || fail "Discord Cloudflare voice port range is missing"
+
+FORKOP_NFT_BATCH_FILE="$WORK_DIR/discord-rules.nft" \
+  ucode -L "$FORKOP_LIB" "$NFT_UC" nft-add-section-priority-rules-fixture \
+    "$WORK_DIR/discord-fixture.json" ForkopTable source_interfaces localv4 localv6 0x04000000 198.18.0.0/15 fc00::/18
+grep -Fq 'ip daddr . udp dport @forkop_rule_discord_udp_ip_ports' "$WORK_DIR/discord-rules.nft" ||
+  fail "Discord shared ranges have no UDP voice interception rule"
+if grep -Fq 'tcp dport @forkop_rule_discord_udp_ip_ports' "$WORK_DIR/discord-rules.nft"; then
+  fail "Discord shared ranges unexpectedly intercept TCP"
+fi
+
 printf 'transition guard checks passed\n'
 printf 'atomic nft candidate checks passed\n'
