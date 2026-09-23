@@ -660,6 +660,50 @@ function sing_box_reclaimable_bytes(previous_variant, target_variant, previous) 
     return file_exists(old_path) ? int(file_bytes(old_path) * 3 / 4) : 0;
 }
 
+function opkg_sing_box_dependencies_to_install(target) {
+    if (is_apk())
+        return [];
+
+    let simulation = command_from_args([
+        "opkg", "--noaction", "--force-space", "install", "--force-overwrite", "--force-downgrade", target.path
+    ]);
+    if (!run_logged("Checking sing-box package dependencies", simulation)) {
+        let pending = "";
+        let missing = [];
+        for (let line in split(last_logged_output, "\n")) {
+            line = trim(line);
+            if (match(line, /^[A-Za-z0-9][A-Za-z0-9._+-]*:$/) != null)
+                pending = replace(line, /:$/, "");
+            if (match(line, /masked in: --no-network/) != null && pending != "") {
+                if (!array_has(missing, pending))
+                    push(missing, pending);
+                pending = "";
+            }
+        }
+        return length(missing) > 0 ? missing : null;
+    }
+
+    let dependencies = [];
+    for (let line in split(last_logged_output, "\n")) {
+        let parsed = match(trim(line), /^Installing ([A-Za-z0-9][A-Za-z0-9._+-]*) \(/);
+        if (parsed != null && parsed[1] != target.name && !array_has(dependencies, parsed[1]))
+            push(dependencies, parsed[1]);
+    }
+    return dependencies;
+}
+
+function install_opkg_sing_box_dependencies(target) {
+    let dependencies = opkg_sing_box_dependencies_to_install(target);
+    if (dependencies == null)
+        return false;
+    for (let package_name in dependencies) {
+        if (!run_logged("Installing required sing-box dependency " + package_name,
+            pkg_install_name_command(package_name)))
+            return false;
+    }
+    return true;
+}
+
 function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
     if (target == null)
         return "Target package is unavailable, invalid, or incompatible with this architecture";
@@ -683,15 +727,6 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
         if (length(missing) > 0)
             return "Missing installed sing-box dependencies: " + join(", ", missing);
         return "Target package dependencies are incompatible; see package operation log";
-    }
-
-    if (!is_apk()) {
-        for (let line in split(last_logged_output, "\n")) {
-            line = trim(line);
-            if (substr(line, 0, 11) == "Installing " &&
-                substr(line, 11, length(target.name) + 2) != target.name + " (")
-                return "Additional package dependencies must be installed before changing sing-box";
-        }
     }
 
     let overlay_kib = available_kib("/usr/bin");
@@ -1873,6 +1908,9 @@ function install_sing_box_extended_package(action) {
 
     if (!run_logged("Updating package lists before sing-box-extended package installation", pkg_list_update_command()))
         action_fail("sing_box", action, "Failed to update package lists", current_version, latest_version);
+
+    if (!install_opkg_sing_box_dependencies(target))
+        action_fail("sing_box", action, "Failed to install required sing-box dependencies; Tiny was not removed", current_version, latest_version);
 
     let rollback = sing_box_variant_is_package_managed(current_variant) ?
         (current_variant == "extended" && installed_package_version("sing-box-extended") == target.version ?
