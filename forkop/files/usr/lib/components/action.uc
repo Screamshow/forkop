@@ -1204,7 +1204,7 @@ function wait_forkop_running_after_sing_box_change() {
         return false;
 
     let waited = 0;
-    while (waited < 60) {
+    while (waited < 180) {
         if (forkop_status_running_with_timeout()) {
             command_success_from_args([ "sleep", "8" ]);
             if (forkop_status_running_with_timeout())
@@ -1620,8 +1620,17 @@ function restore_file_backup(target_path, backup_path) {
 }
 
 function restore_sing_box_service_from_marker(marker) {
-    if (as_string(marker) == "extended-compressed" ||
-        (!file_exists("/etc/init.d/sing-box") && file_nonempty("/usr/bin/sing-box")))
+    if (as_string(marker) == "extended-compressed")
+        return install_managed_sing_box_service_script();
+    if (sing_box_variant_is_package_managed(as_string(marker)) && is_apk() &&
+        file_exists("/etc/init.d/sing-box.apk-new") &&
+        (managed_sing_box_service_installed() || !file_exists("/etc/init.d/sing-box"))) {
+        remove_managed_sing_box_service_script();
+        if (!move_file_portable("/etc/init.d/sing-box.apk-new", "/etc/init.d/sing-box"))
+            return false;
+        return command_success_from_args([ "chmod", "0755", "/etc/init.d/sing-box" ]);
+    }
+    if (!file_exists("/etc/init.d/sing-box") && file_nonempty("/usr/bin/sing-box"))
         return install_managed_sing_box_service_script();
     remove_managed_sing_box_service_script();
     return true;
