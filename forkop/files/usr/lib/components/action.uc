@@ -1791,6 +1791,10 @@ function restore_sing_box_install_backup(previous_variant, backup_binary, rollba
         let package_name = previous_variant == "tiny" ? "sing-box-tiny" :
             previous_variant == "stable" ? "sing-box" : "sing-box-extended";
         let previous_version = as_string(rollback_file) != "" ? staged_package_field(rollback_file, "version") : "";
+        if (previous_version != "" && installed_package_version(package_name) == previous_version &&
+            read_sing_box_binary_version("/usr/bin/sing-box", previous_variant == "extended" ? "/usr/lib" : "") != "")
+            return true;
+        remove_file("/usr/bin/sing-box");
         if (as_string(rollback_file) != "" && file_nonempty(rollback_file) &&
             previous_version != "" &&
             run_logged("Restoring previous sing-box package from local archive",
@@ -1813,13 +1817,13 @@ function restore_sing_box_after_failed_extended_install(previous_variant, backup
     let restore_status = true;
     if (cronet_touched)
         restore_file_backup("/usr/lib/libcronet.so", backup_cronet);
-    if (rollback_file != null)
-        remove_file("/usr/bin/sing-box");
     if (!restore_sing_box_install_backup(previous_variant, backup_binary, rollback_file))
         restore_status = false;
     restore_sing_box_variant_state(previous_marker, previous_version_state);
     restore_sing_box_service_from_marker(previous_marker);
     clear_version_caches();
+    if (restore_status)
+        restart_forkop_after_successful_change();
     return restore_status;
 }
 
@@ -2060,14 +2064,13 @@ function install_sing_box_extended(action, compressed) {
         }
     }
 
-    // Tiny's binary can be moved to tmpfs for rollback. Count only a
-    // conservative share of its bytes, and only when it is in the writable
-    // layer. A firmware binary cannot return overlay space.
-    let tiny_reclaim_bytes = current_variant == "tiny" ?
-        sing_box_reclaimable_bytes("tiny", "extended-compressed", {}) : 0;
+    // A package switch removes the old binary before writing the new one.
+    // Count only a conservative share of a verified writable-layer file.
+    let reclaim_bytes = current_variant != "not-installed" ?
+        sing_box_reclaimable_bytes(current_variant, "extended-compressed", {}) : 0;
     let overlay_free_kib = available_kib("/usr/bin");
     let overlay_need_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024) +
-        8192 - int(tiny_reclaim_bytes / 1024);
+        8192 - int(reclaim_bytes / 1024);
     if (overlay_free_kib <= 0 || overlay_free_kib < overlay_need_kib) {
         remove_file(tmp_binary);
         remove_file(tmp_cronet);
@@ -2076,9 +2079,10 @@ function install_sing_box_extended(action, compressed) {
     }
 
     remove_file(archive_file);
-    let rollback = current_variant == "tiny" ? stage_previous_sing_box_package("tiny") : null;
-    if (current_variant == "tiny" && rollback == null)
-        action_fail("sing_box", action, "Cannot cache the installed Tiny package for rollback", current_version, latest_version);
+    let package_variant = sing_box_variant_is_package_managed(current_variant);
+    let rollback = package_variant ? stage_previous_sing_box_package(current_variant) : null;
+    if (package_variant && rollback == null)
+        action_fail("sing_box", action, "Cannot cache the installed sing-box package for rollback", current_version, latest_version);
     let rollback_file = rollback == null ? null : rollback.path;
     stop_forkop_before_sing_box_change();
     let new_version = validate_sing_box_extended_binary(tmp_binary, tmp_dir);
@@ -2091,9 +2095,8 @@ function install_sing_box_extended(action, compressed) {
     let backup_binary = "";
     let backup_cronet = "";
     let cronet_touched = false;
-    if (file_exists("/usr/bin/sing-box")) {
-        backup_binary = current_variant == "tiny" ? tmp_dir + "/sing-box.forkop-backup" :
-            "/usr/bin/sing-box.forkop-backup." + owner_pid();
+    if (!package_variant && file_exists("/usr/bin/sing-box")) {
+        backup_binary = tmp_dir + "/sing-box.forkop-backup";
         if (!move_file_to_backup("/usr/bin/sing-box", backup_binary)) {
             remove_file(backup_binary);
             remove_file(tmp_binary);
@@ -2115,23 +2118,6 @@ function install_sing_box_extended(action, compressed) {
         }
     }
 
-    // Confirm the space actually returned by moving Tiny before removing its
-    // package. If the filesystem did not free the expected blocks, restore it.
-    let overlay_after_backup_kib = available_kib("/usr/bin");
-    let full_overlay_need_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024) + 8192;
-    if (overlay_after_backup_kib < full_overlay_need_kib) {
-        if (cronet_touched)
-            restore_file_backup("/usr/lib/libcronet.so", backup_cronet);
-        let restored = restore_sing_box_backup(backup_binary);
-        remove_file(tmp_binary);
-        remove_file(tmp_cronet);
-        if (restored)
-            restart_forkop_after_successful_change();
-        action_fail("sing_box", action, "Not enough flash space after backing up the previous binary: need " +
-            full_overlay_need_kib + " KiB free, have " + overlay_after_backup_kib + " KiB" +
-            (restored ? "" : "; previous binary could not be restored"), current_version, latest_version);
-    }
-
     for (let item in [
         [ "sing-box-extended", "Removing sing-box-extended package before " + label + " installation" ],
         [ "sing-box-tiny", "Removing sing-box-tiny package before " + label + " installation" ],
@@ -2143,6 +2129,20 @@ function install_sing_box_extended(action, compressed) {
             remove_file(tmp_cronet);
             action_fail("sing_box", action, "Failed to remove " + item[0] + " before " + label + " installation", current_version, latest_version);
         }
+    }
+
+    // Verify the real free blocks after package removal or the compressed
+    // binary's move to tmpfs, before copying the new binary to overlay.
+    let overlay_after_remove_kib = available_kib("/usr/bin");
+    let full_overlay_need_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024) + 8192;
+    if (overlay_after_remove_kib < full_overlay_need_kib) {
+        let restored = restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet,
+            previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
+        remove_file(tmp_binary);
+        remove_file(tmp_cronet);
+        action_fail("sing_box", action, "Not enough flash space after removing the previous package: need " +
+            full_overlay_need_kib + " KiB free, have " + overlay_after_remove_kib + " KiB" +
+            (restored ? "" : "; previous variant could not be restored"), current_version, latest_version);
     }
 
     remove_managed_sing_box_service_script();
