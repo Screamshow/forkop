@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize Forkop canary releases
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sync-forkop-canary
+Nice=10
