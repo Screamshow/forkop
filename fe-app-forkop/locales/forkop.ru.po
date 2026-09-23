@@ -161,6 +161,9 @@ msgstr "Bootstrap DNS"
 msgid "Bootstrap DNS Servers"
 msgstr "Bootstrap DNS-серверы"
 
+msgid "Both built-in lists are enabled. Broad Cloudflare ranges may route unrelated traffic, including torrents, through a proxy or VPN depending on section order."
+msgstr "Оба встроенных списка включены. Из-за широких диапазонов Cloudflare посторонний трафик, в том числе торрент-трафик, может идти через прокси или VPN в зависимости от порядка секций."
+
 msgid "Browser FakeIP check could not be completed"
 msgstr "Не удалось выполнить проверку FakeIP в браузере"
 
@@ -397,6 +400,9 @@ msgstr "Выключен"
 
 msgid "Disabling interception is incompatible with action=zapret2 because Forkop sends matched traffic through NFQUEUE."
 msgstr "Отключение перехвата несовместимо с action=zapret2, потому что Forkop отправляет совпавший трафик через NFQUEUE."
+
+msgid "Discord and Cloudflare lists overlap"
+msgstr "Списки Discord и Cloudflare пересекаются"
 
 msgid "Display name"
 msgstr "Отображаемое имя"

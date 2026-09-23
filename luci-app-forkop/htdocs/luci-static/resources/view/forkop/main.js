@@ -2466,7 +2466,6 @@ var Forkop;
     AvailableMethods2["ENABLE"] = "enable";
     AvailableMethods2["DISABLE"] = "disable";
     AvailableMethods2["GLOBAL_CHECK"] = "global_check";
-    AvailableMethods2["SUPPORT_REPORT"] = "support_report";
     AvailableMethods2["SHOW_SING_BOX_CONFIG"] = "show_sing_box_config";
     AvailableMethods2["CHECK_LOGS"] = "check_logs";
     AvailableMethods2["CHECK_SING_BOX_LOGS"] = "check_sing_box_logs";
@@ -2529,7 +2528,6 @@ var COMPONENT_ACTION_SELF_UPDATE_SETTLE_MS = 3e4;
 var COMPONENT_ACTION_TRANSIENT_RPC_GRACE_MS = 3e4;
 var COMPONENT_ACTION_STATE_DIR = "/var/run/forkop/component-actions";
 var GET_UI_STATE_RPC_TIMEOUT_MS = 3e3;
-var SUPPORT_REPORT_RPC_TIMEOUT_MS = 6e4;
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -2743,12 +2741,6 @@ var ForkopShellMethods = {
   globalCheck: async (masked = true) => callBaseMethod(Forkop.AvailableMethods.GLOBAL_CHECK, [
     masked ? "masked" : "raw"
   ]),
-  supportReport: async () => callBaseMethod(
-    Forkop.AvailableMethods.SUPPORT_REPORT,
-    [],
-    "/usr/bin/forkop",
-    { timeout: SUPPORT_REPORT_RPC_TIMEOUT_MS }
-  ),
   showSingBoxConfig: async (masked = true) => callBaseMethod(Forkop.AvailableMethods.SHOW_SING_BOX_CONFIG, [
     masked ? "masked" : "raw"
   ]),
@@ -9958,27 +9950,18 @@ function isLocalMutatingServiceActionLoading() {
 function isMutatingServiceActionLoading() {
   return isLocalMutatingServiceActionLoading() || isServiceTransitionStatus(store.get().servicesInfoWidget.data.forkopStatus);
 }
-function downloadSupportReport(text) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+function downloadSupportReport() {
   const link = document.createElement("a");
-  const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = `forkop-support-report-${stamp}.txt`;
+  link.href = L.url("admin", "services", "forkop", "support-report");
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
 }
 async function handleDownloadSupportReport() {
   setDiagnosticActionLoading("supportReport", true);
   try {
-    const report = await ForkopShellMethods.supportReport();
-    if (!report.success) {
-      throw new Error(report.error || "Support report collection failed");
-    }
-    downloadSupportReport(String(report.data ?? ""));
+    downloadSupportReport();
     showToast(
       _("Support report contains confidential information. Do not share it in public chats."),
       "error"

@@ -30,7 +30,7 @@ FORKOP_WAS_RUNNING=0
 FORKOP_LEGACY_DETECTED=0
 LEGACY_CLEANUP_DONE=0
 LEGACY_CLEANUP_STARTED=0
-FORKOP_I18N_REQUESTED=0
+FORKOP_I18N_REQUESTED=1
 INSTALLER_LANG="en"
 SING_BOX_INSTALL_VARIANT=""
 SING_BOX_TINY_FILE=""
@@ -89,7 +89,7 @@ Usage: $0 [options]
 Installs or updates Forkop packages:
   - forkop
   - luci-app-forkop
-  - luci-i18n-forkop-ru when requested or when LuCI language is Russian
+  - luci-i18n-forkop-ru (available when Russian is selected in LuCI)
 
 sing-box policy:
   - preserve the currently installed sing-box variant
@@ -2276,9 +2276,7 @@ installer_text() {
             select) printf '%s\n' "Выберите номер" ;;
             invalid_choice) printf '%s\n' "Введите номер из списка." ;;
             i18n_installed) printf '%s\n' "Русский пакет интерфейса уже установлен и будет обновлен." ;;
-            i18n_prompt) printf '%s\n' "Установить русский пакет интерфейса?" ;;
-            i18n_skip) printf '%s\n' "Продолжаю без русского пакета интерфейса." ;;
-            luci_ru) printf '%s\n' "Русский пакет интерфейса будет установлен автоматически." ;;
+            i18n_default) printf '%s\n' "Устанавливаю русский пакет интерфейса; язык LuCI не изменится." ;;
             sing_box_prompt) printf '%s\n' "Какую сборку singbox ставить?" ;;
             sing_box_tiny) printf '%s\n' "singbox tiny (по умолчанию)" ;;
             sing_box_stable) printf '%s\n' "singbox stable" ;;
@@ -2301,9 +2299,7 @@ installer_text() {
         select) printf '%s\n' "Select a number" ;;
         invalid_choice) printf '%s\n' "Enter a number from the list." ;;
         i18n_installed) printf '%s\n' "The Russian interface package is already installed and will be updated." ;;
-        i18n_prompt) printf '%s\n' "Install the Russian interface language package?" ;;
-        i18n_skip) printf '%s\n' "Continuing without the Russian interface language package." ;;
-        luci_ru) printf '%s\n' "The Russian interface package will be installed automatically." ;;
+        i18n_default) printf '%s\n' "Installing the Russian interface package; the LuCI language will not change." ;;
         sing_box_prompt) printf '%s\n' "Which singbox build should be installed?" ;;
         sing_box_tiny) printf '%s\n' "singbox tiny (default)" ;;
         sing_box_stable) printf '%s\n' "singbox stable" ;;
@@ -2619,33 +2615,15 @@ remove_legacy_backup() {
 }
 
 decide_i18n_installation() {
-    luci_lang="$(get_luci_main_lang)"
-
     detect_installer_language
+    FORKOP_I18N_REQUESTED=1
 
     if pkg_is_installed "luci-i18n-forkop-ru"; then
-        FORKOP_I18N_REQUESTED=1
         msg "$(installer_text i18n_installed)"
         return 0
     fi
 
-    if [ "$FORKOP_LEGACY_DETECTED" -eq 1 ] &&
-        pkg_is_installed "luci-i18n-${LEGACY_BACKEND_PACKAGE}-ru"; then
-        FORKOP_I18N_REQUESTED=1
-        msg "$(installer_text i18n_installed)"
-        return 0
-    fi
-
-    case "$luci_lang" in
-        ru|ru_*|ru-*)
-            FORKOP_I18N_REQUESTED=1
-            INSTALLER_LANG="ru"
-            msg "$(installer_text luci_ru)"
-            return 0
-            ;;
-    esac
-
-    msg "$(installer_text i18n_skip)"
+    msg "$(installer_text i18n_default)"
 }
 
 download_forkop_packages() {

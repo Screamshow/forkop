@@ -10,5 +10,24 @@
 			"acl": [ "luci-app-forkop" ],
 			"uci": { "forkop": true }
 		}
-  }
+	},
+	"admin/services/forkop/support-report": {
+		"action": {
+			"type": "function",
+			"module": "luci.controller.forkop",
+			"function": "action_support_report"
+		},
+		"auth": {
+			"methods": [ "cookie:sysauth_https", "cookie:sysauth_http" ],
+			"login": true
+		},
+		"depends": {
+			"acl": [ "luci-app-forkop" ],
+			"fs": {
+				"/bin/gzip": "executable",
+				"/usr/bin/forkop": "executable"
+			}
+		},
+		"leaf": true
+	}
 }

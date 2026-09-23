@@ -45,6 +45,10 @@ declare global {
 
   const _ = (_key: string) => string;
 
+  const L: {
+    url: (...parts: string[]) => string;
+  };
+
   const ui = {
     showModal: (_title: string, _content: HTMLElement) => undefined,
     hideModal: () => undefined,

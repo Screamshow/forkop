@@ -156,30 +156,20 @@ function isMutatingServiceActionLoading() {
   );
 }
 
-function downloadSupportReport(text: string) {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+function downloadSupportReport() {
   const link = document.createElement('a');
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  link.href = url;
-  link.download = `forkop-support-report-${stamp}.txt`;
+  link.href = L.url('admin', 'services', 'forkop', 'support-report');
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
 }
 
 async function handleDownloadSupportReport() {
   setDiagnosticActionLoading('supportReport', true);
 
   try {
-    const report = await ForkopShellMethods.supportReport();
-    if (!report.success) {
-      throw new Error(report.error || 'Support report collection failed');
-    }
-
-    downloadSupportReport(String(report.data ?? ''));
+    downloadSupportReport();
     showToast(
       _('Support report contains confidential information. Do not share it in public chats.'),
       'error',
