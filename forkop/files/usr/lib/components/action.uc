@@ -469,8 +469,15 @@ function staged_package_info(path, expected_name, expected_version) {
         arch == "" || size <= 0)
         return null;
     let supported = arch == "all" || arch == "noarch";
-    if (is_apk())
-        supported = supported || arch == trim(command_output_from_args([ "apk", "--print-arch" ]));
+    if (is_apk()) {
+        // apk has a compatibility table which is broader than --print-arch.
+        // For example, an OpenWrt 25 aarch64 APK host accepts the
+        // aarch64_cortex-a53 package produced for mediatek/filogic.  Comparing
+        // these strings here rejects a valid archive before apk can resolve it.
+        // Keep metadata validation above, and let apk validate architecture
+        // during the local-file transaction.
+        supported = true;
+    }
     else {
         for (let line in split(command_output_from_args([ "opkg", "print-architecture" ]), "\n")) {
             let fields = split(trim(line), " ");
