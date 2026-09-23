@@ -842,6 +842,7 @@ function getComponentCards(): ComponentCard[] {
   const torrserverDirectActive = Boolean(systemInfo.torrserver_direct_active);
   const singBoxExtended =
     Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
+  const singBoxExtendedCompressed = Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
 
   const forkopActions = getInstalledUpdateActions(
@@ -853,10 +854,9 @@ function getComponentCards(): ComponentCard[] {
     'sing_box',
     'singBoxCheck',
     'singBoxInstall',
-    singBoxTiny || singBoxExtended,
+    singBoxTiny || singBoxExtended || singBoxExtendedCompressed,
   );
 
-  // Forkop X exposes only the two mirror-backed sing-box variants.
   if (!singBoxTiny) {
     singBoxActions.push({
       key: 'singBoxInstallTiny',
@@ -873,6 +873,15 @@ function getComponentCards(): ComponentCard[] {
       icon: renderDownloadIcon24,
       component: 'sing_box',
       action: 'install_extended',
+    });
+  }
+  if (!singBoxExtendedCompressed) {
+    singBoxActions.push({
+      key: 'singBoxInstallExtendedCompressed',
+      text: 'Extended compressed',
+      icon: renderDownloadIcon24,
+      component: 'sing_box',
+      action: 'install_extended_compressed',
     });
   }
 

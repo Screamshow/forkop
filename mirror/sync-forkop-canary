@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository="${FORKOP_GITHUB_REPOSITORY:-Screamshow/forkop}"
+root="${MIRROR_ROOT:-/srv/mirror/public/forkop}"
+exec 9>"${FORKOP_CANARY_LOCK_FILE:-/run/lock/forkop-canary-mirror.lock}"
+flock -n 9 || exit 0
+
+releases="$(curl -fsSL --retry 3 "https://api.github.com/repos/$repository/releases?per_page=30")"
+release="$(jq -c '[.[] | select(.prerelease == true and (.tag_name | test("^[0-9]+\\.[0-9]+\\.[0-9]+-canary\\.[0-9]+$")))] | first' <<< "$releases")"
+[[ "$release" != null ]] || { echo "No published canary release" >&2; exit 1; }
+version="$(jq -r .tag_name <<< "$release")"
+destination="$root/updates/canary/releases/$version"
+staging="$root/updates/canary/.${version}.staging"
+mkdir -p "$staging" "$root/updates/canary/releases"
+
+for package in forkop luci-app-forkop luci-i18n-forkop-ru; do
+    for ext in apk ipk; do
+        name="${package}_${version}.${ext}"
+        row="$(jq -c --arg name "$name" '.assets[] | select(.name == $name)' <<< "$release")"
+        [[ -n "$row" ]] || { echo "Missing canary asset: $name" >&2; exit 1; }
+        url="$(jq -r .browser_download_url <<< "$row")"
+        digest="$(jq -r '.digest // empty' <<< "$row")"
+        [[ "$digest" == sha256:* ]] || { echo "Missing digest: $name" >&2; exit 1; }
+        if [[ ! -s "$staging/$name" ]] ||
+            [[ "$(sha256sum "$staging/$name" | cut -d' ' -f1)" != "${digest#sha256:}" ]]; then
+            curl -fsSL --retry 3 "$url" -o "$staging/$name.new"
+            mv "$staging/$name.new" "$staging/$name"
+        fi
+        [[ "$(sha256sum "$staging/$name" | cut -d' ' -f1)" == "${digest#sha256:}" ]] || exit 1
+    done
+done
+
+jq --arg version "$version" '
+    {channel: "canary", tag_name: $version,
+     html_url: ("/forkop/updates/canary/releases/" + $version + "/"),
+     assets: [.assets[] | select(.name | test("^(forkop|luci-app-forkop|luci-i18n-forkop-ru)_.*\\.(apk|ipk)$"))
+       | {name, browser_download_url: ("/forkop/updates/canary/releases/" + $version + "/" + .name),
+          sha256: (.digest | sub("^sha256:"; ""))}]}
+' <<< "$release" > "$staging/release.json.new"
+mv "$staging/release.json.new" "$staging/release.json"
+(cd "$staging" && sha256sum ./*.apk ./*.ipk > SHA256SUMS.new)
+mv "$staging/SHA256SUMS.new" "$staging/SHA256SUMS"
+
+if [[ ! -d "$destination" ]]; then
+    mv "$staging" "$destination"
+else
+    # An already published version is immutable; its six asset hashes were
+    # verified above in staging before the canary pointer is changed.
+    rm -rf "$staging"
+fi
+cp "$destination/release.json" "$root/updates/.canary.json.new"
+mv "$root/updates/.canary.json.new" "$root/updates/canary.json"
+echo "Forkop canary $version mirror sync completed"
