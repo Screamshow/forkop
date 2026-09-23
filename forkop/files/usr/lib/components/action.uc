@@ -1807,13 +1807,15 @@ function restore_sing_box_install_backup(previous_variant, backup_binary, rollba
     return restore_sing_box_package_variant(previous_variant);
 }
 
-function restore_sing_box_after_failed_extended_install(previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched) {
+function restore_sing_box_after_failed_extended_install(previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file) {
     if (as_string(archive_file) != "")
         remove_file(archive_file);
     let restore_status = true;
     if (cronet_touched)
         restore_file_backup("/usr/lib/libcronet.so", backup_cronet);
-    if (!restore_sing_box_install_backup(previous_variant, backup_binary))
+    if (rollback_file != null)
+        remove_file("/usr/bin/sing-box");
+    if (!restore_sing_box_install_backup(previous_variant, backup_binary, rollback_file))
         restore_status = false;
     restore_sing_box_variant_state(previous_marker, previous_version_state);
     restore_sing_box_service_from_marker(previous_marker);
@@ -2074,6 +2076,10 @@ function install_sing_box_extended(action, compressed) {
     }
 
     remove_file(archive_file);
+    let rollback = current_variant == "tiny" ? stage_previous_sing_box_package("tiny") : null;
+    if (current_variant == "tiny" && rollback == null)
+        action_fail("sing_box", action, "Cannot cache the installed Tiny package for rollback", current_version, latest_version);
+    let rollback_file = rollback == null ? null : rollback.path;
     stop_forkop_before_sing_box_change();
     let new_version = validate_sing_box_extended_binary(tmp_binary, tmp_dir);
     if (new_version == "") {
@@ -2101,7 +2107,7 @@ function install_sing_box_extended(action, compressed) {
         if (file_exists("/usr/lib/libcronet.so")) {
             backup_cronet = "/usr/lib/libcronet.so.forkop-backup." + owner_pid();
             if (!move_file_to_backup("/usr/lib/libcronet.so", backup_cronet)) {
-                restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+                restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
                 remove_file(tmp_binary);
                 remove_file(tmp_cronet);
                 action_fail("sing_box", action, "Failed to backup current libcronet.so", current_version, latest_version);
@@ -2132,7 +2138,7 @@ function install_sing_box_extended(action, compressed) {
         [ "sing-box", "Removing sing-box package before " + label + " installation" ]
     ]) {
         if (!run_logged_pkg_remove_sing_box_conflict(item[0], item[1])) {
-            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
             remove_file(tmp_binary);
             remove_file(tmp_cronet);
             action_fail("sing_box", action, "Failed to remove " + item[0] + " before " + label + " installation", current_version, latest_version);
@@ -2141,7 +2147,7 @@ function install_sing_box_extended(action, compressed) {
 
     remove_managed_sing_box_service_script();
     if (!install_managed_sing_box_service_script()) {
-        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
         remove_file(tmp_binary);
         remove_file(tmp_cronet);
         action_fail("sing_box", action, "Failed to install managed sing-box service for " + label, current_version, latest_version);
@@ -2150,14 +2156,14 @@ function install_sing_box_extended(action, compressed) {
     remove_file("/usr/bin/sing-box");
     if (!install_staged_file(tmp_binary, "/usr/bin/sing-box", "0755")) {
         remove_file("/usr/bin/sing-box");
-        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
         action_fail("sing_box", action, "Failed to install " + label + " binary", current_version, latest_version);
     }
     if (tmp_cronet != "") {
         remove_file("/usr/lib/libcronet.so");
         if (!install_staged_file(tmp_cronet, "/usr/lib/libcronet.so", "0644")) {
             remove_file("/usr/lib/libcronet.so");
-            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
             action_fail("sing_box", action, "Failed to install libcronet.so for " + label, current_version, latest_version);
         }
     }
@@ -2165,7 +2171,7 @@ function install_sing_box_extended(action, compressed) {
 
     new_version = validate_sing_box_extended_binary("/usr/bin/sing-box", "/usr/lib");
     if (new_version == "") {
-        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched))
+        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file))
             action_fail("sing_box", action, "Installed " + label + " failed validation; previous sing-box variant was restored", current_version, latest_version);
         action_fail("sing_box", action, "Installed " + label + " failed validation and previous sing-box variant could not be restored", current_version, latest_version);
     }
@@ -2176,7 +2182,7 @@ function install_sing_box_extended(action, compressed) {
         updates_log(label + " did not start cleanly; restoring previous sing-box binary", "error");
         if (file_exists(SERVICE_INIT))
             command_success_from_args([ SERVICE_INIT, "stop" ]);
-        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched)) {
+        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file)) {
             remove_file(backup_binary);
             remove_file(backup_cronet);
             action_fail("sing_box", action, label + " was installed but Forkop did not start cleanly; previous sing-box variant was restored", current_version, latest_version);
