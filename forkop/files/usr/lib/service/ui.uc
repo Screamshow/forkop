@@ -12,6 +12,8 @@ const STATE_UC = LIB_DIR + "/service/state.uc";
 const UI_UC = LIB_DIR + "/service/ui.uc";
 const STATE_DIR = getenv("FORKOP_UI_STATE_DIR") || "/var/run/forkop/ui-state";
 const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/var/run/forkop/reload.pending";
+const POST_START_LATENCY_FILE = getenv("FORKOP_POST_START_LATENCY_FILE") || "/var/run/forkop/post-start-latency.pending";
+const START_IN_PROGRESS_FILE = getenv("FORKOP_START_IN_PROGRESS_FILE") || "/var/run/forkop/start.in-progress";
 const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || "/var/run/forkop/package-upgrade.quiesce";
 const RUNTIME_CONFIG_ERROR_FILE = getenv("FORKOP_RUNTIME_CONFIG_ERROR_FILE") || "/var/run/forkop/config-error";
 const SERVICE_ACTION_DIR = getenv("FORKOP_UI_SERVICE_ACTION_DIR") || STATE_DIR + "/service-actions";
@@ -709,6 +711,10 @@ function pid_running(pid) {
     return job_pid_valid(pid) && command_success_from_args([ "kill", "-0", pid ]);
 }
 
+function start_worker_running() {
+    return pid_running(trim(as_string(fs.readfile(START_IN_PROGRESS_FILE))));
+}
+
 function current_pid() {
     let stat = as_string(fs.readfile("/proc/self/stat"));
     let separator = index(stat, " ");
@@ -1116,7 +1122,11 @@ function current_ui_state_json() {
     let active_action = active_service_action_value();
     let config_error = trim(as_string(fs.readfile(RUNTIME_CONFIG_ERROR_FILE)));
 
-    if (active_action == "start" || (active_action == "" && package_upgrade_transition_active()))
+    // The cold-start worker hands list and rule-set refresh to a second worker.
+    // Keep the transition visible until that worker has applied its final reload.
+    if (start_worker_running() || active_action == "start" || (active_action == "" &&
+        (package_upgrade_transition_active() ||
+         (forkop_is_running && fs.stat(POST_START_LATENCY_FILE) != null))))
         forkop_status = "starting";
     else if (active_action == "stop")
         forkop_status = "stopping";
@@ -1406,6 +1416,12 @@ function service_action_async(action) {
     action = as_string(action);
     if (!service_action_valid(action)) {
         action_start_response(false, "", "Invalid service action");
+        exit(1);
+    }
+
+    if ((action == "start" || action == "restart") &&
+        (start_worker_running() || (forkop_running() && fs.stat(POST_START_LATENCY_FILE) != null))) {
+        action_start_response(false, "", "Forkop startup is still in progress");
         exit(1);
     }
 

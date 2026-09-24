@@ -30,6 +30,7 @@ const PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || RUNTIME_STAT
 const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNTIME_STATE_DIR + "/list-update.reload";
 const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
 const POST_START_LATENCY_FILE = getenv("FORKOP_POST_START_LATENCY_FILE") || RUNTIME_STATE_DIR + "/post-start-latency.pending";
+const START_IN_PROGRESS_FILE = getenv("FORKOP_START_IN_PROGRESS_FILE") || RUNTIME_STATE_DIR + "/start.in-progress";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
 const RUNTIME_CONFIG_ERROR_FILE = getenv("FORKOP_RUNTIME_CONFIG_ERROR_FILE") || RUNTIME_STATE_DIR + "/config-error";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
@@ -1175,7 +1176,7 @@ function abort_invalid_staged_config(stage_path) {
     return 1;
 }
 
-function start() {
+function start_inner() {
     // A current installer/updater may have recorded one exact, procd-owned
     // pre-upgrade process. Wait only for that process to exit; a legacy direct
     // opkg/apk upgrade has no marker and remains fail-closed below.
@@ -1272,6 +1273,15 @@ function start() {
     schedule_automatic_latency_after_runtime();
 
     return 0;
+}
+
+function start() {
+    // The init.d UI action can fail to register when a stop has only just
+    // completed. Track the actual lifecycle worker independently of UI jobs.
+    write_file(START_IN_PROGRESS_FILE, owner_pid() + "\n");
+    let status = start_inner();
+    remove_file(START_IN_PROGRESS_FILE);
+    return status;
 }
 
 function stop_impl() {

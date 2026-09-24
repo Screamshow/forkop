@@ -24,6 +24,7 @@ const SING_BOX_INIT = env("FORKOP_SING_BOX_INIT", "/etc/init.d/sing-box");
 const SING_BOX_BIN = env("FORKOP_SING_BOX_BIN", "/usr/bin/sing-box");
 const SING_BOX_CRONET = env("FORKOP_SING_BOX_CRONET", "/usr/lib/libcronet.so");
 const SING_BOX_MANAGED_MARKER = env("SB_MANAGED_SERVICE_MARKER", "Forkop managed sing-box service for binary variants");
+const COMPRESSED_UPGRADE_BACKUP = "/tmp/forkop-compressed-upgrade";
 const PACKAGE_UPGRADE_STATE = env("FORKOP_PACKAGE_UPGRADE_STATE", "/tmp/forkop-package-was-running");
 const PACKAGE_UPGRADE_QUIESCE_FILE = env("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE", "/var/run/forkop/package-upgrade.quiesce");
 const UPGRADE_SING_BOX_WAIT_SECONDS = int(env("FORKOP_UPGRADE_SING_BOX_WAIT_SECONDS", "15"));
@@ -166,6 +167,33 @@ function remove_managed_sing_box() {
     unlink_if_exists(SING_BOX_CRONET);
 }
 
+function restore_compressed_upgrade_backup() {
+    let backup_bin = COMPRESSED_UPGRADE_BACKUP + "/sing-box";
+    let backup_init = COMPRESSED_UPGRADE_BACKUP + "/sing-box.init";
+    if (!path_exists(backup_bin) && !path_exists(backup_init))
+        return true;
+    if (trim(as_string(fs.readfile("/etc/forkop/sing-box-variant"))) != "extended-compressed" ||
+        !path_exists(backup_bin) ||
+        index(as_string(fs.readfile(backup_init)), SING_BOX_MANAGED_MARKER) < 0)
+        return false;
+    let init_was_missing = !path_exists(SING_BOX_INIT);
+    for (let pair in [ [ backup_bin, SING_BOX_BIN ], [ backup_init, SING_BOX_INIT ],
+                       [ COMPRESSED_UPGRADE_BACKUP + "/libcronet.so", SING_BOX_CRONET ] ]) {
+        if (path_exists(pair[0]) && !path_exists(pair[1]) &&
+            !command_success_from_args([ "cp", "-p", pair[0], pair[1] ]))
+            return false;
+    }
+    if (init_was_missing && !command_success_from_args([ SING_BOX_INIT, "enable" ]))
+        return false;
+    return true;
+}
+
+function clear_compressed_upgrade_backup() {
+    for (let name in [ "sing-box", "sing-box.init", "libcronet.so" ])
+        unlink_if_exists(COMPRESSED_UPGRADE_BACKUP + "/" + name);
+    command_success_from_args([ "rmdir", COMPRESSED_UPGRADE_BACKUP ]);
+}
+
 function remember_upgrade_state(action) {
     // opkg invokes prerm without an action argument on some supported
     // OpenWrt 24 builds, including a normal version upgrade.  The old
@@ -245,7 +273,11 @@ function prerm_cleanup(action) {
         if (!command_success_from_args([ INIT_PATH, "stop" ]))
             return false;
         restore_dnsmasq_if_needed();
-        remove_managed_sing_box();
+        // The compressed variant is installed outside the package manager.
+        // Keep its binary and managed init script across a Forkop upgrade;
+        // postinst needs both to restore the previously running service.
+        if (as_string(action) == "remove")
+            remove_managed_sing_box();
     }
     return remove_rt_tables_entry();
 }
@@ -255,6 +287,10 @@ function postinst_restore() {
         return true;
 
     clear_component_update_check_cache();
+    if (!restore_compressed_upgrade_backup()) {
+        warn("Unable to restore compressed sing-box after package upgrade.\n");
+        return false;
+    }
 
     let config = fs.readfile(CONFIG_PATH);
     if (config == null || trim(as_string(config)) == "") {
@@ -277,6 +313,7 @@ function postinst_restore() {
 
     if (!path_exists(PACKAGE_UPGRADE_STATE)) {
         clear_upgrade_quiesce();
+        clear_compressed_upgrade_backup();
         return true;
     }
 
@@ -296,6 +333,7 @@ function postinst_restore() {
 
     unlink_if_exists(PACKAGE_UPGRADE_STATE);
     clear_upgrade_quiesce();
+    clear_compressed_upgrade_backup();
     return true;
 }
 

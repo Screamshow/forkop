@@ -15,6 +15,7 @@ const FORKOP_MIRROR_BASE_URL = getenv("FORKOP_MIRROR_BASE_URL") || constants.FOR
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const PACKAGE_UPGRADE_STATE = getenv("FORKOP_PACKAGE_UPGRADE_STATE") || "/tmp/forkop-package-was-running";
+const COMPRESSED_UPGRADE_BACKUP = "/tmp/forkop-compressed-upgrade";
 const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIME_STATE_DIR + "/system-info.json";
 const COMPONENT_LOCK_DIR = getenv("UPDATES_LOCK_DIR") || RUNTIME_STATE_DIR + "/component-action.lock";
 const TMP_STALE_TTL_MINUTES = getenv("UPDATES_TMP_STALE_TTL_MINUTES") || "30";
@@ -2400,6 +2401,21 @@ function install_forkop() {
     // The new lifecycle will accept only this exact PID/starttime for a short
     // bounded exit wait, then re-run the normal ownership guard.
     capture_managed_upgrade_sing_box_marker();
+
+    // Releases before this fix remove the unmanaged compressed binary in
+    // their prerm. Save it before the package manager invokes that old hook.
+    if (sing_box_runtime_output("read-variant-marker", []) == "extended-compressed") {
+        for (let name in [ "sing-box", "sing-box.init", "libcronet.so" ])
+            remove_file(COMPRESSED_UPGRADE_BACKUP + "/" + name);
+        let service = read_file("/etc/init.d/sing-box");
+        if (!file_nonempty("/usr/bin/sing-box") || index(service, SB_MANAGED_SERVICE_MARKER) < 0 ||
+            !ensure_dir(COMPRESSED_UPGRADE_BACKUP) ||
+            !command_success_from_args([ "cp", "-p", "/usr/bin/sing-box", COMPRESSED_UPGRADE_BACKUP + "/sing-box" ]) ||
+            !command_success_from_args([ "cp", "-p", "/etc/init.d/sing-box", COMPRESSED_UPGRADE_BACKUP + "/sing-box.init" ]) ||
+            (file_exists("/usr/lib/libcronet.so") &&
+             !command_success_from_args([ "cp", "-p", "/usr/lib/libcronet.so", COMPRESSED_UPGRADE_BACKUP + "/libcronet.so" ])))
+            action_fail("forkop", "install", "Failed to preserve compressed sing-box before upgrade", FORKOP_VERSION, latest_version);
+    }
 
     // apk refreshes repository indexes for every `add` invocation. Install the
     // release files in one transaction on APK systems to retain dependency

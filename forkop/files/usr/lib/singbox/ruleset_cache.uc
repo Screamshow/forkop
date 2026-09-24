@@ -16,6 +16,8 @@ const LIST_CACHE_DIR = getenv("FORKOP_PERSISTENT_LIST_CACHE_DIR") || "/etc/forko
 const RUNTIME_CACHE_DIR = getenv("FORKOP_RULESET_RUNTIME_CACHE_DIR") || "/tmp/sing-box/ruleset-cache";
 const RUNTIME_MANIFEST_PATH = getenv("FORKOP_RULESET_RUNTIME_MANIFEST") || "/var/run/forkop/ruleset-cache-runtime.json";
 const SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
+const SING_BOX_CONFIG_PATH = getenv("FORKOP_SING_BOX_CONFIG_PATH") ||
+    uci_core.get(CONFIG_NAME + ".settings.config_path") || "/etc/sing-box/config.json";
 const TEMPORARY_FILE_MAX_AGE = int(getenv("FORKOP_RULESET_CACHE_TEMP_MAX_AGE") || "3600");
 const PERSISTENT_CACHE_MAX_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MAX_BYTES") || "8388608");
 const PERSISTENT_CACHE_MIN_FREE_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MIN_FREE_BYTES") || "8388608");
@@ -690,16 +692,29 @@ function manifest_has_entries() {
     return false;
 }
 
+function config_uses_empty_rule_set() {
+    let config = common.read_json_file(SING_BOX_CONFIG_PATH);
+    if (type(config) != "object")
+        return true;
+    let route = common.object_or_empty(config.route);
+    for (let entry in common.array_or_empty(route.rule_set)) {
+        let path = as_string(common.object_or_empty(entry).path);
+        if (substr(path, 0, length(RUNTIME_CACHE_DIR + "/empty-")) == RUNTIME_CACHE_DIR + "/empty-")
+            return true;
+    }
+    return false;
+}
+
 function refresh_if_due_and_reload(proxy_address) {
     let status = refresh_manifest(proxy_address, true);
     // At cold boot the generator may have used its empty local fallback before
     // this persistent cache was materialized. A still-fresh cache then needs
     // one local reload to replace that fallback with the saved rule-set; it
     // must not trigger another network download.
-    if (status != 0 && (status != 1 || !manifest_has_entries())) {
+    if (status != 0 && (status != 1 || !manifest_has_entries() || !config_uses_empty_rule_set())) {
         // No rule-set reload follows this post-start worker. Let lifecycle
         // release the latency barrier rather than waiting for another start.
-        system(command_from_args([ BIN_PATH, "post-start-latency" ]) + " >/dev/null 2>&1 1000>&- &");
+        system(command_from_args([ BIN_PATH, "post_start_latency" ]) + " >/dev/null 2>&1 1000>&- &");
         return;
     }
     system(command_from_args([ SERVICE_INIT, "reload", "ruleset-cache" ]) + " >/dev/null 2>&1 1000>&- &");
