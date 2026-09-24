@@ -15,6 +15,8 @@ const FORKOP_MIRROR_BASE_URL = getenv("FORKOP_MIRROR_BASE_URL") || constants.FOR
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const PACKAGE_UPGRADE_STATE = getenv("FORKOP_PACKAGE_UPGRADE_STATE") || "/tmp/forkop-package-was-running";
+const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || RUNTIME_STATE_DIR + "/package-upgrade.quiesce";
+const FORKOP_UPGRADE_IDLE_WAIT_SECONDS = int(getenv("FORKOP_UPGRADE_IDLE_WAIT_SECONDS") || "180");
 const COMPRESSED_UPGRADE_BACKUP = "/tmp/forkop-compressed-upgrade";
 const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIME_STATE_DIR + "/system-info.json";
 const COMPONENT_LOCK_DIR = getenv("UPDATES_LOCK_DIR") || RUNTIME_STATE_DIR + "/component-action.lock";
@@ -287,7 +289,13 @@ function release_component_lock() {
     lock_held = false;
 }
 
+function clear_owned_upgrade_quiesce() {
+    if (trim(read_file(PACKAGE_UPGRADE_QUIESCE_FILE)) == owner_pid())
+        remove_file(PACKAGE_UPGRADE_QUIESCE_FILE);
+}
+
 function cleanup_action() {
+    clear_owned_upgrade_quiesce();
     cleanup_tmp_dir();
     release_component_lock();
 }
@@ -1140,6 +1148,19 @@ function forkop_starting() {
     if (!file_exists(LIB_DIR + "/service/ui.uc"))
         return false;
     return trim(module_output([ LIB_DIR + "/service/ui.uc", "active-service-action" ])) == "start";
+}
+
+function wait_for_service_action_idle() {
+    let remaining = FORKOP_UPGRADE_IDLE_WAIT_SECONDS;
+    while (remaining >= 0) {
+        if (module_success([ LIB_DIR + "/service/ui.uc", "service-action-idle" ]))
+            return true;
+        if (remaining == 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        remaining--;
+    }
+    return false;
 }
 
 function wait_for_forkop_restore() {
@@ -2396,6 +2417,12 @@ function install_forkop() {
         !download_with_retry(release.app_url, app_file, release.app_name) ||
         (release.i18n_url != "" && !download_with_retry(release.i18n_url, i18n_file, release.i18n_name)))
         action_fail("forkop", "install", "Failed to download Forkop release packages", FORKOP_VERSION, latest_version);
+
+    if (!module_success([ LIB_DIR + "/service/ui.uc", "begin-package-upgrade-quiesce", owner_pid() ]))
+        action_fail("forkop", "install", "Another Forkop service transition or package upgrade is starting", FORKOP_VERSION, latest_version);
+    if (!wait_for_service_action_idle())
+        action_fail("forkop", "install", "Timed out waiting for the current Forkop service action before upgrade", FORKOP_VERSION, latest_version);
+    capture_forkop_running_state();
 
     // Capture before apk/opkg runs the currently installed package's prerm.
     // The new lifecycle will accept only this exact PID/starttime for a short

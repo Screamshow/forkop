@@ -21,6 +21,7 @@ ops/deployed-nginx/
 !/tests/
 /tests/*
 !/tests/latency_reload_serialization.sh
+!/tests/package_upgrade_service_action.sh
 !/tests/automatic_latency_pending.sh
 !/tests/list_update_reload_policy.sh
 !/tests/list_cache.sh

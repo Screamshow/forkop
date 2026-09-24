@@ -12,6 +12,7 @@ function env(name, fallback) {
     return value == null ? as_string(fallback) : as_string(value);
 }
 
+const LIB_DIR = env("FORKOP_LIB", "/usr/lib/forkop");
 const CONFIG_NAME = env("FORKOP_CONFIG_NAME", "forkop");
 const CONFIG_PATH = env("FORKOP_CONFIG_PATH", "/etc/config/forkop");
 const DEFAULT_CONFIG_PATH = env("FORKOP_DEFAULT_CONFIG_PATH", "/usr/share/forkop/defaults/forkop");
@@ -222,18 +223,39 @@ function parent_pid() {
     return length(fields) > 1 && match(as_string(fields[1]), /^[0-9]+$/) != null ? fields[1] : "";
 }
 
+function process_parent_pid(pid) {
+    for (let line in split(as_string(fs.readfile("/proc/" + pid + "/status")), "\n")) {
+        if (index(line, "PPid:") == 0) {
+            let parent = trim(substr(line, 5));
+            return match(parent, /^[0-9]+$/) != null ? parent : "";
+        }
+    }
+    return "";
+}
+
+function package_transaction_pid() {
+    let pid = current_pid();
+    for (let i = 0; i < 12 && pid != "" && pid != "1"; i++) {
+        let comm = trim(as_string(fs.readfile("/proc/" + pid + "/comm")));
+        if (comm == "apk" || comm == "opkg" || comm == "opkg-cl")
+            return pid;
+        pid = process_parent_pid(pid);
+    }
+    return parent_pid();
+}
+
 function begin_upgrade_quiesce(action) {
     // opkg on supported OpenWrt 24 builds can omit the prerm action during an
     // upgrade.  Treat every non-removal package replacement as an upgrade and
-    // pin the marker to the package-manager parent, which remains alive until
-    // postinst has completed.  A marker owned by this short-lived prerm process
-    // stopped quiescing as soon as prerm exited.
+    // pin the marker to the apk/opkg ancestor, which remains alive until
+    // postinst has completed. The immediate parent is only the Forkop command
+    // wrapper and exits with prerm.
     if (as_string(action) == "remove")
         return true;
-    let pid = parent_pid();
+    let pid = package_transaction_pid();
     if (pid == "")
         pid = current_pid();
-    return pid != "" && fs.writefile(PACKAGE_UPGRADE_QUIESCE_FILE, pid + "\n") != null;
+    return pid != "" && command_success_from_args([ "ucode", "-L", LIB_DIR, UI_UC, "transfer-package-upgrade-quiesce", pid ]);
 }
 
 function clear_upgrade_quiesce() {
@@ -248,8 +270,7 @@ function wait_for_restored_service() {
     // starting: the component updater would otherwise mistake the transient
     // state for failure and launch a concurrent restart.
     while (timeout >= 0) {
-        let active = path_exists(UI_UC) ? trim(command_output_from_args([ "ucode", "-L", LIB_DIR, UI_UC, "active-service-action" ])) : "";
-        if (active == "") {
+        if (path_exists(UI_UC) && command_success_from_args([ "ucode", "-L", LIB_DIR, UI_UC, "service-action-idle" ])) {
             if (command_success_from_args([ INIT_PATH, "status" ]))
                 return true;
         }
@@ -262,13 +283,32 @@ function wait_for_restored_service() {
     return false;
 }
 
+function wait_for_existing_service_action() {
+    let remaining = UPGRADE_RESTORE_WAIT_SECONDS;
+    while (remaining >= 0) {
+        if (path_exists(UI_UC) && command_success_from_args([ "ucode", "-L", LIB_DIR, UI_UC, "service-action-idle" ]))
+            return true;
+        if (remaining == 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        remaining--;
+    }
+    return false;
+}
+
 function prerm_cleanup(action) {
     if (env("IPKG_INSTROOT", "") != "")
         return true;
 
-    remember_upgrade_state(action);
     if (!begin_upgrade_quiesce(action))
         return false;
+    if (as_string(action) != "remove" && !wait_for_existing_service_action()) {
+        warn("Timed out waiting for a Forkop service action before package upgrade.\n");
+        unlink_if_exists(PACKAGE_UPGRADE_STATE);
+        clear_upgrade_quiesce();
+        return false;
+    }
+    remember_upgrade_state(action);
     if (!PACKAGE_TEST_MODE) {
         if (!command_success_from_args([ INIT_PATH, "stop" ]))
             return false;

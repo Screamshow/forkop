@@ -796,6 +796,11 @@ function active_service_action_default() {
     active_service_action(SERVICE_ACTION_DIR);
 }
 
+function service_action_idle() {
+    refresh_action_dirs();
+    exit(active_service_action_value() == "" ? 0 : 1);
+}
+
 function action_state_from_dir(dir) {
     let result = [];
 
@@ -1208,6 +1213,12 @@ function begin_service_action_if_idle(action, source) {
     if (!acquire_dir_lock(SERVICE_ACTION_LOCK_DIR))
         return { status: 2, job_id: "" };
 
+    // An upgrade may have claimed the transition after the unlocked check.
+    if (package_upgrade_transition_active()) {
+        release_dir_lock(SERVICE_ACTION_LOCK_DIR);
+        return { status: 2, job_id: "" };
+    }
+
     refresh_action_dirs();
     if (active_service_action_value() != "") {
         release_dir_lock(SERVICE_ACTION_LOCK_DIR);
@@ -1223,6 +1234,26 @@ function begin_service_action_if_idle(action, source) {
 
     release_dir_lock(SERVICE_ACTION_LOCK_DIR);
     return { status: 0, job_id: id };
+}
+
+function begin_package_upgrade_quiesce(pid, replace_owner) {
+    pid = as_string(pid);
+    if (!job_pid_valid(pid) || !pid_running(pid))
+        return false;
+
+    ensure_dirs();
+    if (!acquire_dir_lock(SERVICE_ACTION_LOCK_DIR))
+        return false;
+
+    // The shared lock makes marker publication atomic with a new LuCI action.
+    let claimed = (replace_owner || !package_upgrade_transition_active()) &&
+        write_file(PACKAGE_UPGRADE_QUIESCE_FILE, pid + "\n");
+    release_dir_lock(SERVICE_ACTION_LOCK_DIR);
+    return claimed;
+}
+
+function begin_package_upgrade_quiesce_mode(pid, replace_owner) {
+    exit(begin_package_upgrade_quiesce(pid, replace_owner) ? 0 : 1);
 }
 
 function begin_service_action_mode(action, source) {
@@ -1627,10 +1658,16 @@ else if (mode == "job-refresh-plan")
     job_refresh_plan(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "active-service-action")
     ARGV[1] == null ? active_service_action_default() : active_service_action(ARGV[1]);
+else if (mode == "service-action-idle")
+    service_action_idle();
 else if (mode == "component-action-running-for")
     exit(component_action_running_for(ARGV[1]) ? 0 : 1);
 else if (mode == "service-action-begin-if-idle")
     begin_service_action_mode(ARGV[1], ARGV[2] || "ui");
+else if (mode == "begin-package-upgrade-quiesce")
+    begin_package_upgrade_quiesce_mode(ARGV[1], false);
+else if (mode == "transfer-package-upgrade-quiesce")
+    begin_package_upgrade_quiesce_mode(ARGV[1], true);
 else if (mode == "service-action-update-pid")
     update_service_action_pid_mode(ARGV[1], ARGV[2]);
 else if (mode == "service-action-finish")
