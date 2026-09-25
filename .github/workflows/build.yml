@@ -117,7 +117,7 @@ jobs:
           files: ./filtered-bin/release/*.*
           draft: false
           prerelease: ${{ contains(needs.preparation.outputs.version, '-canary.') }}
-          make_latest: true
+          make_latest: ${{ !contains(needs.preparation.outputs.version, '-canary.') }}
           name: ${{ needs.preparation.outputs.version }}
           body: ${{ needs.preparation.outputs.release_notes }}
           tag_name: ${{ needs.preparation.outputs.version }}
