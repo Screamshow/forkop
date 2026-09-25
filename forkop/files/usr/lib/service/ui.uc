@@ -135,9 +135,34 @@ function command_success_from_args(args) {
     return command_success(command_from_args(args));
 }
 
+function process_start_ticks(pid) {
+    if (match(as_string(pid), /^[0-9]+$/) == null)
+        return null;
+    let stat = as_string(fs.readfile("/proc/" + pid + "/stat"));
+    let marker = index(stat, ") ");
+    if (marker < 0)
+        return null;
+    let fields = split(trim(substr(stat, marker + 2)), /[ \t\r\n]+/);
+    return length(fields) >= 20 && match(as_string(fields[19]), /^[0-9]+$/) != null ? fields[19] : null;
+}
+
+function package_upgrade_marker_values() {
+    let fields = split(trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE))), /[ \t\r\n]+/);
+    if (length(fields) != 2 || match(as_string(fields[0]), /^[0-9]+$/) == null ||
+        match(as_string(fields[1]), /^[0-9]+$/) == null)
+        return null;
+    return { pid: fields[0], start_ticks: fields[1] };
+}
+
 function package_upgrade_transition_active() {
-    let pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
-    return match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
+    let marker = package_upgrade_marker_values();
+    return marker != null && process_start_ticks(marker.pid) == marker.start_ticks;
+}
+
+function package_upgrade_quiesce_owned(pid) {
+    let marker = package_upgrade_marker_values();
+    return marker != null && marker.pid == as_string(pid) &&
+        process_start_ticks(marker.pid) == marker.start_ticks;
 }
 
 function module_success(module_path, args) {
@@ -790,6 +815,11 @@ function active_service_action_default() {
     active_service_action(SERVICE_ACTION_DIR);
 }
 
+function service_action_idle() {
+    refresh_action_dirs();
+    exit(active_service_action_value() == "" ? 0 : 1);
+}
+
 function action_state_from_dir(dir) {
     let result = [];
 
@@ -1198,6 +1228,12 @@ function begin_service_action_if_idle(action, source) {
     if (!acquire_dir_lock(SERVICE_ACTION_LOCK_DIR))
         return { status: 2, job_id: "" };
 
+    // An upgrade may have claimed the transition after the unlocked check.
+    if (package_upgrade_transition_active()) {
+        release_dir_lock(SERVICE_ACTION_LOCK_DIR);
+        return { status: 2, job_id: "" };
+    }
+
     refresh_action_dirs();
     if (active_service_action_value() != "") {
         release_dir_lock(SERVICE_ACTION_LOCK_DIR);
@@ -1213,6 +1249,42 @@ function begin_service_action_if_idle(action, source) {
 
     release_dir_lock(SERVICE_ACTION_LOCK_DIR);
     return { status: 0, job_id: id };
+}
+
+function begin_package_upgrade_quiesce(pid, replace_owner) {
+    pid = as_string(pid);
+    if (!job_pid_valid(pid))
+        return false;
+
+    ensure_dirs();
+    if (!acquire_dir_lock(SERVICE_ACTION_LOCK_DIR))
+        return false;
+
+    // The shared lock makes marker publication atomic with a new LuCI action.
+    let ticks = process_start_ticks(pid);
+    let claimed = false;
+    if (ticks != null && (replace_owner || !package_upgrade_transition_active())) {
+        let temporary = PACKAGE_UPGRADE_QUIESCE_FILE + "." + pid + ".tmp";
+        claimed = write_file(temporary, pid + " " + ticks + "\n") &&
+            fs.rename(temporary, PACKAGE_UPGRADE_QUIESCE_FILE);
+        if (!claimed)
+            remove_file(temporary);
+    }
+    release_dir_lock(SERVICE_ACTION_LOCK_DIR);
+    return claimed;
+}
+
+function clear_package_upgrade_quiesce_if_owner(pid) {
+    if (!acquire_dir_lock(SERVICE_ACTION_LOCK_DIR))
+        return false;
+    if (package_upgrade_quiesce_owned(pid))
+        remove_file(PACKAGE_UPGRADE_QUIESCE_FILE);
+    release_dir_lock(SERVICE_ACTION_LOCK_DIR);
+    return true;
+}
+
+function begin_package_upgrade_quiesce_mode(pid, replace_owner) {
+    exit(begin_package_upgrade_quiesce(pid, replace_owner) ? 0 : 1);
 }
 
 function begin_service_action_mode(action, source) {
@@ -1585,6 +1657,10 @@ else if (mode == "service-action-valid")
     exit(service_action_valid(ARGV[1]) ? 0 : 1);
 else if (mode == "package-upgrade-transition-active")
     exit(package_upgrade_transition_active() ? 0 : 1);
+else if (mode == "package-upgrade-quiesce-owned")
+    exit(package_upgrade_quiesce_owned(ARGV[1]) ? 0 : 1);
+else if (mode == "clear-package-upgrade-quiesce-if-owner")
+    exit(clear_package_upgrade_quiesce_if_owner(ARGV[1]) ? 0 : 1);
 else if (mode == "latency-type-valid")
     exit(latency_type_valid(ARGV[1]) ? 0 : 1);
 else if (mode == "service-action-expected-running")
@@ -1611,10 +1687,16 @@ else if (mode == "job-refresh-plan")
     job_refresh_plan(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "active-service-action")
     ARGV[1] == null ? active_service_action_default() : active_service_action(ARGV[1]);
+else if (mode == "service-action-idle")
+    service_action_idle();
 else if (mode == "component-action-running-for")
     exit(component_action_running_for(ARGV[1]) ? 0 : 1);
 else if (mode == "service-action-begin-if-idle")
     begin_service_action_mode(ARGV[1], ARGV[2] || "ui");
+else if (mode == "begin-package-upgrade-quiesce")
+    begin_package_upgrade_quiesce_mode(ARGV[1], false);
+else if (mode == "transfer-package-upgrade-quiesce")
+    begin_package_upgrade_quiesce_mode(ARGV[1], true);
 else if (mode == "service-action-update-pid")
     update_service_action_pid_mode(ARGV[1], ARGV[2]);
 else if (mode == "service-action-finish")

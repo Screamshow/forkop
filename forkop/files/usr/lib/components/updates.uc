@@ -27,6 +27,7 @@ const LIST_UPDATE_STATE_FILE = getenv("FORKOP_LIST_UPDATE_STATE_FILE") || PERSIS
 const LIST_UPDATE_RUNTIME_STATE_FILE = getenv("FORKOP_LIST_UPDATE_RUNTIME_STATE_FILE") || RUNTIME_STATE_DIR + "/list-update-last-success.timestamp";
 const LIST_UPDATE_RUNTIME_SIGNATURE_FILE = getenv("FORKOP_LIST_UPDATE_RUNTIME_SIGNATURE_FILE") || RUNTIME_STATE_DIR + "/list-update-signature";
 const LIST_CACHE_LOG_STATE_FILE = getenv("FORKOP_LIST_CACHE_LOG_STATE_FILE") || RUNTIME_STATE_DIR + "/list-cache-restore.log-state";
+const LIST_SRS_VALIDATION_DIR = getenv("FORKOP_LIST_SRS_VALIDATION_DIR") || RUNTIME_STATE_DIR + "/validated-list-srs";
 const AUTOMATIC_LATENCY_PENDING_FILE = getenv("FORKOP_AUTOMATIC_LATENCY_PENDING_FILE") || "/etc/forkop/automatic-latency-test.pending";
 const AUTOMATIC_LATENCY_PENDING_FORMAT = "1";
 const PERSISTENT_LIST_CACHE_MAX_BYTES = int(getenv("FORKOP_PERSISTENT_LIST_CACHE_MAX_BYTES") || "8388608");
@@ -553,8 +554,17 @@ function generation_file_valid(root, entry) {
         return { valid: false, reason: "rule-set file '" + name + "' is not valid JSON", key: "json-" + name };
     if (kind == "source" && as_string(entry.url) == "")
         return { valid: false, reason: "source file '" + name + "' has no identity", key: "source-identity-" + name };
-    if (kind == "source" && !validate_staged_list_download(path, as_string(entry.source_format)))
+    // The manifest checksum was verified above. Decompiling the same SRS on
+    // every cache check is expensive on routers, so remember a successful
+    // schema check for this exact content in the boot-local runtime directory.
+    // Fresh downloads still pass through full validation before publication.
+    let source_format = as_string(entry.source_format);
+    let srs_stamp = source_format == "srs" ? LIST_SRS_VALIDATION_DIR + "/" + as_string(entry.md5) : "";
+    let srs_checked = srs_stamp != "" && trim(as_string(fs.readfile(srs_stamp))) == "srs-v1";
+    if (kind == "source" && !srs_checked && !validate_staged_list_download(path, source_format))
         return { valid: false, reason: "source file '" + name + "' failed " + as_string(entry.source_format) + " validation", key: "source-schema-" + name };
+    if (kind == "source" && srs_stamp != "" && !srs_checked && ensure_dir(LIST_SRS_VALIDATION_DIR))
+        fs.writefile(srs_stamp, "srs-v1\n");
     return { valid: true, bytes: int(object_or_empty(stat).size || 0) };
 }
 

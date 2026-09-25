@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GITHUB_REPOSITORY="${SING_BOX_EXTENDED_REPOSITORY:-shtorm-7/sing-box-extended}"
+MIRROR_ROOT="${MIRROR_ROOT:-/srv/mirror/public/forkop/sing-box-extended}"
+LOCK_FILE="${SING_BOX_EXTENDED_LOCK_FILE:-/run/lock/sing-box-extended-mirror.lock}"
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "sing-box-extended mirror sync is already running" >&2; exit 0; }
+
+release_json="$(curl -fsSL --retry 3 "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest")"
+tag="$(jq -r '.tag_name // empty' <<< "$release_json")"
+[[ -n "$tag" && "$tag" != *alpha* && "$tag" != *beta* && "$tag" != *-rc* ]] || exit 1
+
+staging="$MIRROR_ROOT/.${tag}.staging"
+destination="$MIRROR_ROOT/releases/$tag"
+mkdir -p "$staging" "$MIRROR_ROOT/releases"
+if [[ -d "$destination" ]]; then
+    cp -al "$destination"/. "$staging"/
+fi
+
+jq -r '.assets[] | select(.name | test("^sing-box-extended_.*_openwrt_.*\\.(apk|ipk)$|^sing-box-.*-linux-[a-zA-Z0-9-]+-compressed\\.tar\\.gz$")) | [.name, .browser_download_url, (.digest // "")] | @tsv' \
+    <<< "$release_json" |
+    while IFS=$'\t' read -r name url digest; do
+        [[ -n "$name" && -n "$url" && "$digest" == sha256:* ]] || exit 1
+        if [[ ! -f "$staging/$name" ]] ||
+            [[ "$(sha256sum "$staging/$name" | cut -d' ' -f1)" != "${digest#sha256:}" ]]; then
+            curl -fsSL --retry 3 "$url" -o "$staging/$name.new"
+            mv "$staging/$name.new" "$staging/$name"
+        fi
+        [[ "$(sha256sum "$staging/$name" | cut -d' ' -f1)" == "${digest#sha256:}" ]] || exit 1
+    done
+
+compgen -G "$staging/*.apk" >/dev/null
+compgen -G "$staging/*.ipk" >/dev/null
+compgen -G "$staging/*-linux-arm64-compressed.tar.gz" >/dev/null
+
+jq --arg tag "$tag" '
+    .html_url = ("/forkop/sing-box-extended/releases/" + $tag + "/")
+    | .assets = [.assets[]
+        | select(.name | test("^sing-box-extended_.*_openwrt_.*\\.(apk|ipk)$|^sing-box-.*-linux-[a-zA-Z0-9-]+-compressed\\.tar\\.gz$"))
+        | .browser_download_url = ("/forkop/sing-box-extended/releases/" + $tag + "/" + .name)]
+' <<< "$release_json" > "$staging/release.json.new"
+mv "$staging/release.json.new" "$staging/release.json"
+
+(cd "$staging" && sha256sum ./*.apk ./*.ipk ./*-linux-*-compressed.tar.gz > SHA256SUMS.new)
+mv "$staging/SHA256SUMS.new" "$staging/SHA256SUMS"
+
+# Keep the previous release directory until the new one is complete.
+if [[ -d "$destination" ]]; then
+    rm -rf "$destination"
+fi
+mv "$staging" "$destination"
+cp "$destination/release.json" "$MIRROR_ROOT/latest.json.new"
+mv "$MIRROR_ROOT/latest.json.new" "$MIRROR_ROOT/latest.json"
+printf '%s\n' "$tag" > "$MIRROR_ROOT/LATEST"
+echo "sing-box-extended $tag mirror sync completed"

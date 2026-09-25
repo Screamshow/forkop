@@ -15,6 +15,9 @@ const FORKOP_MIRROR_BASE_URL = getenv("FORKOP_MIRROR_BASE_URL") || constants.FOR
 const RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const PACKAGE_UPGRADE_STATE = getenv("FORKOP_PACKAGE_UPGRADE_STATE") || "/tmp/forkop-package-was-running";
+const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || RUNTIME_STATE_DIR + "/package-upgrade.quiesce";
+const FORKOP_UPGRADE_IDLE_WAIT_SECONDS = int(getenv("FORKOP_UPGRADE_IDLE_WAIT_SECONDS") || "180");
+const COMPRESSED_UPGRADE_BACKUP = "/tmp/forkop-compressed-upgrade";
 const SYSTEM_INFO_CACHE_FILE = getenv("FORKOP_SYSTEM_INFO_CACHE_FILE") || RUNTIME_STATE_DIR + "/system-info.json";
 const COMPONENT_LOCK_DIR = getenv("UPDATES_LOCK_DIR") || RUNTIME_STATE_DIR + "/component-action.lock";
 const TMP_STALE_TTL_MINUTES = getenv("UPDATES_TMP_STALE_TTL_MINUTES") || "30";
@@ -286,7 +289,12 @@ function release_component_lock() {
     lock_held = false;
 }
 
+function clear_owned_upgrade_quiesce() {
+    module_success([ LIB_DIR + "/service/ui.uc", "clear-package-upgrade-quiesce-if-owner", owner_pid() ]);
+}
+
 function cleanup_action() {
+    clear_owned_upgrade_quiesce();
     cleanup_tmp_dir();
     release_component_lock();
 }
@@ -637,7 +645,7 @@ function sing_box_space_error(overlay_kib, tmp_kib, target_bytes, previous_bytes
     // conflicting package is removed before installing the target, and a
     // failed target is removed before rollback. Budget for the larger step.
     let install_need = target_kib + int(target_kib / 4) + 8192 - recoverable_kib;
-    let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 4) + 8192 : 0;
+    let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 4) + 8192 - recoverable_kib : 0;
     let overlay_need = install_need > rollback_need ? install_need : rollback_need;
     let tmp_need = int((tmp_backup_bytes + 1023) / 1024) + 8192;
     if (overlay_kib <= 0 || tmp_kib <= 0 || target_kib <= 0)
@@ -658,6 +666,50 @@ function sing_box_reclaimable_bytes(previous_variant, target_variant, previous) 
     let old_path = file_exists("/overlay/upper") ?
         "/overlay/upper/usr/bin/sing-box" : "/usr/bin/sing-box";
     return file_exists(old_path) ? int(file_bytes(old_path) * 3 / 4) : 0;
+}
+
+function opkg_sing_box_dependencies_to_install(target) {
+    if (is_apk())
+        return [];
+
+    let simulation = command_from_args([
+        "opkg", "--noaction", "--force-space", "install", "--force-overwrite", "--force-downgrade", target.path
+    ]);
+    if (!run_logged("Checking sing-box package dependencies", simulation)) {
+        let pending = "";
+        let missing = [];
+        for (let line in split(last_logged_output, "\n")) {
+            line = trim(line);
+            if (match(line, /^[A-Za-z0-9][A-Za-z0-9._+-]*:$/) != null)
+                pending = replace(line, /:$/, "");
+            if (match(line, /masked in: --no-network/) != null && pending != "") {
+                if (!array_has(missing, pending))
+                    push(missing, pending);
+                pending = "";
+            }
+        }
+        return length(missing) > 0 ? missing : null;
+    }
+
+    let dependencies = [];
+    for (let line in split(last_logged_output, "\n")) {
+        let parsed = match(trim(line), /^Installing ([A-Za-z0-9][A-Za-z0-9._+-]*) \(/);
+        if (parsed != null && parsed[1] != target.name && !array_has(dependencies, parsed[1]))
+            push(dependencies, parsed[1]);
+    }
+    return dependencies;
+}
+
+function install_opkg_sing_box_dependencies(target) {
+    let dependencies = opkg_sing_box_dependencies_to_install(target);
+    if (dependencies == null)
+        return false;
+    for (let package_name in dependencies) {
+        if (!run_logged("Installing required sing-box dependency " + package_name,
+            pkg_install_name_command(package_name)))
+            return false;
+    }
+    return true;
 }
 
 function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
@@ -683,15 +735,6 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
         if (length(missing) > 0)
             return "Missing installed sing-box dependencies: " + join(", ", missing);
         return "Target package dependencies are incompatible; see package operation log";
-    }
-
-    if (!is_apk()) {
-        for (let line in split(last_logged_output, "\n")) {
-            line = trim(line);
-            if (substr(line, 0, 11) == "Installing " &&
-                substr(line, 11, length(target.name) + 2) != target.name + " (")
-                return "Additional package dependencies must be installed before changing sing-box";
-        }
     }
 
     let overlay_kib = available_kib("/usr/bin");
@@ -721,7 +764,7 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
     if (recoverable_kib > target_kib)
         recoverable_kib = target_kib;
     let install_need = target_kib + int(target_kib / 4) + 8192 - recoverable_kib;
-    let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 4) + 8192 : 0;
+    let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 4) + 8192 - recoverable_kib : 0;
     let overlay_need = install_need > rollback_need ? install_need : rollback_need;
     let tmp_need = int((tmp_backup_bytes + 1023) / 1024) + 8192;
     updates_log("Sing-box preflight passed: flash " + overlay_kib + "/" + overlay_need +
@@ -1106,6 +1149,19 @@ function forkop_starting() {
     return trim(module_output([ LIB_DIR + "/service/ui.uc", "active-service-action" ])) == "start";
 }
 
+function wait_for_service_action_idle() {
+    let remaining = FORKOP_UPGRADE_IDLE_WAIT_SECONDS;
+    while (remaining >= 0) {
+        if (module_success([ LIB_DIR + "/service/ui.uc", "service-action-idle" ]))
+            return true;
+        if (remaining == 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        remaining--;
+    }
+    return false;
+}
+
 function wait_for_forkop_restore() {
     let timeout = 180;
     while (timeout >= 0) {
@@ -1169,7 +1225,7 @@ function wait_forkop_running_after_sing_box_change() {
         return false;
 
     let waited = 0;
-    while (waited < 60) {
+    while (waited < 180) {
         if (forkop_status_running_with_timeout()) {
             command_success_from_args([ "sleep", "8" ]);
             if (forkop_status_running_with_timeout())
@@ -1585,8 +1641,17 @@ function restore_file_backup(target_path, backup_path) {
 }
 
 function restore_sing_box_service_from_marker(marker) {
-    if (as_string(marker) == "extended-compressed" ||
-        (!file_exists("/etc/init.d/sing-box") && file_nonempty("/usr/bin/sing-box")))
+    if (as_string(marker) == "extended-compressed")
+        return install_managed_sing_box_service_script();
+    if (sing_box_variant_is_package_managed(as_string(marker)) && is_apk() &&
+        file_exists("/etc/init.d/sing-box.apk-new") &&
+        (managed_sing_box_service_installed() || !file_exists("/etc/init.d/sing-box"))) {
+        remove_managed_sing_box_service_script();
+        if (!move_file_portable("/etc/init.d/sing-box.apk-new", "/etc/init.d/sing-box"))
+            return false;
+        return command_success_from_args([ "chmod", "0755", "/etc/init.d/sing-box" ]);
+    }
+    if (!file_exists("/etc/init.d/sing-box") && file_nonempty("/usr/bin/sing-box"))
         return install_managed_sing_box_service_script();
     remove_managed_sing_box_service_script();
     return true;
@@ -1756,6 +1821,10 @@ function restore_sing_box_install_backup(previous_variant, backup_binary, rollba
         let package_name = previous_variant == "tiny" ? "sing-box-tiny" :
             previous_variant == "stable" ? "sing-box" : "sing-box-extended";
         let previous_version = as_string(rollback_file) != "" ? staged_package_field(rollback_file, "version") : "";
+        if (previous_version != "" && installed_package_version(package_name) == previous_version &&
+            read_sing_box_binary_version("/usr/bin/sing-box", previous_variant == "extended" ? "/usr/lib" : "") != "")
+            return true;
+        remove_file("/usr/bin/sing-box");
         if (as_string(rollback_file) != "" && file_nonempty(rollback_file) &&
             previous_version != "" &&
             run_logged("Restoring previous sing-box package from local archive",
@@ -1772,17 +1841,19 @@ function restore_sing_box_install_backup(previous_variant, backup_binary, rollba
     return restore_sing_box_package_variant(previous_variant);
 }
 
-function restore_sing_box_after_failed_extended_install(previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched) {
+function restore_sing_box_after_failed_extended_install(previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file) {
     if (as_string(archive_file) != "")
         remove_file(archive_file);
     let restore_status = true;
     if (cronet_touched)
         restore_file_backup("/usr/lib/libcronet.so", backup_cronet);
-    if (!restore_sing_box_install_backup(previous_variant, backup_binary))
+    if (!restore_sing_box_install_backup(previous_variant, backup_binary, rollback_file))
         restore_status = false;
     restore_sing_box_variant_state(previous_marker, previous_version_state);
     restore_sing_box_service_from_marker(previous_marker);
     clear_version_caches();
+    if (restore_status)
+        restart_forkop_after_successful_change();
     return restore_status;
 }
 
@@ -1873,6 +1944,9 @@ function install_sing_box_extended_package(action) {
 
     if (!run_logged("Updating package lists before sing-box-extended package installation", pkg_list_update_command()))
         action_fail("sing_box", action, "Failed to update package lists", current_version, latest_version);
+
+    if (!install_opkg_sing_box_dependencies(target))
+        action_fail("sing_box", action, "Failed to install required sing-box dependencies; Tiny was not removed", current_version, latest_version);
 
     let rollback = sing_box_variant_is_package_managed(current_variant) ?
         (current_variant == "extended" && installed_package_version("sing-box-extended") == target.version ?
@@ -2020,7 +2094,26 @@ function install_sing_box_extended(action, compressed) {
         }
     }
 
+    // A package switch removes the old binary before writing the new one.
+    // Count only a conservative share of a verified writable-layer file.
+    let reclaim_bytes = current_variant != "not-installed" ?
+        sing_box_reclaimable_bytes(current_variant, "extended-compressed", {}) : 0;
+    let overlay_free_kib = available_kib("/usr/bin");
+    let overlay_need_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024) +
+        8192 - int(reclaim_bytes / 1024);
+    if (overlay_free_kib <= 0 || overlay_free_kib < overlay_need_kib) {
+        remove_file(tmp_binary);
+        remove_file(tmp_cronet);
+        remove_file(archive_file);
+        action_fail("sing_box", action, "Not enough flash space for " + label + ": need " + overlay_need_kib + " KiB free, have " + overlay_free_kib + " KiB", current_version, latest_version);
+    }
+
     remove_file(archive_file);
+    let package_variant = sing_box_variant_is_package_managed(current_variant);
+    let rollback = package_variant ? stage_previous_sing_box_package(current_variant) : null;
+    if (package_variant && rollback == null)
+        action_fail("sing_box", action, "Cannot cache the installed sing-box package for rollback", current_version, latest_version);
+    let rollback_file = rollback == null ? null : rollback.path;
     stop_forkop_before_sing_box_change();
     let new_version = validate_sing_box_extended_binary(tmp_binary, tmp_dir);
     if (new_version == "") {
@@ -2032,8 +2125,8 @@ function install_sing_box_extended(action, compressed) {
     let backup_binary = "";
     let backup_cronet = "";
     let cronet_touched = false;
-    if (file_exists("/usr/bin/sing-box")) {
-        backup_binary = "/usr/bin/sing-box.forkop-backup." + owner_pid();
+    if (!package_variant && file_exists("/usr/bin/sing-box")) {
+        backup_binary = tmp_dir + "/sing-box.forkop-backup";
         if (!move_file_to_backup("/usr/bin/sing-box", backup_binary)) {
             remove_file(backup_binary);
             remove_file(tmp_binary);
@@ -2047,7 +2140,7 @@ function install_sing_box_extended(action, compressed) {
         if (file_exists("/usr/lib/libcronet.so")) {
             backup_cronet = "/usr/lib/libcronet.so.forkop-backup." + owner_pid();
             if (!move_file_to_backup("/usr/lib/libcronet.so", backup_cronet)) {
-                restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+                restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
                 remove_file(tmp_binary);
                 remove_file(tmp_cronet);
                 action_fail("sing_box", action, "Failed to backup current libcronet.so", current_version, latest_version);
@@ -2061,16 +2154,30 @@ function install_sing_box_extended(action, compressed) {
         [ "sing-box", "Removing sing-box package before " + label + " installation" ]
     ]) {
         if (!run_logged_pkg_remove_sing_box_conflict(item[0], item[1])) {
-            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
             remove_file(tmp_binary);
             remove_file(tmp_cronet);
             action_fail("sing_box", action, "Failed to remove " + item[0] + " before " + label + " installation", current_version, latest_version);
         }
     }
 
+    // Verify the real free blocks after package removal or the compressed
+    // binary's move to tmpfs, before copying the new binary to overlay.
+    let overlay_after_remove_kib = available_kib("/usr/bin");
+    let full_overlay_need_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024) + 8192;
+    if (overlay_after_remove_kib < full_overlay_need_kib) {
+        let restored = restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet,
+            previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
+        remove_file(tmp_binary);
+        remove_file(tmp_cronet);
+        action_fail("sing_box", action, "Not enough flash space after removing the previous package: need " +
+            full_overlay_need_kib + " KiB free, have " + overlay_after_remove_kib + " KiB" +
+            (restored ? "" : "; previous variant could not be restored"), current_version, latest_version);
+    }
+
     remove_managed_sing_box_service_script();
     if (!install_managed_sing_box_service_script()) {
-        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
         remove_file(tmp_binary);
         remove_file(tmp_cronet);
         action_fail("sing_box", action, "Failed to install managed sing-box service for " + label, current_version, latest_version);
@@ -2079,14 +2186,14 @@ function install_sing_box_extended(action, compressed) {
     remove_file("/usr/bin/sing-box");
     if (!install_staged_file(tmp_binary, "/usr/bin/sing-box", "0755")) {
         remove_file("/usr/bin/sing-box");
-        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+        restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
         action_fail("sing_box", action, "Failed to install " + label + " binary", current_version, latest_version);
     }
     if (tmp_cronet != "") {
         remove_file("/usr/lib/libcronet.so");
         if (!install_staged_file(tmp_cronet, "/usr/lib/libcronet.so", "0644")) {
             remove_file("/usr/lib/libcronet.so");
-            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched);
+            restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
             action_fail("sing_box", action, "Failed to install libcronet.so for " + label, current_version, latest_version);
         }
     }
@@ -2094,7 +2201,7 @@ function install_sing_box_extended(action, compressed) {
 
     new_version = validate_sing_box_extended_binary("/usr/bin/sing-box", "/usr/lib");
     if (new_version == "") {
-        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched))
+        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file))
             action_fail("sing_box", action, "Installed " + label + " failed validation; previous sing-box variant was restored", current_version, latest_version);
         action_fail("sing_box", action, "Installed " + label + " failed validation and previous sing-box variant could not be restored", current_version, latest_version);
     }
@@ -2105,7 +2212,7 @@ function install_sing_box_extended(action, compressed) {
         updates_log(label + " did not start cleanly; restoring previous sing-box binary", "error");
         if (file_exists(SERVICE_INIT))
             command_success_from_args([ SERVICE_INIT, "stop" ]);
-        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched)) {
+        if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file)) {
             remove_file(backup_binary);
             remove_file(backup_cronet);
             action_fail("sing_box", action, label + " was installed but Forkop did not start cleanly; previous sing-box variant was restored", current_version, latest_version);
@@ -2310,10 +2417,31 @@ function install_forkop() {
         (release.i18n_url != "" && !download_with_retry(release.i18n_url, i18n_file, release.i18n_name)))
         action_fail("forkop", "install", "Failed to download Forkop release packages", FORKOP_VERSION, latest_version);
 
+    if (!module_success([ LIB_DIR + "/service/ui.uc", "begin-package-upgrade-quiesce", owner_pid() ]))
+        action_fail("forkop", "install", "Another Forkop service transition or package upgrade is starting", FORKOP_VERSION, latest_version);
+    if (!wait_for_service_action_idle())
+        action_fail("forkop", "install", "Timed out waiting for the current Forkop service action before upgrade", FORKOP_VERSION, latest_version);
+    capture_forkop_running_state();
+
     // Capture before apk/opkg runs the currently installed package's prerm.
     // The new lifecycle will accept only this exact PID/starttime for a short
     // bounded exit wait, then re-run the normal ownership guard.
     capture_managed_upgrade_sing_box_marker();
+
+    // Releases before this fix remove the unmanaged compressed binary in
+    // their prerm. Save it before the package manager invokes that old hook.
+    if (sing_box_runtime_output("read-variant-marker", []) == "extended-compressed") {
+        for (let name in [ "sing-box", "sing-box.init", "libcronet.so" ])
+            remove_file(COMPRESSED_UPGRADE_BACKUP + "/" + name);
+        let service = read_file("/etc/init.d/sing-box");
+        if (!file_nonempty("/usr/bin/sing-box") || index(service, SB_MANAGED_SERVICE_MARKER) < 0 ||
+            !ensure_dir(COMPRESSED_UPGRADE_BACKUP) ||
+            !command_success_from_args([ "cp", "-p", "/usr/bin/sing-box", COMPRESSED_UPGRADE_BACKUP + "/sing-box" ]) ||
+            !command_success_from_args([ "cp", "-p", "/etc/init.d/sing-box", COMPRESSED_UPGRADE_BACKUP + "/sing-box.init" ]) ||
+            (file_exists("/usr/lib/libcronet.so") &&
+             !command_success_from_args([ "cp", "-p", "/usr/lib/libcronet.so", COMPRESSED_UPGRADE_BACKUP + "/libcronet.so" ])))
+            action_fail("forkop", "install", "Failed to preserve compressed sing-box before upgrade", FORKOP_VERSION, latest_version);
+    }
 
     // apk refreshes repository indexes for every `add` invocation. Install the
     // release files in one transaction on APK systems to retain dependency

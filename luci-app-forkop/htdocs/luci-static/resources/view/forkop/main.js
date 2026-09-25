@@ -13705,6 +13705,7 @@ function getComponentCards() {
   const torrserverDirectEnabled = Boolean(systemInfo.torrserver_direct_enabled);
   const torrserverDirectActive = Boolean(systemInfo.torrserver_direct_active);
   const singBoxExtended = Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
+  const singBoxExtendedCompressed = Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
   const forkopActions = getInstalledUpdateActions(
     "forkop",
@@ -13715,7 +13716,7 @@ function getComponentCards() {
     "sing_box",
     "singBoxCheck",
     "singBoxInstall",
-    singBoxTiny || singBoxExtended
+    singBoxTiny || singBoxExtended || singBoxExtendedCompressed
   );
   if (!singBoxTiny) {
     singBoxActions.push({
@@ -13733,6 +13734,15 @@ function getComponentCards() {
       icon: renderDownloadIcon24,
       component: "sing_box",
       action: "install_extended"
+    });
+  }
+  if (!singBoxExtendedCompressed) {
+    singBoxActions.push({
+      key: "singBoxInstallExtendedCompressed",
+      text: "Extended compressed",
+      icon: renderDownloadIcon24,
+      component: "sing_box",
+      action: "install_extended_compressed"
     });
   }
   const zapretActions = getOptionalComponentActions({

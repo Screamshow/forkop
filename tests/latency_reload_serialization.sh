@@ -21,8 +21,8 @@ grep -Fq 'Automatic latency test is deferred until the pending Forkop reload com
   fail "startup must defer automatic latency while reload.pending exists"
 grep -Fq 'post-start list and rule-set pipeline completes' "$LIFECYCLE_UC" ||
   fail "startup must defer automatic latency until its list/rule-set pipeline completes"
-grep -Fq 'post-start-latency' "$ROOT_DIR/forkop/files/usr/lib/singbox/ruleset_cache.uc" ||
-  fail "post-start ruleset refresh must release the automatic latency barrier"
+grep -Fq '[ BIN_PATH, "post_start_latency" ]' "$ROOT_DIR/forkop/files/usr/lib/singbox/ruleset_cache.uc" ||
+  fail "post-start ruleset refresh must call the registered CLI command to release the latency barrier"
 grep -Fq 'schedule_automatic_latency_after_runtime' "$LIFECYCLE_UC" ||
   fail "startup and pending reload must share one final-signature latency scheduler"
 grep -Fq 'run_pending_reload_if_requested(PENDING_RELOAD_FILE, SERVICE_INIT)' "$ROOT_DIR/forkop/files/usr/lib/service/initd.uc" ||

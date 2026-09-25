@@ -56,6 +56,8 @@ if run sing-box-space-fixture 100000 200000 30000000 100000000 0 0 >/dev/null 2>
 fi
 run sing-box-space-fixture 100000 200000 80000000 70000000 0 20000000 >/dev/null ||
   fail 'verified writable binary credit rejected'
+run sing-box-space-fixture 115000 200000 30000000 100000000 0 20000000 >/dev/null ||
+  fail 'rollback ignored space freed by removing the previous package'
 if run sing-box-space-fixture 116702 200000 107121058 30382512 0 22786884 >/dev/null 2>&1; then
   fail 'real Extended IPK threshold accepted below required free space'
 fi

@@ -1999,8 +1999,7 @@ function clash_api(action, arg1, arg2, arg3) {
 }
 
 function automatic_latency_test(start_kind) {
-    let package_upgrade_pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
-    if (package_upgrade_pid != "" && command_success_from_args([ "kill", "-0", package_upgrade_pid ])) {
+    if (module_success(SERVICE_UI_UC, [ "package-upgrade-transition-active" ])) {
         log_message("Automatic latency test yielded because a Forkop package upgrade is stopping the runtime", "info");
         return 0;
     }
@@ -2118,8 +2117,7 @@ function automatic_latency_test(start_kind) {
             log_message("Automatic latency test was canceled because its pending generation was replaced", "info");
             return 0;
         }
-        package_upgrade_pid = trim(as_string(fs.readfile(PACKAGE_UPGRADE_QUIESCE_FILE)));
-        if (package_upgrade_pid != "" && command_success_from_args([ "kill", "-0", package_upgrade_pid ])) {
+        if (module_success(SERVICE_UI_UC, [ "package-upgrade-transition-active" ])) {
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", AUTOMATIC_LATENCY_TEST_LOCK_DIR ]);
             module_success(SERVICE_STATE_UC, [ "release-runtime-dir-lock", RELOAD_LOCK_DIR ]);
             log_message("Automatic latency test yielded to a Forkop package upgrade", "info");

@@ -1865,6 +1865,10 @@ function reload_reason_fixture(reason) {
 }
 
 function restart() {
+    if (module_success(UI_UC, [ "package-upgrade-transition-active" ])) {
+        log_message("Refusing Forkop restart: package upgrade owns the service transition", "warn");
+        return 1;
+    }
     log_message("Restarting Forkop", "info");
 
     // Do not let any restart caller bypass the same ownership check as cold
