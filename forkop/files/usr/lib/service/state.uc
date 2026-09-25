@@ -278,7 +278,7 @@ function pid_alive(pid) {
 }
 
 function package_upgrade_quiescing() {
-    return pid_alive(first_line_value(PACKAGE_UPGRADE_QUIESCE_FILE));
+    return command_success_from_args([ "ucode", "-L", LIB_DIR, LIB_DIR + "/service/ui.uc", "package-upgrade-transition-active" ]);
 }
 
 function run_pending_reload_if_requested(path, init_script) {
@@ -483,12 +483,32 @@ function path_basename(path) {
     return slash >= 0 ? substr(path, slash + 1) : path;
 }
 
+function sing_box_exe_path(path) {
+    let basename = path_basename(path);
+    return basename == "sing-box" || basename == "sing-box (deleted)";
+}
+
+function sing_box_exe_kind(path) {
+    let basename = path_basename(path);
+    if (basename == "sing-box")
+        return "current";
+    return basename == "sing-box (deleted)" ? "deleted" : "other";
+}
+
 function pid_is_sing_box(pid) {
     pid = as_string(pid);
     if (match(pid, /^[0-9]+$/) == null)
         return false;
 
-    return path_basename(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ])) == "sing-box";
+    return sing_box_exe_path(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ]));
+}
+
+function pid_has_current_sing_box_exe(pid) {
+    return sing_box_exe_kind(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ])) == "current";
+}
+
+function pid_has_deleted_sing_box_exe(pid) {
+    return sing_box_exe_kind(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ])) == "deleted";
 }
 
 function hup_sing_box_runtime() {
@@ -594,25 +614,50 @@ function sing_box_process_count() {
     return count;
 }
 
+function verified_sing_box_runtime(first_pid, first_ticks, first_identity, process_count,
+                                    final_pid, final_ticks, final_identity) {
+    if (int(first_pid) <= 0 || first_ticks == null || final_ticks == null ||
+        !first_identity || !final_identity || int(process_count) != 1 ||
+        int(first_pid) != int(final_pid) || int(first_ticks) != int(final_ticks))
+        return null;
+    return { pid: int(first_pid), start_ticks: int(first_ticks) };
+}
+
+function sing_box_runtime_provenance() {
+    let pid = sing_box_service_pid_runtime();
+    let start_ticks = process_start_ticks_for_pid(pid);
+    if (pid <= 0 || start_ticks == null || !pid_is_sing_box(pid))
+        return null;
+
+    // The second observation must still name the very process whose start
+    // time and executable were checked before scanning for competitors.
+    return verified_sing_box_runtime(pid, start_ticks, true, sing_box_process_count(),
+        sing_box_service_pid_runtime(), process_start_ticks_for_pid(pid), pid_is_sing_box(pid));
+}
+
 // A service PID on its own only proves that procd has one expected child. It
 // does not exclude an older or orphaned sing-box process which could still
 // own sockets or serve traffic. Require that the procd-owned process is the
 // sole sing-box executable before accepting the runtime as healthy. Do not
 // kill by executable name here: ownership of a non-procd process is unknown.
 function sing_box_single_owned_service_runtime() {
-    return sing_box_service_running() && sing_box_process_count() == 1;
+    return sing_box_runtime_provenance() != null;
+}
+
+function sing_box_current_owned_service_runtime() {
+    let provenance = sing_box_runtime_provenance();
+    return provenance != null && pid_has_current_sing_box_exe(provenance.pid) &&
+        process_start_ticks_for_pid(provenance.pid) == provenance.start_ticks;
+}
+
+function sing_box_deleted_owned_service_runtime() {
+    let provenance = sing_box_runtime_provenance();
+    return provenance != null && pid_has_deleted_sing_box_exe(provenance.pid) &&
+        process_start_ticks_for_pid(provenance.pid) == provenance.start_ticks;
 }
 
 function sing_box_process_conflict() {
     return sing_box_process_count() > 0 && !sing_box_single_owned_service_runtime();
-}
-
-function sing_box_runtime_provenance() {
-    let pid = sing_box_service_pid_runtime();
-    let start_ticks = process_start_ticks_for_pid(pid);
-    if (!sing_box_single_owned_service_runtime() || start_ticks == null)
-        return null;
-    return { pid, start_ticks };
 }
 
 function log_controlled_transition_failure(reason, provenance) {
@@ -627,6 +672,19 @@ function log_controlled_transition_failure(reason, provenance) {
         ", observed_procd_pid=" + as_string(observed_pid) +
         ", sing_box_process_count=" + as_string(process_count) + ")"
     ]);
+}
+
+function stopped_owned_pid_observation(expected_ticks, current_ticks, owned_identity, process_count, service_pid) {
+    if (current_ticks != null) {
+        if (int(current_ticks) != int(expected_ticks))
+            return "reused";
+        if (int(process_count) > (owned_identity ? 1 : 0))
+            return "extra";
+        return "wait";
+    }
+    if (int(process_count) > 0)
+        return "extra";
+    return int(service_pid) <= 0 ? "exited" : "wait";
 }
 
 // procd can briefly keep reporting an exited child after /proc no longer has
@@ -704,32 +762,22 @@ function stop_managed_sing_box_and_wait(timeout) {
 
     while (timeout >= 0) {
         let current_ticks = process_start_ticks_for_pid(provenance.pid);
-        if (current_ticks != null) {
-            if (!pid_is_sing_box(provenance.pid) || int(current_ticks) != int(provenance.start_ticks)) {
-                log_controlled_transition_failure("old PID changed or was reused", provenance);
-                return false;
-            }
-            // The exiting process can remain visible in /proc briefly after
-            // it no longer has a sing-box executable identity (for example,
-            // while procd reaps it). That is not an overlap: keep waiting for
-            // this exact PID/starttime. Only a second active sing-box is
-            // ambiguous and must fail closed.
-            if (sing_box_process_count() > 1) {
-                log_controlled_transition_failure("extra sing-box appeared while stopping", provenance);
-                return false;
-            }
+        // Keep tracking this exact child through an executable identity loss.
+        // A recognized process elsewhere remains ambiguous, including while
+        // the original child is exiting. Never accept PID reuse or a stale
+        // procd PID as proof that the stop has completed.
+        let observation = stopped_owned_pid_observation(
+            provenance.start_ticks, current_ticks,
+            current_ticks != null && pid_is_sing_box(provenance.pid),
+            sing_box_process_count(), sing_box_service_pid_runtime()
+        );
+        if (observation == "reused" || observation == "extra") {
+            log_controlled_transition_failure(observation == "reused" ?
+                "old PID was reused" : "extra sing-box appeared while stopping", provenance);
+            return false;
         }
-        else {
-            // procd can briefly retain its old PID after the child has exited.
-            // Wait boundedly for that state to clear, but never accept a new
-            // process or a stale/nonzero service PID as a successful stop.
-            if (sing_box_process_count() > 0) {
-                log_controlled_transition_failure("unexpected sing-box remains after stop", provenance);
-                return false;
-            }
-            if (sing_box_service_pid_runtime() <= 0)
-                return true;
-        }
+        if (observation == "exited")
+            return true;
 
         if (timeout <= 0)
             break;
@@ -803,14 +851,13 @@ function reload_sing_box_runtime(previous_pid, config_hash_before, config_hash_a
 // It names one already procd-owned process by PID *and* kernel start time, so
 // it cannot authorize a PID that was reused after the transaction began.
 function write_managed_upgrade_sing_box_marker(path) {
-    let pid = sing_box_service_pid_runtime();
-    let start_ticks = process_start_ticks_for_pid(pid);
-    if (!sing_box_single_owned_service_runtime() || start_ticks == null)
+    let provenance = sing_box_runtime_provenance();
+    if (provenance == null)
         return false;
 
     let stamp = clock();
     let temporary = as_string(path) + ".new." + as_string(stamp[0]) + "." + as_string(stamp[1]);
-    let body = "format=1\npid=" + as_string(pid) + "\nstart_ticks=" + as_string(start_ticks) +
+    let body = "format=1\npid=" + as_string(provenance.pid) + "\nstart_ticks=" + as_string(provenance.start_ticks) +
         "\ncreated_at=" + as_string(stamp[0]) + "\n";
     if (fs.writefile(temporary, body) == null) {
         unlink_file(temporary);
@@ -908,7 +955,7 @@ function sing_box_clash_api_ready() {
 }
 
 function single_ready_sing_box_runtime() {
-    return sing_box_single_owned_service_runtime() &&
+    return sing_box_current_owned_service_runtime() &&
         sing_box_runtime_ports_ready() && sing_box_clash_api_ready();
 }
 
@@ -918,7 +965,7 @@ function forkop_running(rt_table, nft_table, mark) {
 }
 
 function forkop_stably_running(rt_table, nft_table, mark, min_age) {
-    return sing_box_single_owned_service_runtime() && sing_box_service_stable(min_age) &&
+    return sing_box_current_owned_service_runtime() && sing_box_service_stable(min_age) &&
         sing_box_runtime_ports_ready() && sing_box_clash_api_ready() &&
         forkop_runtime_network_configured(rt_table, nft_table, mark);
 }
@@ -2090,8 +2137,26 @@ else if (mode == "sing-box-process-count")
     print(sing_box_process_count(), "\n");
 else if (mode == "sing-box-single-owned-service-runtime")
     exit(sing_box_single_owned_service_runtime() ? 0 : 1);
+else if (mode == "sing-box-current-owned-service-runtime")
+    exit(sing_box_current_owned_service_runtime() ? 0 : 1);
+else if (mode == "sing-box-deleted-owned-service-runtime")
+    exit(sing_box_deleted_owned_service_runtime() ? 0 : 1);
 else if (mode == "sing-box-process-conflict")
     exit(sing_box_process_conflict() ? 0 : 1);
+else if (mode == "sing-box-exe-path-fixture")
+    exit(sing_box_exe_path(ARGV[1]) ? 0 : 1);
+else if (mode == "sing-box-exe-kind-fixture")
+    print(sing_box_exe_kind(ARGV[1]), "\n");
+else if (mode == "stopped-owned-pid-observation-fixture")
+    print(stopped_owned_pid_observation(ARGV[1], ARGV[2] == "gone" ? null : ARGV[2],
+        arg_bool(ARGV[3]), ARGV[4], ARGV[5]), "\n");
+else if (mode == "verified-sing-box-runtime-fixture") {
+    let verified = verified_sing_box_runtime(ARGV[1], ARGV[2] == "gone" ? null : ARGV[2],
+        arg_bool(ARGV[3]), ARGV[4], ARGV[5], ARGV[6] == "gone" ? null : ARGV[6], arg_bool(ARGV[7]));
+    if (verified == null)
+        exit(1);
+    print(verified.pid, ":", verified.start_ticks, "\n");
+}
 else if (mode == "write-managed-upgrade-sing-box-marker")
     exit(write_managed_upgrade_sing_box_marker(ARGV[1]) ? 0 : 1);
 else if (mode == "wait-managed-upgrade-sing-box-exit")

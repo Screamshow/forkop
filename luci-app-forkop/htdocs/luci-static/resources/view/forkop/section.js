@@ -7120,7 +7120,7 @@ function createSectionContent(section) {
     _("JSON outbound"),
     _("Custom outbound configurations in JSON format"),
   );
-  o.depends("action", "__internal_hidden__");
+  o.depends("action", "connection");
   o.rmempty = true;
   o.modalonly = true;
   o.addButtonLabel = _("+ Add JSON outbound");

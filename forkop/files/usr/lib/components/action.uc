@@ -290,8 +290,7 @@ function release_component_lock() {
 }
 
 function clear_owned_upgrade_quiesce() {
-    if (trim(read_file(PACKAGE_UPGRADE_QUIESCE_FILE)) == owner_pid())
-        remove_file(PACKAGE_UPGRADE_QUIESCE_FILE);
+    module_success([ LIB_DIR + "/service/ui.uc", "clear-package-upgrade-quiesce-if-owner", owner_pid() ]);
 }
 
 function cleanup_action() {

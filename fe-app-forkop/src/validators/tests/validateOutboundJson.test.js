@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { validateOutboundJson } from '../validateOutboundJson';
 
 describe('validateOutboundJson', () => {
+  it('shows the multiline JSON outbound editor for Connection sections', () => {
+    const section = readFileSync(
+      new URL(
+        '../../../../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    expect(section).toMatch(
+      /"outbound_jsons",\s*_\("JSON outbound"\)[\s\S]*?o\.depends\("action", "connection"\)/,
+    );
+    expect(section).toContain('jsonOption.rows = 12');
+    expect(section).toContain('jsonOption.textarea = true');
+  });
+
   it('accepts a direct outbound with type and tag', () => {
     expect(validateOutboundJson('{"type":"direct","tag":"direct"}').valid).toBe(
       true,

@@ -391,27 +391,36 @@ function process_start_ticks(pid) {
     return length(fields) >= 20 && match(as_string(fields[19]), /^[0-9]+$/) != null ? int(fields[19]) : null;
 }
 
-function managed_upgrade_sing_box_marker(path) {
+function sing_box_exe_path(path) {
+    let basename = replace(replace(as_string(path), /[\r\n]+$/g, ""), /^.*\//, "");
+    return basename == "sing-box" || basename == "sing-box (deleted)";
+}
+
+function managed_upgrade_sing_box_service_pid() {
     let data = command_output([ "ubus", "call", "service", "list", "{\"name\":\"sing-box\"}" ]);
     let service;
-    try { service = json(data)["sing-box"]; } catch (e) { return; }
+    try { service = json(data)["sing-box"]; } catch (e) { return 0; }
     let instances = service && type(service.instances) == "object" ? service.instances : {};
-    let pid = 0;
     for (let _, instance in instances) {
-        if (type(instance) == "object" && instance.running === true && int(instance.pid || 0) > 0) {
-            pid = int(instance.pid);
-            break;
-        }
+        if (type(instance) == "object" && instance.running === true && int(instance.pid || 0) > 0)
+            return int(instance.pid);
     }
-    if (pid <= 0 || match(command_output([ "readlink", "/proc/" + pid + "/exe" ]), /\/sing-box[\r\n]*$/) == null)
+    return 0;
+}
+
+function managed_upgrade_sing_box_marker(path) {
+    let pid = managed_upgrade_sing_box_service_pid();
+    let ticks = process_start_ticks(pid);
+    if (pid <= 0 || !sing_box_exe_path(command_output([ "readlink", "/proc/" + pid + "/exe" ])))
         return;
     let count = 0;
     for (let exe in fs.glob("/proc/[0-9]*/exe")) {
-        if (match(command_output([ "readlink", exe ]), /\/sing-box[\r\n]*$/) != null)
+        if (sing_box_exe_path(command_output([ "readlink", exe ])))
             count++;
     }
-    let ticks = process_start_ticks(pid);
-    if (count != 1 || ticks == null)
+    if (count != 1 || ticks == null || managed_upgrade_sing_box_service_pid() != pid ||
+        process_start_ticks(pid) != ticks ||
+        !sing_box_exe_path(command_output([ "readlink", "/proc/" + pid + "/exe" ])))
         return;
     let stamp = clock();
     let temporary = as_string(path) + ".new." + stamp[0] + "." + stamp[1];
@@ -1584,6 +1593,8 @@ else if (mode == "installer-restore-previous-service")
     exit(installer_restore_previous_service() ? 0 : 1);
 else if (mode == "managed-upgrade-sing-box-marker")
     managed_upgrade_sing_box_marker(ARGV[1]);
+else if (mode == "sing-box-exe-path-fixture")
+    exit(sing_box_exe_path(ARGV[1]) ? 0 : 1);
 else
     exit(1);
 EOF

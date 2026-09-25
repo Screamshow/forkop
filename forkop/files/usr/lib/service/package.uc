@@ -73,12 +73,17 @@ function path_basename(path) {
     return slash >= 0 ? substr(path, slash + 1) : path;
 }
 
+function sing_box_exe_path(path) {
+    let basename = path_basename(path);
+    return basename == "sing-box" || basename == "sing-box (deleted)";
+}
+
 function sing_box_process_count() {
     let count = 0;
     for (let exe_path in fs.glob("/proc/[0-9]*/exe")) {
         let parts = split(as_string(exe_path), "/");
         if (length(parts) >= 4 &&
-            path_basename(fs.readlink(exe_path)) == "sing-box")
+            sing_box_exe_path(fs.readlink(exe_path)))
             count++;
     }
     return count;
@@ -416,6 +421,8 @@ else if (mode == "remove-rt-tables-entry")
     exit(remove_rt_tables_entry() ? 0 : 1);
 else if (mode == "luci-postinst")
     exit(luci_postinst() ? 0 : 1);
+else if (mode == "sing-box-exe-path-fixture")
+    exit(sing_box_exe_path(ARGV[1]) ? 0 : 1);
 else {
     warn("Usage: service/package.uc <prerm|postinst|remove-rt-tables-entry|luci-postinst>\n");
     exit(1);

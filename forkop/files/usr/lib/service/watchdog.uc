@@ -10,6 +10,7 @@ const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const STATE_UC = LIB_DIR + "/service/state.uc";
+const UI_UC = LIB_DIR + "/service/ui.uc";
 const RELOAD_LOCK_DIR = getenv("FORKOP_RELOAD_LOCK_DIR") || "/var/run/forkop.reload.lock";
 const INTERVAL_SECONDS = int(getenv("FORKOP_WATCHDOG_INTERVAL_SECONDS") || "5");
 const GRACE_SECONDS = int(getenv("FORKOP_WATCHDOG_GRACE_SECONDS") || "90");
@@ -31,13 +32,19 @@ function active() {
 }
 
 function transitioning() {
-    return fs.stat(RELOAD_LOCK_DIR) != null;
+    return fs.stat(RELOAD_LOCK_DIR) != null ||
+        system("ucode -L " + quote(LIB_DIR) + " " + quote(UI_UC) +
+            " package-upgrade-transition-active >/dev/null 2>&1") == 0;
 }
 
 function singbox_healthy() {
     // This verifies the exact procd-owned runtime rather than accepting an
     // unrelated sing-box process with the same executable name.
-    return status([ "sing-box-single-owned-service-runtime" ]);
+    return status([ "sing-box-current-owned-service-runtime" ]);
+}
+
+function singbox_deleted_owned() {
+    return status([ "sing-box-deleted-owned-service-runtime" ]);
 }
 
 function log(message, level) {
@@ -51,6 +58,7 @@ function sleep_seconds(seconds) {
 function main() {
     let started = int(clock()[0]);
     let failed_since = 0;
+    let replacement_attempted = false;
 
     while (true) {
         let now = int(clock()[0]);
@@ -60,8 +68,18 @@ function main() {
         if (!active() || transitioning() || now - started < GRACE_SECONDS) {
             failed_since = 0;
         }
+        else if (singbox_deleted_owned()) {
+            failed_since = 0;
+            if (!replacement_attempted) {
+                replacement_attempted = true;
+                log("replacing the verified procd-owned deleted sing-box runtime", "warn");
+                if (system(quote(BIN_PATH) + " restart >/dev/null 2>&1") == 0 && singbox_healthy())
+                    replacement_attempted = false;
+            }
+        }
         else if (singbox_healthy()) {
             failed_since = 0;
+            replacement_attempted = false;
         }
         else {
             if (failed_since == 0) {

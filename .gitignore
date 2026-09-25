@@ -20,6 +20,8 @@ ops/deployed-nginx/
 /tests/
 !/tests/
 /tests/*
+!/tests/json_outbound_connection.sh
+!/tests/sing_box_deleted_identity.sh
 !/tests/latency_reload_serialization.sh
 !/tests/package_upgrade_service_action.sh
 !/tests/automatic_latency_pending.sh
