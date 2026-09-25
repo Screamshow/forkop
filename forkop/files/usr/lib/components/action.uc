@@ -2395,6 +2395,108 @@ function resolve_forkop_release(latest_version) {
     return parse_forkop_release_plan(plan, latest_version, i18n_required);
 }
 
+function upgrade_sing_box_ticks(pid) {
+    let stat = read_file("/proc/" + pid + "/stat");
+    let marker = index(stat, ") ");
+    if (marker < 0)
+        return null;
+    let fields = split(trim(substr(stat, marker + 2)), /[ \t\r\n]+/);
+    return length(fields) >= 20 && match(fields[19], /^[0-9]+$/) != null ? fields[19] : null;
+}
+
+function upgrade_sing_box_processes() {
+    let processes = {};
+    for (let exe in fs.glob("/proc/[0-9]*/exe")) {
+        let path = trim(command_output_from_args([ "readlink", exe ]));
+        let name = replace(path, /^.*\//, "");
+        if (name != "sing-box" && name != "sing-box (deleted)")
+            continue;
+        let pid = split(exe, "/")[2];
+        let ticks = upgrade_sing_box_ticks(pid);
+        if (ticks == null)
+            return null;
+        processes[pid] = ticks;
+    }
+    return processes;
+}
+
+function upgrade_sing_box_count(processes) {
+    let count = 0;
+    for (let _ in processes)
+        count++;
+    return count;
+}
+
+function upgrade_procd_owns_all(processes) {
+    let data = command_output_from_args([ "ubus", "call", "service", "list" ]);
+    let service;
+    try { service = json(data)["sing-box"]; } catch (e) { return false; }
+    let instances = service && type(service.instances) == "object" ? service.instances : {};
+    for (let pid, ticks in processes) {
+        let owned = false;
+        for (let _, instance in instances) {
+            if (type(instance) != "object")
+                continue;
+            let command = instance.command;
+            if (instance.running === true && as_string(instance.pid) == pid &&
+                type(command) == "array" && length(command) >= 4 &&
+                command[0] == "/usr/bin/sing-box" && command[1] == "run" &&
+                command[2] == "-c" && command[3] == "/etc/sing-box/config.json" &&
+                upgrade_sing_box_ticks(pid) == ticks)
+                owned = true;
+        }
+        if (!owned)
+            return false;
+    }
+    return true;
+}
+
+function upgrade_bounded_stop(script) {
+    let seconds = int(getenv("FORKOP_UPGRADE_STOP_TIMEOUT_SECONDS") || "60");
+    if (seconds < 1)
+        seconds = 60;
+    let command = command_from_args([ script, "stop" ]) + " >/dev/null 2>&1 & pid=$!; " +
+        "( sleep " + seconds + "; kill $pid 2>/dev/null || true ) & watcher=$!; " +
+        "wait $pid 2>/dev/null; rc=$?; kill $watcher 2>/dev/null || true; " +
+        "wait $watcher 2>/dev/null || true; exit $rc";
+    return command_status("sh -c " + shell_quote(command)) == 0;
+}
+
+function stop_old_sing_box_before_forkop_upgrade() {
+    if (file_exists(SERVICE_INIT))
+        upgrade_bounded_stop(SERVICE_INIT);
+
+    let processes = upgrade_sing_box_processes();
+    if (processes == null)
+        return false;
+    if (upgrade_sing_box_count(processes) == 0)
+        return true;
+    if (!upgrade_procd_owns_all(processes))
+        return false;
+
+    let confirmed = upgrade_sing_box_processes();
+    if (confirmed == null || upgrade_sing_box_count(confirmed) != upgrade_sing_box_count(processes))
+        return false;
+    for (let pid, ticks in processes)
+        if (confirmed[pid] != ticks)
+            return false;
+    if (!upgrade_procd_owns_all(confirmed) || !file_exists("/etc/init.d/sing-box"))
+        return false;
+
+    upgrade_bounded_stop("/etc/init.d/sing-box");
+    let quiet = 0;
+    for (let attempt = 0; attempt < 17; attempt++) {
+        let remaining = upgrade_sing_box_processes();
+        if (remaining == null)
+            return false;
+        quiet = upgrade_sing_box_count(remaining) == 0 ? quiet + 1 : 0;
+        if (quiet >= 2)
+            return true;
+        command_success_from_args([ "sleep", "1" ]);
+    }
+    return false;
+}
+
 function install_forkop() {
     let latest_version = latest_forkop_version();
     if (latest_version == "")
@@ -2428,6 +2530,9 @@ function install_forkop() {
     // bounded exit wait, then re-run the normal ownership guard.
     capture_managed_upgrade_sing_box_marker();
 
+    if (!stop_old_sing_box_before_forkop_upgrade())
+        action_fail("forkop", "install", "Old sing-box processes have ambiguous ownership or did not stop", FORKOP_VERSION, latest_version);
+
     // Releases before this fix remove the unmanaged compressed binary in
     // their prerm. Save it before the package manager invokes that old hook.
     if (sing_box_runtime_output("read-variant-marker", []) == "extended-compressed") {
@@ -2442,6 +2547,10 @@ function install_forkop() {
              !command_success_from_args([ "cp", "-p", "/usr/lib/libcronet.so", COMPRESSED_UPGRADE_BACKUP + "/libcronet.so" ])))
             action_fail("forkop", "install", "Failed to preserve compressed sing-box before upgrade", FORKOP_VERSION, latest_version);
     }
+
+    let remaining_sing_box = upgrade_sing_box_processes();
+    if (remaining_sing_box == null || upgrade_sing_box_count(remaining_sing_box) != 0)
+        action_fail("forkop", "install", "Old sing-box processes appeared before package installation", FORKOP_VERSION, latest_version);
 
     // apk refreshes repository indexes for every `add` invocation. Install the
     // release files in one transaction on APK systems to retain dependency
