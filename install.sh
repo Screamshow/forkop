@@ -1087,6 +1087,114 @@ function installer_service_action(init_script, action) {
     return true;
 }
 
+function installer_sing_box_process_count() {
+    let count = 0;
+    for (let exe in fs.glob("/proc/[0-9]*/exe"))
+        if (sing_box_exe_path(command_output([ "readlink", exe ])))
+            count++;
+    return count;
+}
+
+// An old Forkop stop may leave procd's sing-box service alive. Only
+// recover instances whose exact processes are still registered with procd.
+function installer_recover_stale_forkop_runtime() {
+    let data = command_output([ "ubus", "call", "service", "list" ]);
+    let service;
+    try { service = json(data)["sing-box"]; } catch (e) { return false; }
+    let instances = service && type(service.instances) == "object" ? service.instances : {};
+    let owned = {};
+    let count = 0;
+    for (let _, instance in instances) {
+        if (type(instance) != "object" || instance.running !== true)
+            continue;
+        let pid = int(instance.pid || 0);
+        let ticks = process_start_ticks(pid);
+        let command = instance.command;
+        if (pid <= 0 || ticks == null || type(command) != "array" ||
+            length(command) < 4 || command[0] != "/usr/bin/sing-box" ||
+            command[1] != "run" || command[2] != "-c" ||
+            command[3] != "/etc/sing-box/config.json" ||
+            !sing_box_exe_path(command_output([ "readlink", "/proc/" + pid + "/exe" ])))
+            return false;
+        owned[as_string(pid)] = ticks;
+        count++;
+    }
+    // A second or orphaned process is not authority to signal it, even if its
+    // executable and command line happen to match Forkop's.
+    let seen = 0;
+    for (let exe in fs.glob("/proc/[0-9]*/exe")) {
+        if (!sing_box_exe_path(command_output([ "readlink", exe ])))
+            continue;
+        let parts = split(exe, "/");
+        let pid = parts[2];
+        if (owned[pid] == null || process_start_ticks(pid) != owned[pid])
+            return false;
+        seen++;
+    }
+    if (seen != count)
+        return false;
+    // procd unregisters the service before the package transaction. Recheck
+    // identity immediately before the action; a reused PID fails closed.
+    for (let pid, ticks in owned)
+        if (process_start_ticks(pid) != ticks ||
+            !sing_box_exe_path(command_output([ "readlink", "/proc/" + pid + "/exe" ])))
+            return false;
+    let current = command_output([ "ubus", "call", "service", "list" ]);
+    let current_service;
+    try { current_service = json(current)["sing-box"]; } catch (e) { return false; }
+    let current_instances = current_service && type(current_service.instances) == "object" ? current_service.instances : {};
+    let current_count = 0;
+    for (let _, instance in current_instances) {
+        if (type(instance) != "object" || instance.running !== true)
+            continue;
+        let pid = as_string(instance.pid || 0);
+        if (owned[pid] == null || process_start_ticks(pid) != owned[pid])
+            return false;
+        current_count++;
+    }
+    if (current_count != count)
+        return false;
+    installer_command_result([ "/etc/init.d/sing-box", "stop" ], INSTALLER_SERVICE_ACTION_TIMEOUT);
+    let quiet = 0;
+    for (let attempt = 0; attempt < 6; attempt++) {
+        let after = command_output([ "ubus", "call", "service", "list" ]);
+        let after_services;
+        try { after_services = json(after); } catch (e) { return false; }
+        let after_service = after_services["sing-box"];
+        let after_instances = after_service && type(after_service.instances) == "object" ? after_service.instances : {};
+        let active = installer_sing_box_process_count() > 0;
+        for (let _, instance in after_instances)
+            if (type(instance) == "object" && instance.running === true)
+                active = true;
+        quiet = active ? 0 : quiet + 1;
+        if (quiet >= 2)
+            break;
+        run_args([ "sleep", "1" ]);
+    }
+    if (quiet < 2)
+        return false;
+    return true;
+}
+
+function installer_stop_old_forkop(init_script) {
+    let stop = installer_command_result([ init_script, "stop" ], INSTALLER_SERVICE_ACTION_TIMEOUT);
+    if (!stop.complete || stop.timed_out)
+        warn("Timed out while running " + init_script + " stop.\n");
+
+    if (installer_sing_box_process_count() > 0) {
+        if (!installer_recover_stale_forkop_runtime()) {
+            warn("Forkop stop left ambiguous sing-box ownership; preserving the runtime.\n");
+            return false;
+        }
+        warn("Stopped the verified procd-owned sing-box runtime.\n");
+    }
+    if (installer_sing_box_process_count() > 0)
+        return false;
+    installer_cancel_stale_start_retry();
+    unlink_file(env("FORKOP_INSTALLER_RELOAD_STATE_FILE", "/var/run/forkop/reload-state"));
+    return installer_sing_box_process_count() == 0;
+}
+
 function select_dns_owner(legacy) {
     if (legacy) {
         dns_owner_config = LEGACY_BACKEND_PACKAGE;
@@ -1167,7 +1275,8 @@ function installer_cleanup_legacy() {
         return false;
 
     if (path_executable(active_init)) {
-        if (!installer_service_action(active_init, "stop"))
+        if (legacy_installed ? !installer_service_action(active_init, "stop") :
+            !installer_stop_old_forkop(active_init))
             return false;
         installer_restore_dnsmasq(active_bin, legacy_installed);
         if (!installer_service_action(active_init, "disable"))
