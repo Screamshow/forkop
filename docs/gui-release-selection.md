@@ -6,7 +6,11 @@ passes an optional exact version to `component_action_async forkop install VERSI
 The worker resolves the version from the mirror catalog, checks the complete
 package set for the current package manager, verifies SHA256, and saves the
 Forkop UCI configuration under `/etc/forkop-backups` before changing packages.
-The directory is private to root. A backup does not automatically reverse
+Exactly one managed archive is kept: `/etc/forkop-backups/configuration.tar.gz`.
+A complete new archive atomically replaces the previous one. If archive creation
+fails, the previous copy is preserved and installation does not proceed. Legacy
+`before-VERSION-TIMESTAMP.tar.gz` archives are removed after successful replacement.
+The directory and archive are private to root. A backup does not automatically reverse
 configuration migrations or a failed package transaction.
 
 The initial catalog includes complete releases from 1.14.3 onward. This is an

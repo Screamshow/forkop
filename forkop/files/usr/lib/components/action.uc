@@ -2544,6 +2544,32 @@ function stop_old_sing_box_before_forkop_upgrade() {
     return false;
 }
 
+function save_forkop_configuration_backup(config_dir, backup_dir) {
+    if (!ensure_dir(backup_dir) ||
+        !command_success_from_args([ "chmod", "700", backup_dir ]))
+        return "";
+    let backup = backup_dir + "/configuration.tar.gz";
+    let temporary = trim(command_output_from_args([ "mktemp", backup_dir + "/.configuration.XXXXXX" ]));
+    if (temporary == "")
+        return "";
+    // Keep the previous copy until the new archive is complete and valid.
+    if (!command_success_from_args([ "tar", "-czf", temporary, "-C", config_dir, "forkop" ]) ||
+        !command_success_from_args([ "tar", "-tzf", temporary ]) ||
+        !command_success_from_args([ "chmod", "600", temporary ]) ||
+        !fs.rename(temporary, backup)) {
+        remove_file(temporary);
+        return "";
+    }
+    // Only remove archives created by the previous timestamped-backup policy.
+    for (let previous in fs.glob(backup_dir + "/before-*.tar.gz")) {
+        let name = replace(previous, /^.*\//, "");
+        if (match(name, /^before-[0-9]+[.][0-9]+[.][0-9]+(-canary[.][0-9]+)?-[0-9]+[.]tar[.]gz$/) != null &&
+            !fs.unlink(previous))
+            return "";
+    }
+    return backup;
+}
+
 function install_forkop(requested_version) {
     requested_version = as_string(requested_version);
     let selected = requested_version != "" ? selected_forkop_release(requested_version) : null;
@@ -2581,10 +2607,8 @@ function install_forkop(requested_version) {
             if (expected == "" || actual != expected)
                 action_fail("forkop", "install", "Release package checksum mismatch", FORKOP_VERSION, latest_version);
         }
-        let backup = "/etc/forkop-backups/before-" + latest_version + "-" + now_seconds() + ".tar.gz";
-        if (!ensure_dir("/etc/forkop-backups") ||
-            !command_success_from_args([ "chmod", "700", "/etc/forkop-backups" ]) ||
-            !command_success_from_args([ "tar", "-czf", backup, "-C", "/etc/config", "forkop" ]))
+        let backup = save_forkop_configuration_backup("/etc/config", "/etc/forkop-backups");
+        if (backup == "")
             action_fail("forkop", "install", "Failed to back up Forkop configuration", FORKOP_VERSION, latest_version);
         updates_log("Forkop configuration backup: " + backup);
     }
@@ -2861,6 +2885,11 @@ else if (mode == "latest-forkop-version")
     print(latest_forkop_version(), "\n");
 else if (mode == "forkop-release-metadata")
     print(fetch_forkop_latest_release_metadata(), "\n");
+else if (mode == "forkop-backup-fixture") {
+    let backup = save_forkop_configuration_backup(ARGV[1], ARGV[2]);
+    if (backup == "") exit(1);
+    print(backup, "\n");
+}
 else if (mode == "forkop-release-catalog-fixture") {
     let input = fs.open("/dev/stdin", "r");
     let data = input ? input.read("all") : "";

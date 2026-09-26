@@ -105,3 +105,29 @@ for ext in ipk apk; do
   done
 done
 printf 'Forkop catalog checks passed (2 positive, 6 negative)\n'
+
+backup_work="$(mktemp -d /tmp/forkop-backup-test.XXXXXX)"
+trap 'rm -rf "$backup_work"' EXIT
+mkdir -p "$backup_work/config" "$backup_work/backups"
+printf 'first configuration\n' > "$backup_work/config/forkop"
+printf legacy > "$backup_work/backups/before-1.14.3-12345.tar.gz"
+printf legacy > "$backup_work/backups/before-1.14.7-canary.3-12346.tar.gz"
+printf keep > "$backup_work/backups/user-copy.tar.gz"
+run_backup() {
+  ucode -L /usr/lib/forkop "$ACTION_UC" forkop-backup-fixture "$backup_work/config" "$backup_work/backups" >/dev/null
+}
+run_backup || fail 'first backup failed'
+[ "$(tar -xOzf "$backup_work/backups/configuration.tar.gz" forkop)" = 'first configuration' ] || fail 'incorrect archive content'
+[ ! -e "$backup_work/backups/before-1.14.3-12345.tar.gz" ] || fail 'legacy stable copy survived'
+[ ! -e "$backup_work/backups/before-1.14.7-canary.3-12346.tar.gz" ] || fail 'legacy canary copy survived'
+[ -e "$backup_work/backups/user-copy.tar.gz" ] || fail 'unmanaged archive was removed'
+[ "$(ls -l "$backup_work/backups/configuration.tar.gz" | awk '{print $1}')" = -rw------- ] || fail 'backup permissions'
+printf 'second configuration\n' > "$backup_work/config/forkop"
+run_backup || fail 'second backup failed'
+[ "$(tar -xOzf "$backup_work/backups/configuration.tar.gz" forkop)" = 'second configuration' ] || fail 'previous backup was not replaced'
+before_failure="$(sha256sum "$backup_work/backups/configuration.tar.gz")"
+rm "$backup_work/config/forkop"
+if run_backup; then fail 'accepted missing configuration'; fi
+[ "$(sha256sum "$backup_work/backups/configuration.tar.gz")" = "$before_failure" ] || fail 'failed backup damaged previous archive'
+[ "$(find "$backup_work/backups" -name '.configuration.*' | wc -l)" = 0 ] || fail 'temporary archive leaked'
+printf 'Single configuration backup checks passed\n'
