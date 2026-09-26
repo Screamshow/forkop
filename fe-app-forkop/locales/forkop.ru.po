@@ -2011,3 +2011,27 @@ msgstr "sing-box outbound для Zapret2 настроен"
 
 msgid "Zapret2 sing-box outbound is not configured"
 msgstr "sing-box outbound для Zapret2 не настроен"
+
+msgid "Choose version"
+msgstr "Выбрать версию"
+
+msgid "Choose Forkop X version"
+msgstr "Выбор версии Forkop X"
+
+msgid "Loading available versions…"
+msgstr "Загрузка доступных версий…"
+
+msgid "Could not load available versions"
+msgstr "Не удалось загрузить доступные версии"
+
+msgid "No compatible releases available"
+msgstr "Нет совместимых релизов"
+
+msgid "Install selected version"
+msgstr "Установить выбранную версию"
+
+msgid "Confirm version change"
+msgstr "Подтверждение смены версии"
+
+msgid "A configuration backup will be saved in /etc/forkop-backups. Older versions may not support all current settings."
+msgstr "Резервная копия конфигурации будет сохранена в /etc/forkop-backups. Старые версии могут не поддерживать все текущие настройки."

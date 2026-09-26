@@ -2571,7 +2571,7 @@ function launch_component_worker(args) {
     return trim(command_output("sh -c " + shell_quote(command)));
 }
 
-function component_action_worker(state_file, output_file, component, action) {
+function component_action_worker(state_file, output_file, component, action, version) {
     component = normalize_component_name(component);
     let command = command_env(component_worker_env()) + " " +
         command_from_args([
@@ -2580,14 +2580,21 @@ function component_action_worker(state_file, output_file, component, action) {
             LIB_DIR + "/components/action.uc",
             "component-action",
             as_string(component),
-            as_string(action)
+            as_string(action),
+            as_string(version)
         ]) + " >" + shell_quote(output_file) + " 2>&1";
     let status = command_status(command);
 
     finish_component_job(state_file, component, action, status, output_file);
 }
 
-function component_action_async(component, action) {
+function component_action_async(component, action, version) {
+    version = as_string(version);
+    if (version != "" && (component != "forkop" || action != "install" ||
+        match(version, /^[0-9]+[.][0-9]+[.][0-9]+(-canary[.][0-9]+)?$/) == null)) {
+        component_job_json_response(false, "", "Invalid release selection");
+        exit(1);
+    }
     component = normalize_component_name(component);
     if (!ensure_component_runtime_dirs()) {
         component_job_json_response(false, "", "Failed to create component action state directory");
@@ -2614,7 +2621,8 @@ function component_action_async(component, action) {
         state_file,
         output_file,
         as_string(component),
-        as_string(action)
+        as_string(action),
+        version
     ]);
 
     if (pid == "" || !set_component_running_job_pid(state_file, pid)) {
@@ -4506,9 +4514,9 @@ else if (mode == "subscription-update-async")
 else if (mode == "subscription-update-status")
     subscription_update_status(ARGV[1]);
 else if (mode == "component-action-worker")
-    component_action_worker(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
+    component_action_worker(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5]);
 else if (mode == "component-action-async")
-    component_action_async(ARGV[1], ARGV[2]);
+    component_action_async(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "component-action-status")
     component_action_status(ARGV[1]);
 else if (mode == "component-updates-if-due")

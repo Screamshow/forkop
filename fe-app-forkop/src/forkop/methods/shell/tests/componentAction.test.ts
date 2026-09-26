@@ -76,6 +76,30 @@ describe('ForkopShellMethods.componentAction', () => {
     });
   });
 
+  it('passes an exact release to the background worker without changing default updates', async () => {
+    mocks.executeShellCommand.mockResolvedValue({
+      stdout: JSON.stringify({ success: true, job_id: 'job-1' }),
+      code: 0,
+    });
+    await ForkopShellMethods.componentActionStart(
+      'forkop',
+      'install',
+      '1.14.6',
+    );
+    expect(mocks.executeShellCommand.mock.calls[0][0].args).toEqual([
+      'component_action_async',
+      'forkop',
+      'install',
+      '1.14.6',
+    ]);
+    await ForkopShellMethods.componentActionStart('forkop', 'install');
+    expect(mocks.executeShellCommand.mock.calls[1][0].args).toEqual([
+      'component_action_async',
+      'forkop',
+      'install',
+    ]);
+  });
+
   it('returns the backend component action start error message', async () => {
     mocks.executeShellCommand.mockResolvedValue({
       stdout: JSON.stringify({

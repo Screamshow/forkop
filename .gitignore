@@ -56,3 +56,7 @@ ops/deployed-nginx/
 /ops/mirror/
 /.github/workflows/backend-ci.yml
 /.github/workflows/shellcheck.yml
+
+# Python release catalog test caches
+/scripts/__pycache__/
+/scripts/tests/__pycache__/

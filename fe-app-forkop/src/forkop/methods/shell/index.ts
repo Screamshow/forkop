@@ -550,10 +550,16 @@ export const ForkopShellMethods = {
   componentActionStart: async (
     component: Forkop.ComponentName,
     action: Forkop.ComponentAction,
+    version?: string,
   ) => {
     const response = await executeShellCommand({
       command: '/usr/bin/forkop',
-      args: [Forkop.AvailableMethods.COMPONENT_ACTION_ASYNC, component, action],
+      args: [
+        Forkop.AvailableMethods.COMPONENT_ACTION_ASYNC,
+        component,
+        action,
+        ...(version ? [version] : []),
+      ],
       timeout: COMPONENT_ACTION_RPC_TIMEOUT_MS,
     });
     const parsedResponse = parseComponentActionStartResult(response);

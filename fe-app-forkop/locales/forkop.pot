@@ -2910,3 +2910,27 @@ msgstr ""
 #: src/forkop/tabs/diagnostic/checks/runZapret2Check.ts:107
 msgid "Zapret2 sing-box outbound is not configured"
 msgstr ""
+
+msgid "Choose version"
+msgstr ""
+
+msgid "Choose Forkop X version"
+msgstr ""
+
+msgid "Loading available versions…"
+msgstr ""
+
+msgid "Could not load available versions"
+msgstr ""
+
+msgid "No compatible releases available"
+msgstr ""
+
+msgid "Install selected version"
+msgstr ""
+
+msgid "Confirm version change"
+msgstr ""
+
+msgid "A configuration backup will be saved in /etc/forkop-backups. Older versions may not support all current settings."
+msgstr ""

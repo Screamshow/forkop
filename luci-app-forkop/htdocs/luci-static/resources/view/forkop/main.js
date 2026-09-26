@@ -2915,10 +2915,15 @@ var ForkopShellMethods = {
       data: parsedResponse
     };
   },
-  componentActionStart: async (component, action) => {
+  componentActionStart: async (component, action, version) => {
     const response = await executeShellCommand({
       command: "/usr/bin/forkop",
-      args: [Forkop.AvailableMethods.COMPONENT_ACTION_ASYNC, component, action],
+      args: [
+        Forkop.AvailableMethods.COMPONENT_ACTION_ASYNC,
+        component,
+        action,
+        ...version ? [version] : []
+      ],
       timeout: COMPONENT_ACTION_RPC_TIMEOUT_MS
     });
     const parsedResponse = parseComponentActionStartResult(response);
@@ -13132,6 +13137,92 @@ function renderFullUninstall(disabled) {
   ]);
 }
 
+// src/forkop/tabs/updates/releaseSelector.ts
+async function showReleaseSelector(currentVersion, install) {
+  const status = E("p", { role: "status" }, _("Loading available versions\u2026"));
+  const content = E("div", {}, [status]);
+  ui.showModal(_("Choose Forkop X version"), content);
+  try {
+    const response = await executeShellCommand({
+      command: "/usr/bin/forkop",
+      args: ["forkop_releases"],
+      timeout: 75e3
+    });
+    const result = JSON.parse(response.stdout || "{}");
+    if (response.code || !result.success || !Array.isArray(result.releases)) {
+      throw new Error(_("Could not load available versions"));
+    }
+    const select = E("select", {
+      class: "cbi-input-select",
+      "aria-label": _("Choose Forkop X version")
+    });
+    for (const release of result.releases) {
+      if (!/^\d+\.\d+\.\d+(-canary\.\d+)?$/.test(release.version)) continue;
+      const installed = release.version === currentVersion;
+      select.appendChild(
+        E(
+          "option",
+          { value: release.version },
+          `${release.version} (${release.channel})${installed ? ` \u2014 ${_("Installed")}` : ""}`
+        )
+      );
+    }
+    if (!select.options.length)
+      throw new Error(_("No compatible releases available"));
+    const confirm = renderButton({
+      text: _("Install selected version"),
+      classNames: ["cbi-button-save"],
+      onClick: () => {
+        const version = select.value;
+        ui.showModal(
+          _("Confirm version change"),
+          E("div", {}, [
+            E("p", {}, `${currentVersion} \u2192 ${version}`),
+            E(
+              "p",
+              {},
+              _(
+                "A configuration backup will be saved in /etc/forkop-backups. Older versions may not support all current settings."
+              )
+            ),
+            E("div", { class: "right" }, [
+              renderButton({
+                text: _("Cancel"),
+                onClick: () => ui.hideModal()
+              }),
+              renderButton({
+                text: _("Install"),
+                classNames: ["cbi-button-save"],
+                onClick: () => {
+                  ui.hideModal();
+                  install(version);
+                }
+              })
+            ])
+          ])
+        );
+      }
+    });
+    const update = () => {
+      confirm.disabled = select.value === currentVersion;
+    };
+    select.addEventListener("change", update);
+    update();
+    content.replaceChildren(
+      select,
+      E("div", { class: "right" }, [
+        renderButton({ text: _("Cancel"), onClick: () => ui.hideModal() }),
+        confirm
+      ])
+    );
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : _("Could not load available versions");
+    content.appendChild(
+      renderButton({ text: _("Close"), onClick: () => ui.hideModal() })
+    );
+  }
+}
+
 // src/forkop/tabs/updates/initController.ts
 var updatesLifecycleRegistered = false;
 var updatesControllerInitialized = false;
@@ -13588,7 +13679,8 @@ async function handleComponentAction(button) {
   try {
     const startResponse = await ForkopShellMethods.componentActionStart(
       button.component,
-      button.action
+      button.action,
+      button.version
     );
     if (!startResponse.success) {
       if (isComponentActionAlreadyRunningError(startResponse.error)) {
@@ -13618,7 +13710,7 @@ async function handleComponentAction(button) {
       jobId,
       button.component,
       button.action,
-      getExpectedLatestVersionForAction(button)
+      button.version || getExpectedLatestVersionForAction(button)
     );
     await completeComponentActionJob(button.key, jobId, response);
   } catch (error) {
@@ -14027,6 +14119,24 @@ function renderComponentCard(card) {
       onClick: () => void handleComponentAction(action)
     });
   });
+  if (card.component === "forkop") {
+    primaryButtons.push(
+      renderButton({
+        text: _("Choose version"),
+        disabled: systemInfoLoading || serviceRuntimeActionLoading || anyActionLoading,
+        onClick: () => void showReleaseSelector(card.version, (version) => {
+          void handleComponentAction({
+            key: "forkopInstall",
+            text: _("Install"),
+            icon: renderDownloadIcon24,
+            component: "forkop",
+            action: "install",
+            version
+          });
+        })
+      })
+    );
+  }
   const dangerButtons = dangerActions.map((action) => {
     const loading2 = updatesActions[action.key].loading;
     return renderButton({

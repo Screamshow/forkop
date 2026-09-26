@@ -85,3 +85,23 @@ for partial_i18n in "luci-i18n-forkop-ru_${VERSION}.ipk\t" '\t/i18n.ipk'; do
 done
 
 printf 'Forkop release plan checks passed (5 positive, 8 negative)\n'
+
+# Catalog parsing must reject incomplete, foreign, and malformed releases.
+for ext in ipk apk; do
+  digest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  for case_name in valid invalid_hash invalid_url missing_translation; do
+    checksum="$digest"
+    prefix="/forkop/updates/releases/$VERSION/"
+    [ "$case_name" != invalid_hash ] || checksum=invalid
+    [ "$case_name" != invalid_url ] || prefix=https://example.test/
+    translation=",{\"name\":\"luci-i18n-forkop-ru_$VERSION.$ext\",\"sha256\":\"$digest\",\"browser_download_url\":\"/forkop/updates/releases/$VERSION/luci-i18n-forkop-ru_$VERSION.$ext\"}"
+    [ "$case_name" != missing_translation ] || translation=""
+    result="$(printf '%s' "{\"format\":1,\"releases\":[{\"tag_name\":\"$VERSION\",\"assets\":[{\"name\":\"forkop_$VERSION.$ext\",\"sha256\":\"$checksum\",\"browser_download_url\":\"${prefix}forkop_$VERSION.$ext\"},{\"name\":\"luci-app-forkop_$VERSION.$ext\",\"sha256\":\"$digest\",\"browser_download_url\":\"/forkop/updates/releases/$VERSION/luci-app-forkop_$VERSION.$ext\"}$translation]}]}" |
+      ucode -L /usr/lib/forkop "$ACTION_UC" forkop-release-catalog-fixture "$ext")"
+    count="$(printf '%s' "$result" | ucode -e 'let fs = require("fs"); print(length(json(fs.open("/dev/stdin", "r").read("all"))));')"
+    expected=0
+    [ "$case_name" != valid ] || expected=1
+    [ "$count" = "$expected" ] || fail "$ext catalog $case_name"
+  done
+done
+printf 'Forkop catalog checks passed (2 positive, 6 negative)\n'
