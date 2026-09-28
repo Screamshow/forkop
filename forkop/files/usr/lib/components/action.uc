@@ -1209,7 +1209,7 @@ function wait_for_service_action_idle() {
     return false;
 }
 
-function wait_for_forkop_restore() {
+function wait_for_forkop_restore(wait_for_explicit_start) {
     let timeout = 180;
     while (timeout >= 0) {
         let starting = forkop_starting();
@@ -1218,7 +1218,7 @@ function wait_for_forkop_restore() {
         // A package postinst may have detached its start worker from procd.
         // "starting" is an owned transition, not a reason to race it with a
         // second restart. Keep waiting for its explicit terminal state.
-        if (!starting && !file_exists(PACKAGE_UPGRADE_STATE))
+        if (!starting && !file_exists(PACKAGE_UPGRADE_STATE) && !wait_for_explicit_start)
             return false;
         if (timeout <= 0)
             break;
@@ -2820,7 +2820,7 @@ function install_forkop(requested_version) {
         if (forkop_was_running &&
             (!run_logged("Starting Forkop after installing release packages",
                 command_from_args([ SERVICE_INIT, "start" ])) ||
-             !wait_for_forkop_restore()))
+             !wait_for_forkop_restore(true)))
             fail_forkop_package_install(rollback_packages, "Forkop did not recover after installing release packages", latest_version);
     }
     clear_version_caches();
