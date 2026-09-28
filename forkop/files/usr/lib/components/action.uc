@@ -1050,7 +1050,7 @@ function forkop_release_page_url(version, fallback) {
     if (length(parts) == 2 &&
         match(as_string(parts[0]), /^[A-Za-z0-9_.-]+$/) != null &&
         match(as_string(parts[1]), /^[A-Za-z0-9_.-]+$/) != null &&
-        match(version, /^[0-9]+[.][0-9]+[.][0-9]+$/) != null)
+        match(version, /^[0-9]+[.][0-9]+[.][0-9]+(-canary[.][0-9]+)?$/) != null)
         return "https://github.com/" + parts[0] + "/" + parts[1] + "/releases/tag/" + version;
 
     return forkop_release_url(fallback);
@@ -2810,15 +2810,17 @@ function install_forkop(requested_version) {
         command_success_from_args([ "/etc/init.d/rpcd", "restart" ]);
     command_success_from_args([ "killall", "-HUP", "rpcd" ]);
 
-    // The backend package post-install hook has already restored a Forkop
-    // instance that was running before this release upgrade. Avoid a second
-    // full restart and its readiness wait, but retain the restart fallback
-    // if the package lifecycle did not leave Forkop healthy.
+    // The updater stops Forkop before apk/opkg runs prerm. The package hook
+    // therefore sees a stopped service and normally has nothing to restore.
+    // Start it directly instead of restarting a service that procd no longer
+    // has registered.
     if (forkop_was_running && wait_for_forkop_restore())
         updates_log("Forkop was restored by the package upgrade; final restart skipped");
     else {
-        restart_forkop_after_successful_change();
-        if (forkop_was_running && !wait_for_forkop_restore())
+        if (forkop_was_running &&
+            (!run_logged("Starting Forkop after installing release packages",
+                command_from_args([ SERVICE_INIT, "start" ])) ||
+             !wait_for_forkop_restore()))
             fail_forkop_package_install(rollback_packages, "Forkop did not recover after installing release packages", latest_version);
     }
     clear_version_caches();

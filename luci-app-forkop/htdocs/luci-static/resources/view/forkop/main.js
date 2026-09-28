@@ -14432,7 +14432,7 @@ var styles6 = `
     align-items: center;
     min-height: 24px;
     gap: 8px;
-    white-space: nowrap;
+    flex-wrap: wrap;
 }
 
 .fkp_updates-page__component__info-label {
@@ -14483,7 +14483,7 @@ var styles6 = `
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
 }
 
@@ -14502,7 +14502,7 @@ var styles6 = `
 
 .fkp_updates-page__component__variants-buttons {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
 }
 `;

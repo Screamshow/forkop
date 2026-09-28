@@ -94,7 +94,7 @@ export const styles = `
     align-items: center;
     min-height: 24px;
     gap: 8px;
-    white-space: nowrap;
+    flex-wrap: wrap;
 }
 
 .fkp_updates-page__component__info-label {
@@ -145,7 +145,7 @@ export const styles = `
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
 }
 
@@ -164,7 +164,7 @@ export const styles = `
 
 .fkp_updates-page__component__variants-buttons {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
 }
 `;
