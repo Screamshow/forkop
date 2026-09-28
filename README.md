@@ -38,6 +38,6 @@ wget -qO- https://mirror.51343.ru/forkop/install.sh | sh -s -- --channel canary
 ❗️ Важные нюансы:
 - Работает ИСКЛЮЧИТЕЛЬНО с моей подпиской или Flint
 - Работа с ключами не ограничивается
-- User Agent Happ/(версия Forkop X) для поддержки описания хостов
+- User-Agent INCY/(версия Forkop X) для подписок
 
 Телеграмм чат https://t.me/Flint_2/37459

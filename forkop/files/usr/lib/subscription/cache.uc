@@ -429,7 +429,11 @@ function maintenance_plan(sections, section_cache_dir) {
     print("missing\t", runtime_cache_missing(sections, section_cache_dir) ? "1" : "0", "\n");
 }
 
-let auto_user_agent_profiles = [ "Incy" ];
+let forkop_version = as_string(constants.FORKOP_VERSION);
+let incy_version = match(forkop_version, /^([0-9]+[.][0-9]+[.][0-9]+)(-canary[.][0-9]+)?$/);
+let auto_user_agent_profiles = [
+    "INCY/" + (incy_version != null ? incy_version[1] : forkop_version)
+];
 
 let auto_user_agents = {};
 for (let profile in auto_user_agent_profiles)
