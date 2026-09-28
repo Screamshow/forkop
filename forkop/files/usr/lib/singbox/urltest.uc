@@ -6,6 +6,23 @@ let as_string = common.as_string;
 let array_or_empty = common.array_or_empty;
 let object_or_empty = common.object_or_empty;
 
+function rotate_start(values, generation_seed, group_tag) {
+    values = array_or_empty(values);
+    generation_seed = as_string(generation_seed);
+    if (length(values) < 2 || generation_seed == "")
+        return values;
+
+    let hash = 2166136261;
+    let key = generation_seed + ":" + as_string(group_tag);
+    for (let i = 0; i < length(key); i++)
+        hash = (hash * 33 + ord(substr(key, i, 1))) % 4294967296;
+    let start = hash % length(values);
+    let result = [];
+    for (let i = 0; i < length(values); i++)
+        push(result, values[(start + i) % length(values)]);
+    return result;
+}
+
 function contains(values, needle) {
     for (let value in values) {
         if (value == needle)
@@ -150,6 +167,7 @@ function filter_mode(mode, tags, names, countries, include_names, include_regexe
 }
 
 return {
+    rotate_start,
     normalized_country_list,
     countries_from_flag_names,
     regex_matching_tag_array,

@@ -207,6 +207,16 @@ function subscription_urltest_group_outbound(outbound) {
     return as_string(outbound.type || "") == "urltest" && internal_flag(outbound.__forkop_allow_group);
 }
 
+let provider_urltest_start_seed = "";
+
+function urltest_start_seed() {
+    if (provider_urltest_start_seed == "")
+        provider_urltest_start_seed = trim(as_string(
+            getenv("FORKOP_URLTEST_START_SEED") || fs.readfile("/proc/sys/kernel/random/uuid")
+        ));
+    return provider_urltest_start_seed;
+}
+
 function flintnet_subscription_source(source_entry) {
     return lc(url_host(as_string(source_entry))) == "sub.flintnet.pro";
 }
@@ -889,9 +899,13 @@ function add_subscription_source_with_state(config, section, source_index, sourc
         warn("skipped unsupported subscription outbounds for rule '", section_name, "': ", subscription_skip_summary(skipped), "\n");
 
     rewrite_subscription_outbound_references(prepared, tag_map, subscription_reference_set(source_outbounds));
-    for (let outbound in prepared)
+    for (let i = 0; i < length(prepared); i++) {
+        let outbound = prepared[i];
+        if (group_flags[i] === true && as_string(outbound.type || "") == "urltest")
+            outbound.outbounds = runtime_urltest.rotate_start(outbound.outbounds, urltest_start_seed(), outbound.tag);
         if (as_string(outbound.type || "") == "urltest")
             urltest_override.apply(outbound, section_name, as_string(outbound.tag || ""));
+    }
     let added = 0;
     for (let i = 0; i < length(prepared); i++) {
         let outbound = prepared[i];

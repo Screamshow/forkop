@@ -3,6 +3,7 @@ set -eo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FORKOP_LIB="$ROOT_DIR/forkop/files/usr/lib"
+export FORKOP_VERSION="${FORKOP_VERSION:-1.14.8-canary.2}"
 PARSER_UC="$FORKOP_LIB/subscription/parser.uc"
 GENERATOR_UC="$FORKOP_LIB/singbox/generator.uc"
 CACHE_UC="$FORKOP_LIB/subscription/cache.uc"
@@ -17,6 +18,28 @@ fail() {
   printf 'FAIL: %s\n' "$1" >&2
   exit 1
 }
+
+ucode -L "$FORKOP_LIB" -e '
+let urltest = require("singbox.urltest");
+let members = [ "Amsterdam #1", "Amsterdam #2", "Helsinki #1", "Stockholm #1" ];
+let starts = {};
+for (let i = 0; i < 64; i++) {
+    let seed = sprintf("router-%d", i);
+    let rotated = urltest.rotate_start(members, seed, "Automatic");
+    if (sprintf("%J", rotated) != sprintf("%J", urltest.rotate_start(members, seed, "Automatic")))
+        die("URLTest order changed for the same generation seed\n");
+    let seen = {};
+    for (let member in rotated)
+        seen[member] = true;
+    if (length(keys(seen)) != length(members))
+        die("URLTest order lost a node\n");
+    starts[rotated[0]] = true;
+}
+if (length(keys(starts)) != length(members))
+    die("URLTest starting nodes were not distributed\n");
+if (urltest.rotate_start(members, "", "Automatic")[0] != members[0])
+    die("URLTest order changed without a generation seed\n");
+' || fail "provider URLTest startup distribution"
 
 ucode -L "$FORKOP_LIB" -e '
 let subscription = require("singbox.subscription");
@@ -62,7 +85,7 @@ prepare_subscription_cache() {
   mkdir -p "$WORK_DIR/subscriptions"
   cp "$normalized_json" "${source}.json"
   printf '%s\n' "$url" >"${source}.url"
-  : >"${source}.user_agent"
+  printf 'INCY/%s' "${FORKOP_VERSION%%-canary.*}" >"${source}.user_agent"
 }
 
 generate_config() {
@@ -71,6 +94,7 @@ generate_config() {
   mkdir -p "${output}.section-cache"
   TMP_SUBSCRIPTION_FOLDER="$WORK_DIR/subscriptions" \
     FORKOP_SUBSCRIPTION_METADATA_DIR="$WORK_DIR/metadata" \
+    FORKOP_URLTEST_START_SEED="${FORKOP_URLTEST_START_SEED:-seed-0}" \
     ucode -L "$FORKOP_LIB" "$GENERATOR_UC" generate-config-fixture \
       "$fixture" "$output" "127.0.0.1"
 }
@@ -281,6 +305,28 @@ JSON
 
 xray_config="$WORK_DIR/xray-config.json"
 generate_config "$WORK_DIR/xray-fixture.json" "$xray_config"
+generate_config "$WORK_DIR/xray-fixture.json" "$WORK_DIR/xray-config-again.json"
+FORKOP_URLTEST_START_SEED=seed-1 generate_config "$WORK_DIR/xray-fixture.json" "$WORK_DIR/xray-config-other-start.json"
+ucode -e '
+let fs = require("fs");
+let first = json(fs.readfile(ARGV[0]));
+let second = json(fs.readfile(ARGV[1]));
+let third = json(fs.readfile(ARGV[2]));
+let a = null, b = null, c = null;
+for (let outbound in first.outbounds || [])
+    if (outbound.type == "urltest" && outbound.tolerance == 175)
+        a = outbound.outbounds;
+for (let outbound in second.outbounds || [])
+    if (outbound.type == "urltest" && outbound.tolerance == 175)
+        b = outbound.outbounds;
+for (let outbound in third.outbounds || [])
+    if (outbound.type == "urltest" && outbound.tolerance == 175)
+        c = outbound.outbounds;
+if (a == null || b == null || sprintf("%J", a) != sprintf("%J", b))
+    die("provider URLTest startup order changed with the same seed\n");
+if (c == null || sprintf("%J", a) == sprintf("%J", c))
+    die("provider URLTest startup order did not change with a new seed\n");
+' "$xray_config" "$WORK_DIR/xray-config-again.json" "$WORK_DIR/xray-config-other-start.json" || fail "provider URLTest startup order"
 
 cat >"$WORK_DIR/xray-reveal-urltest-fixture.json" <<'JSON'
 {
