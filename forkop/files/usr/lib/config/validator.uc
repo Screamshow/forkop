@@ -936,9 +936,12 @@ function validate_dns_settings(settings, sections, context) {
     for (let value in main_servers)
         if (!dns_server_value_valid(value))
             fail_validation("Invalid main DNS server '" + value + "'. Aborted.");
-    for (let value in bootstrap_servers)
+    for (let value in bootstrap_servers) {
         if (!dns_server_value_valid(value))
             fail_validation("Invalid Bootstrap DNS server '" + value + "'. Aborted.");
+        if (!core_ip.valid_ip(core_url.host(value)))
+            log_message("Bootstrap DNS server '" + value + "' uses a hostname; set an IP address to avoid a startup DNS dependency", "warn");
+    }
 
     if (length(main_servers) > 1 || length(bootstrap_servers) > 1) {
         validate_required_duration_option(option(settings, "dns_check_interval", "10s"), "settings.dns_check_interval");

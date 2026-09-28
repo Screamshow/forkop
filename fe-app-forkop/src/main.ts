@@ -9,7 +9,7 @@ if (typeof structuredClone !== 'function')
 
 export { validateIP } from './validators/validateIp';
 export { validateDomain } from './validators/validateDomain';
-export { validateDNS } from './validators/validateDns';
+export { validateDNS, validateBootstrapDNS } from './validators/validateDns';
 export { validateUrl } from './validators/validateUrl';
 export { validatePath } from './validators/validatePath';
 export { validateSubnet } from './validators/validateSubnet';

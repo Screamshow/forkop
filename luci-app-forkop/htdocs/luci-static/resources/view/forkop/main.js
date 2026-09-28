@@ -149,6 +149,17 @@ function validateDNS(value) {
     )
   };
 }
+function validateBootstrapDNS(value) {
+  const validation = validateDNS(value);
+  if (!validation.valid) return validation;
+  const addressPart = value.split("/")[0];
+  const parsed = parseHostPort(addressPart);
+  const host = parsed ? parsed.host : unbracketHost(addressPart);
+  return validateIP(host).valid ? validation : {
+    valid: false,
+    message: _("Bootstrap DNS must use an IPv4 or IPv6 address")
+  };
+}
 
 // src/validators/validateUrl.ts
 function validateUrl(url, protocols = ["http:", "https:"]) {
@@ -14705,6 +14716,7 @@ return baseclass.extend({
   parseValueList,
   showToast,
   store,
+  validateBootstrapDNS,
   validateDNS,
   validateDomain,
   validateIP,

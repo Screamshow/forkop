@@ -36,3 +36,18 @@ export function validateDNS(value: string): ValidationResult {
     ),
   };
 }
+
+export function validateBootstrapDNS(value: string): ValidationResult {
+  const validation = validateDNS(value);
+  if (!validation.valid) return validation;
+
+  const addressPart = value.split('/')[0];
+  const parsed = parseHostPort(addressPart);
+  const host = parsed ? parsed.host : unbracketHost(addressPart);
+  return validateIP(host).valid
+    ? validation
+    : {
+        valid: false,
+        message: _('Bootstrap DNS must use an IPv4 or IPv6 address'),
+      };
+}

@@ -22,6 +22,7 @@ ops/deployed-nginx/
 /tests/*
 !/tests/latency_reload_serialization.sh
 !/tests/automatic_latency_pending.sh
+!/tests/worker_identity.sh
 !/tests/list_update_reload_policy.sh
 !/tests/list_cache.sh
 !/tests/list_cache_space.sh

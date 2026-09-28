@@ -351,6 +351,13 @@
     ]
   },
   {
+    "call": "Bootstrap DNS must use an IPv4 or IPv6 address",
+    "key": "Bootstrap DNS must use an IPv4 or IPv6 address",
+    "places": [
+      "src/validators/validateDns.ts:51"
+    ]
+  },
+  {
     "call": "Browser FakeIP check could not be completed",
     "key": "Browser FakeIP check could not be completed",
     "places": [
@@ -1042,8 +1049,8 @@
     ]
   },
   {
-    "call": "DNS server used to obtain IP addresses for upstream DNS and proxies. If multiple servers are selected, a timeout switches to a backup.",
-    "key": "DNS server used to obtain IP addresses for upstream DNS and proxies. If multiple servers are selected, a timeout switches to a backup.",
+    "call": "DNS server used to obtain IP addresses for upstream DNS and proxies. Enter an IPv4 or IPv6 address to avoid a DNS lookup during startup. If multiple servers are selected, a timeout switches to a backup.",
+    "key": "DNS server used to obtain IP addresses for upstream DNS and proxies. Enter an IPv4 or IPv6 address to avoid a DNS lookup during startup. If multiple servers are selected, a timeout switches to a backup.",
     "places": [
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:240"
     ]

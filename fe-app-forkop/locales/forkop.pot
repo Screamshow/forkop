@@ -223,6 +223,10 @@ msgstr ""
 msgid "Bootstrap DNS Servers"
 msgstr ""
 
+#: src/validators/validateDns.ts:51
+msgid "Bootstrap DNS must use an IPv4 or IPv6 address"
+msgstr ""
+
 #: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:69
 #: src/forkop/tabs/diagnostic/checks/runFakeIPCheck.ts:97
 msgid "Browser FakeIP check could not be completed"
@@ -639,7 +643,7 @@ msgid "DNS server used by the resolver"
 msgstr ""
 
 #: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:240
-msgid "DNS server used to obtain IP addresses for upstream DNS and proxies. If multiple servers are selected, a timeout switches to a backup."
+msgid "DNS server used to obtain IP addresses for upstream DNS and proxies. Enter an IPv4 or IPv6 address to avoid a DNS lookup during startup. If multiple servers are selected, a timeout switches to a backup."
 msgstr ""
 
 #: ../luci-app-forkop/htdocs/luci-static/resources/view/forkop/settings.js:229

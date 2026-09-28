@@ -118,7 +118,7 @@ function optionListValues(option, section_id) {
     .filter(Boolean);
 }
 
-function configureDnsList(option, choices, defaultValue) {
+function configureDnsList(option, choices, defaultValue, validator = main.validateDNS) {
   Object.entries(choices).forEach(([key, label]) => {
     option.value(key, _(label));
   });
@@ -132,7 +132,7 @@ function configureDnsList(option, choices, defaultValue) {
         ? true
         : _("Add at least one DNS server");
     }
-    const validation = main.validateDNS(normalized);
+    const validation = validator(normalized);
     return validation.valid ? true : validation.message;
   };
 }
@@ -238,13 +238,14 @@ function createSettingsContent(section, capabilities) {
     "bootstrap_dns_server",
     _("Bootstrap DNS Servers"),
     _(
-      "DNS server used to obtain IP addresses for upstream DNS and proxies. If multiple servers are selected, a timeout switches to a backup.",
+      "DNS server used to obtain IP addresses for upstream DNS and proxies. Enter an IPv4 or IPv6 address to avoid a DNS lookup during startup. If multiple servers are selected, a timeout switches to a backup.",
     ),
   );
   configureDnsList(
     bootstrapOption,
     main.BOOTSTRAP_DNS_SERVER_OPTIONS,
     "77.88.8.8",
+    main.validateBootstrapDNS,
   );
 
   o = section.option(

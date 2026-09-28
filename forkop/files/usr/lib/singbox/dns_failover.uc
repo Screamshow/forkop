@@ -5,6 +5,7 @@ let uci_core = require("core.uci");
 let common = require("core.common");
 let core_ip = require("core.ip");
 let runtime_dns = require("singbox.dns");
+let worker_identity = require("core.worker_identity");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
@@ -315,28 +316,14 @@ function worker() {
     }
 }
 
-function file_first_line(path) {
-    let data = fs.readfile(path);
-    if (data == null)
-        return "";
-    return trim(split(as_string(data), "\n")[0]);
-}
-
-function process_running(pid) {
-    return match(as_string(pid), /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
-}
-
 function stop_runtime() {
-    let pid = file_first_line(PID_FILE);
-    if (process_running(pid))
-        command_success_from_args([ "kill", pid ]);
-    remove_file(PID_FILE);
-    return 0;
+    return worker_identity.stop(PID_FILE, DNS_FAILOVER_UC, LIB_DIR) ? 0 : 1;
 }
 
 function start_runtime() {
     let cfg = settings();
-    stop_runtime();
+    if (stop_runtime() != 0)
+        return 1;
     if (!runtime_dns.failover_enabled(cfg)) {
         remove_file(STATE_FILE);
         return 0;
@@ -346,7 +333,12 @@ function start_runtime() {
 
     let command = command_from_args([ "ucode", "-L", LIB_DIR, DNS_FAILOVER_UC, "worker" ]) +
         " >/dev/null 2>&1 1000>&- & echo $! >" + shell_quote(PID_FILE);
-    return command_status(command);
+    if (command_status(command) != 0)
+        return 1;
+    if (worker_identity.record_started(PID_FILE, DNS_FAILOVER_UC, LIB_DIR))
+        return 0;
+    stop_runtime();
+    return 1;
 }
 
 function select_fixture(state_path, alive_path, kind, recovery) {

@@ -43,6 +43,27 @@ json_field() {
   printf '%s\n' "$1" | jsonfilter -e "@.$2"
 }
 
+version_map="$(env FORKOP_LIB="$TEST_LIB" ucode -L /usr/lib/forkop "$ACTION_UC" \
+  forkop-package-version-fixture 1.14.7-canary.3 1.14.7_rc3)" || fail 'version mapping failed'
+if command -v apk >/dev/null 2>&1; then
+  [ "$(json_field "$version_map" package_version)" = 1.14.7_rc3 ] || fail 'APK canary package version'
+  [ "$(json_field "$version_map" release_version)" = 1.14.7-canary.3 ] || fail 'APK canary release version'
+else
+  [ "$(json_field "$version_map" package_version)" = 1.14.7-canary.3 ] || fail 'IPK canary package version'
+fi
+
+space_fixture() {
+  env FORKOP_LIB="$TEST_LIB" ucode -L /usr/lib/forkop "$ACTION_UC" \
+    forkop-package-space-fixture "$1" "$2" 3145728 4194304
+}
+space_fixture 14000 14000 >/dev/null || fail 'sufficient rollback space was rejected'
+if space_fixture 12000 14000 >/dev/null 2>&1; then
+  fail 'insufficient flash space was accepted'
+fi
+if space_fixture 14000 12000 >/dev/null 2>&1; then
+  fail 'insufficient temporary memory was accepted'
+fi
+
 for ext in ipk apk; do
   for i18n in 0 1; do
     result="$(run_plan "$ext" "$i18n" none)" || fail "$ext i18n=$i18n did not resolve"

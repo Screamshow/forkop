@@ -2,6 +2,7 @@
 
 let fs = require("fs");
 let common = require("core.common");
+let worker_identity = require("core.worker_identity");
 
 let as_string = common.as_string;
 let read_json_file = common.read_json_file;
@@ -62,14 +63,6 @@ function remove_file(path) {
     }
     catch (e) {
     }
-}
-
-function file_first_line(path) {
-    let data = fs.readfile(as_string(path));
-    if (data == null)
-        return "";
-    let newline = index(data, "\n");
-    return trim(newline >= 0 ? substr(data, 0, newline) : data);
 }
 
 function log_message(message, level) {
@@ -429,22 +422,14 @@ function worker() {
     }
 }
 
-function process_running(pid) {
-    pid = trim(as_string(pid));
-    return pid != "" && match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
-}
-
 function stop_runtime() {
-    let pid = file_first_line(PRIORITY_PID_FILE);
-    if (process_running(pid))
-        command_success_from_args([ "kill", pid ]);
-    remove_file(PRIORITY_PID_FILE);
-    return 0;
+    return worker_identity.stop(PRIORITY_PID_FILE, PRIORITY_UC, LIB_DIR) ? 0 : 1;
 }
 
 function start_runtime() {
     let groups = priority_groups_from_cache();
-    stop_runtime();
+    if (stop_runtime() != 0)
+        return 1;
     if (length(groups) == 0)
         return 0;
 
@@ -453,7 +438,12 @@ function start_runtime() {
 
     let command = command_from_args([ "ucode", "-L", LIB_DIR, PRIORITY_UC, "worker" ]) +
         " >/dev/null 2>&1 1000>&- & echo $! >" + shell_quote(PRIORITY_PID_FILE);
-    return command_status(command);
+    if (command_status(command) != 0)
+        return 1;
+    if (worker_identity.record_started(PRIORITY_PID_FILE, PRIORITY_UC, LIB_DIR))
+        return 0;
+    stop_runtime();
+    return 1;
 }
 
 function select_fixture(group_path, latency_path, start_index, end_index, skip_tag) {

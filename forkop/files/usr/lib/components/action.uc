@@ -496,14 +496,14 @@ function staged_package_info(path, expected_name, expected_version) {
     return supported ? { path, name, version, size } : null;
 }
 
-function stage_repository_sing_box_package(package_name, expected_version) {
+function stage_repository_package(package_name, expected_version) {
     let ext = is_apk() ? "apk" : "ipk";
     let command = is_apk() ?
         command_from_args([ "apk", "fetch", "-o", tmp_dir, package_name ]) :
         "cd " + shell_quote(tmp_dir) + " && " + command_from_args([ "opkg", "download", package_name ]);
     let downloaded = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
-        if (run_logged("Downloading " + package_name + " before changing sing-box (" + attempt + "/3)", command)) {
+        if (run_logged("Downloading " + package_name + " before package change (" + attempt + "/3)", command)) {
             downloaded = true;
             break;
         }
@@ -574,7 +574,7 @@ function stage_apk_dependency_tree(info, removed, staged) {
         if (staged_package_by_name(staged, dependency) != null)
             continue;
         let expected = pkg_is_installed(dependency) ? installed_package_version(dependency) : "";
-        let package = stage_repository_sing_box_package(dependency, expected);
+        let package = stage_repository_package(dependency, expected);
         if (package == null)
             return false;
         push(staged, package);
@@ -1764,7 +1764,7 @@ function stage_previous_sing_box_package(variant) {
     if (version == "")
         return null;
     if (variant != "extended")
-        return stage_repository_sing_box_package(package_name, version);
+        return stage_repository_package(package_name, version);
     let release = resolve_sing_box_extended_release(false);
     if (release == null)
         return null;
@@ -2311,7 +2311,7 @@ function install_package_sing_box(action, tiny) {
         action_success("sing_box", action, "Installed sing-box package is already up to date",
             current_version, latest_version, 0, "latest");
 
-    let target = stage_repository_sing_box_package(package_name, latest_version);
+    let target = stage_repository_package(package_name, latest_version);
     if (target == null)
         action_fail("sing_box", action, "Cannot download or validate the selected sing-box package", current_version, latest_version);
     let rollback = sing_box_variant_is_package_managed(previous_variant) ?
@@ -2440,6 +2440,129 @@ function resolve_forkop_release(latest_version, selected) {
     let i18n_required = pkg_is_installed("luci-i18n-forkop-ru") ? "1" : "0";
     let plan = helper_output_input(release_json, "forkop-release-plan", [ latest_version, asset_ext, i18n_required ]);
     return parse_forkop_release_plan(plan, latest_version, i18n_required);
+}
+
+function stage_forkop_release_archive(release, name, version) {
+    let asset_name = name + "_" + release.tag_name + (is_apk() ? ".apk" : ".ipk");
+    for (let asset in release.assets || []) {
+        if (asset.name != asset_name)
+            continue;
+        let path = tmp_dir + "/rollback-" + asset_name;
+        if (!download_with_retry(forkop_release_url(asset.browser_download_url), path, asset_name))
+            return null;
+        let actual = split(trim(command_output_from_args([ "sha256sum", path ])), /[ \t]+/)[0];
+        if (actual != asset.sha256)
+            return null;
+        return staged_package_info(path, name, version);
+    }
+    return null;
+}
+
+function forkop_package_version(release_version) {
+    if (is_apk())
+        return replace(as_string(release_version), /-canary[.]([0-9]+)$/, "_rc$1");
+    return as_string(release_version);
+}
+
+function forkop_release_version(package_version) {
+    if (is_apk())
+        return replace(as_string(package_version), /_rc([0-9]+)$/, "-canary.$1");
+    return as_string(package_version);
+}
+
+function stage_forkop_rollback_packages() {
+    let staged = [];
+    let current_version = installed_package_version("forkop");
+    let release = current_version != "" ? selected_forkop_release(forkop_release_version(current_version)) : null;
+    for (let name in [ "luci-app-forkop", "luci-i18n-forkop-ru", "forkop" ]) {
+        let version = installed_package_version(name);
+        if (version == "") {
+            if (name != "luci-i18n-forkop-ru")
+                return null;
+            continue;
+        }
+        let archive = release != null && version == current_version ?
+            stage_forkop_release_archive(release, name, version) : null;
+        if (archive == null)
+            archive = stage_repository_package(name, version);
+        if (archive == null)
+            return null;
+        push(staged, archive);
+    }
+    return staged;
+}
+
+function forkop_package_space_error(overlay_kib, tmp_kib, target_bytes, rollback_bytes) {
+    let target_kib = int((target_bytes + 1023) / 1024);
+    let rollback_kib = int((rollback_bytes + 1023) / 1024);
+    let install_need = target_kib + int(target_kib / 4) + 8192;
+    let rollback_need = rollback_kib + int(rollback_kib / 4) + 8192;
+    let overlay_need = install_need > rollback_need ? install_need : rollback_need;
+    let tmp_need = overlay_need;
+    if (overlay_kib <= 0 || tmp_kib <= 0 || target_kib <= 0 || rollback_kib <= 0)
+        return "Cannot determine storage required for Forkop package update and rollback";
+    if (overlay_kib < overlay_need)
+        return "Not enough flash space for Forkop update and rollback: need " + overlay_need + " KiB free, have " + overlay_kib + " KiB";
+    if (tmp_kib < tmp_need)
+        return "Not enough temporary memory for Forkop update and rollback: need " + tmp_need + " KiB free, have " + tmp_kib + " KiB";
+    return "";
+}
+
+function forkop_package_preflight(backend_file, app_file, i18n_file, rollback_packages, version) {
+    let target_bytes = 0;
+    for (let item in [ [ backend_file, "forkop" ], [ app_file, "luci-app-forkop" ],
+        [ i18n_file, "luci-i18n-forkop-ru" ] ]) {
+        if (item[0] == "") continue;
+        let info = staged_package_info(item[0], item[1], forkop_package_version(version));
+        if (info == null) return "Forkop release package is invalid or incompatible: " + item[1];
+        target_bytes += info.size;
+    }
+    let rollback_bytes = 0;
+    for (let item in rollback_packages)
+        rollback_bytes += item.size;
+    let overlay_kib = available_kib("/usr/bin");
+    let tmp_kib = available_kib(tmp_dir);
+    let error = forkop_package_space_error(overlay_kib, tmp_kib, target_bytes, rollback_bytes);
+    if (error == "")
+        updates_log("Forkop package preflight passed: flash " + overlay_kib + " KiB, tmp " +
+            tmp_kib + " KiB, target " + int((target_bytes + 1023) / 1024) +
+            " KiB, rollback " + int((rollback_bytes + 1023) / 1024) + " KiB");
+    return error;
+}
+
+function pkg_restore_file_command(path) {
+    return is_apk() ?
+        command_from_args([ "apk", "add", "--no-network", "--allow-untrusted", "--force-reinstall", path ]) + " </dev/null" :
+        command_from_args([ "opkg", "install", "--force-overwrite", "--force-reinstall", "--force-downgrade", path ]) + " </dev/null";
+}
+
+function restore_forkop_packages(staged) {
+    let restored = true;
+    // Keep the backend last, just as in the normal opkg upgrade. Its postinst
+    // owns service restoration after the matching LuCI files are back in place.
+    for (let archive in staged) {
+        if (!run_logged("Restoring previous " + archive.name + " package",
+            pkg_restore_file_command(archive.path)))
+            restored = false;
+    }
+    for (let archive in staged)
+        if (installed_package_version(archive.name) != archive.version)
+            restored = false;
+    if (forkop_was_running && !wait_for_forkop_restore()) {
+        if (file_exists(SERVICE_INIT))
+            command_success_from_args([ SERVICE_INIT, "start" ]);
+        if (!wait_for_forkop_restore())
+            restored = false;
+    }
+    return restored;
+}
+
+function fail_forkop_package_install(staged, failed_step, latest_version) {
+    let restored = restore_forkop_packages(staged);
+    action_fail("forkop", "install", failed_step + (restored ?
+        "; previous packages and service restored" :
+        "; rollback incomplete, inspect installed package versions and service state"),
+        FORKOP_VERSION, latest_version);
 }
 
 function upgrade_sing_box_ticks(pid) {
@@ -2613,6 +2736,13 @@ function install_forkop(requested_version) {
         updates_log("Forkop configuration backup: " + backup);
     }
 
+    let rollback_packages = stage_forkop_rollback_packages();
+    if (rollback_packages == null)
+        action_fail("forkop", "install", "Cannot cache the exact installed Forkop packages for rollback", FORKOP_VERSION, latest_version);
+    let preflight_error = forkop_package_preflight(backend_file, app_file, i18n_file, rollback_packages, latest_version);
+    if (preflight_error != "")
+        action_fail("forkop", "install", preflight_error, FORKOP_VERSION, latest_version);
+
     if (!module_success([ LIB_DIR + "/service/ui.uc", "begin-package-upgrade-quiesce", owner_pid() ]))
         action_fail("forkop", "install", "Another Forkop service transition or package upgrade is starting", FORKOP_VERSION, latest_version);
     if (!wait_for_service_action_idle())
@@ -2656,16 +2786,22 @@ function install_forkop(requested_version) {
             push(files, i18n_file);
         push(files, backend_file);
         if (!run_logged("Installing Forkop release packages", pkg_install_files_command(files)))
-            action_fail("forkop", "install", "Failed to install Forkop release packages", FORKOP_VERSION, latest_version);
+            fail_forkop_package_install(rollback_packages, "Failed to install Forkop release packages", latest_version);
     }
     else {
         if (!run_logged("Installing LuCI app package " + release.app_name, pkg_install_files_command([ app_file ])))
-            action_fail("forkop", "install", "Failed to install LuCI app package", FORKOP_VERSION, latest_version);
+            fail_forkop_package_install(rollback_packages, "Failed to install LuCI app package", latest_version);
         if (i18n_file != "" && !run_logged("Installing LuCI Russian i18n package " + release.i18n_name, pkg_install_files_command([ i18n_file ])))
-            action_fail("forkop", "install", "Failed to install LuCI Russian i18n package", FORKOP_VERSION, latest_version);
+            fail_forkop_package_install(rollback_packages, "Failed to install LuCI Russian i18n package", latest_version);
         if (!run_logged("Installing Forkop package " + release.backend_name, pkg_install_files_command([ backend_file ])))
-            action_fail("forkop", "install", "Failed to install Forkop package", FORKOP_VERSION, latest_version);
+            fail_forkop_package_install(rollback_packages, "Failed to install Forkop package", latest_version);
     }
+
+    let expected_package_version = forkop_package_version(latest_version);
+    if (installed_package_version("forkop") != expected_package_version ||
+        installed_package_version("luci-app-forkop") != expected_package_version ||
+        (i18n_file != "" && installed_package_version("luci-i18n-forkop-ru") != expected_package_version))
+        fail_forkop_package_install(rollback_packages, "Forkop package versions disagree after installation", latest_version);
 
     remove_file("/var/luci-indexcache");
     command_success("rm -f /var/luci-indexcache* /tmp/luci-indexcache* 2>/dev/null");
@@ -2680,8 +2816,11 @@ function install_forkop(requested_version) {
     // if the package lifecycle did not leave Forkop healthy.
     if (forkop_was_running && wait_for_forkop_restore())
         updates_log("Forkop was restored by the package upgrade; final restart skipped");
-    else
+    else {
         restart_forkop_after_successful_change();
+        if (forkop_was_running && !wait_for_forkop_restore())
+            fail_forkop_package_install(rollback_packages, "Forkop did not recover after installing release packages", latest_version);
+    }
     clear_version_caches();
     let new_version = installed_package_version("forkop");
     if (new_version == "")
@@ -2895,6 +3034,33 @@ else if (mode == "forkop-release-catalog-fixture") {
     let data = input ? input.read("all") : "";
     if (input) input.close();
     write_json(parse_forkop_release_catalog(data, ARGV[1]));
+}
+else if (mode == "forkop-package-version-fixture")
+    write_json({ package_version: forkop_package_version(ARGV[1]), release_version: forkop_release_version(ARGV[2]) });
+else if (mode == "forkop-package-space-fixture") {
+    let error = forkop_package_space_error(int(ARGV[1]), int(ARGV[2]), int(ARGV[3]), int(ARGV[4]));
+    if (error != "") {
+        warn(error, "\n");
+        exit(1);
+    }
+    print("ok\n");
+}
+else if (mode == "forkop-package-preflight-fixture") {
+    init_tmp_dir();
+    let rollback = [];
+    for (let item in [ [ ARGV[5], "forkop" ], [ ARGV[6], "luci-app-forkop" ],
+        [ ARGV[7], "luci-i18n-forkop-ru" ] ]) {
+        if (as_string(item[0]) == "") continue;
+        let info = staged_package_info(item[0], item[1], "");
+        if (info == null) exit(1);
+        push(rollback, info);
+    }
+    let error = forkop_package_preflight(ARGV[2], ARGV[3], ARGV[4], rollback, ARGV[1]);
+    if (error != "") {
+        warn(error, "\n");
+        exit(1);
+    }
+    print("ok\n");
 }
 else if (mode == "forkop-releases")
     forkop_releases();
