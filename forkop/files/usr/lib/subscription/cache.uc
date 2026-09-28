@@ -429,20 +429,11 @@ function maintenance_plan(sections, section_cache_dir) {
     print("missing\t", runtime_cache_missing(sections, section_cache_dir) ? "1" : "0", "\n");
 }
 
-let forkop_version = as_string(constants.FORKOP_VERSION);
-let happ_compat_version = match(forkop_version, /^[0-9]+[.][0-9]+[.][0-9]+$/) != null
-    ? forkop_version
-    : "2.8.0";
-let happ_compat_user_agent = "Happ/" + happ_compat_version;
-
-let auto_user_agent_profiles = [ happ_compat_user_agent ];
+let auto_user_agent_profiles = [ "Incy" ];
 
 let auto_user_agents = {};
 for (let profile in auto_user_agent_profiles)
     auto_user_agents[profile] = true;
-// Accept caches created before the compatibility UA followed the Forkop version,
-// but do not send the legacy UA for new downloads.
-auto_user_agents["Happ/2.8.0"] = true;
 
 function user_agent_supported(user_agent, default_user_agent) {
     user_agent = as_string(user_agent);
