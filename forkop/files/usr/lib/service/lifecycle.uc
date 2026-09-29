@@ -1057,19 +1057,18 @@ function start_impl() {
     return 0;
 }
 
-function stop_main() {
+function stop_main(allow_process_conflict) {
     let status = 0;
 
-    // A stop/restart must never tear down Forkop's DNS, nftables and routing
-    // state before it has proved that the current sing-box belongs to the
-    // managed procd service. In particular, procd can briefly report an old
-    // PID while replacing its child. Treat that unsettled observation exactly
-    // like a foreign process: preserve the working dataplane and let the
-    // serialized caller retry after the ownership state has converged.
-    if (module_success(STATE_UC, [ "sing-box-process-conflict" ])) {
+    let process_conflict = module_success(STATE_UC, [ "sing-box-process-conflict" ]);
+    // Reload must preserve the working dataplane until process ownership is
+    // settled. An explicit Stop removes interception and every sing-box.
+    if (process_conflict && !allow_process_conflict) {
         log_message("Refusing Forkop stop: sing-box process ownership is ambiguous; preserving the existing runtime", "fatal");
-        return 1;
+        return 2;
     }
+    if (process_conflict)
+        log_message("Additional sing-box process detected; explicit Stop will terminate all sing-box runtimes", "warn");
 
     log_message("Stopping Forkop", "info");
     module_success(DNS_FAILOVER_UC, [ "stop-runtime" ]);
@@ -1101,7 +1100,7 @@ function stop_main() {
         command_success_from_args([ "ip", "-6", "route", "flush", "table", RT_TABLE_NAME ]);
 
     let sing_box_status = module_status(STATE_UC, [
-        "stop-managed-sing-box-runtime",
+        allow_process_conflict ? "stop-all-sing-box-runtime" : "stop-managed-sing-box-runtime",
         getenv("FORKOP_SING_BOX_RELOAD_PID_TIMEOUT") || "15"
     ]);
     if (sing_box_status != 0)
@@ -1274,8 +1273,12 @@ function start() {
     return 0;
 }
 
-function stop_impl() {
-    let status = 0;
+function stop_impl(allow_process_conflict) {
+    // Drop interception before restoring DNS so a new query cannot be sent
+    // through the old proxy policy during an explicit stop.
+    let status = stop_main(allow_process_conflict);
+    if (status == 2)
+        return 2;
 
     if (!setting_bool("dont_touch_dhcp", false)) {
         let dns_status = dnsmasq_restore(false);
@@ -1287,10 +1290,6 @@ function stop_impl() {
         if (dns_status != 0)
             status = dns_status;
     }
-
-    let runtime_status = stop_main();
-    if (runtime_status != 0)
-        status = runtime_status;
 
     if (!config_set(CONFIG_NAME + ".settings.shutdown_correctly", "1"))
         status = 1;
@@ -1309,7 +1308,12 @@ function stop_impl() {
 }
 
 function stop() {
-    return stop_impl();
+    // The UI and normal init.d Stop are explicit shutdowns. Package upgrades
+    // and internal component transitions must retain the ownership guard.
+    let internal_stop = getenv("FORKOP_INTERNAL_SERVICE_STOP") == "1" ||
+        fs.stat(PACKAGE_UPGRADE_QUIESCE_FILE) != null ||
+        fs.stat(MANAGED_UPGRADE_SING_BOX_MARKER) != null;
+    return stop_impl(!internal_stop);
 }
 
 function restart_runtime_for_reload() {
@@ -1880,7 +1884,7 @@ function restart() {
     }
 
     let selector_state = capture_selector_state();
-    let status = stop_impl();
+    let status = stop_impl(false);
     if (status != 0)
         return status;
 

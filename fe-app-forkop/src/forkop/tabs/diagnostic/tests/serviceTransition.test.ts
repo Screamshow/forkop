@@ -238,4 +238,16 @@ describe('diagnostic service transitions', () => {
       }),
     ).toBe(true);
   });
+
+  it('offers Stop for an unhealthy runtime with a remaining sing-box process', () => {
+    const state = {
+      forkopRunning: false,
+      stopAvailable: true,
+      restartLoading: false,
+      startLoading: false,
+      stopLoading: false,
+    };
+    expect(shouldShowStopAction(state)).toBe(true);
+    expect(shouldShowStartAction(state)).toBe(false);
+  });
 });

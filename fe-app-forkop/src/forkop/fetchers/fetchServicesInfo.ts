@@ -56,6 +56,9 @@ export async function fetchServicesInfo() {
         forkopRunning: forkop.success
           ? forkop.data.running
           : previousData.forkopRunning,
+        stopAvailable: forkop.success
+          ? (forkop.data.stop_available ?? forkop.data.running)
+          : previousData.stopAvailable,
         forkopEnabled: forkop.success
           ? forkop.data.enabled
           : previousData.forkopEnabled,

@@ -78,6 +78,7 @@ describe('fetchServicesInfo', () => {
         data: {
           singbox: 1,
           forkopRunning: 1,
+          stopAvailable: 1,
           forkopEnabled: 1,
           forkopStatus: 'running & enabled',
         },
@@ -113,6 +114,7 @@ describe('fetchServicesInfo', () => {
     expect(state.servicesInfoWidget.data).toEqual({
       singbox: 0,
       forkopRunning: 1,
+      stopAvailable: 1,
       forkopEnabled: 1,
       forkopStatus: 'running & enabled',
     });

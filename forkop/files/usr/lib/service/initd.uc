@@ -663,7 +663,9 @@ function stop_plan(owner_pid, bin_ok) {
 
 function stop_finish(job_id, status) {
     status = int(status || 0);
-    if (status != 0)
+    // Exit 2 means lifecycle refused an ambiguous process owner before any
+    // teardown. Keep DNS with the still-running dataplane in that case.
+    if (status != 0 && status != 2)
         restore_dnsmasq_failsafe();
     finish_external_service_action("stop", job_id, status);
     return status;

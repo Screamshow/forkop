@@ -789,6 +789,48 @@ function stop_managed_sing_box_and_wait(timeout) {
     return false;
 }
 
+// Only an explicit user Stop may remove every sing-box runtime. Reload and
+// package transitions still require sole procd ownership before touching it.
+function signal_all_sing_box_processes(signal) {
+    for (let exe_path in fs.glob("/proc/[0-9]*/exe")) {
+        let parts = split(as_string(exe_path), "/");
+        if (length(parts) < 4)
+            continue;
+        let pid = parts[2];
+        let ticks = process_start_ticks_for_pid(pid);
+        // Recheck immediately before signalling: a PID can be reused while
+        // the /proc directory is being enumerated.
+        if (ticks != null && ticks == process_start_ticks_for_pid(pid) && pid_is_sing_box(pid))
+            command_success_from_args([ "kill", signal, pid ]);
+    }
+}
+
+function stop_all_sing_box_and_wait(timeout) {
+    timeout = int(timeout || 15);
+    // Remove procd's respawn authority first. Calling the nested init script
+    // here can deadlock against rc.common's service lock during Forkop Stop.
+    if (!command_success_from_args([ "ubus", "call", "service", "delete", "{\"name\":\"sing-box\"}" ]))
+        return false;
+
+    for (let remaining = timeout; remaining >= 0; remaining--) {
+        if (sing_box_process_count() == 0 && sing_box_service_pid_runtime() <= 0)
+            return true;
+        signal_all_sing_box_processes("-TERM");
+        if (remaining > 0)
+            command_success_from_args([ "sleep", "1" ]);
+    }
+
+    // A process that ignored TERM must not survive a completed Stop.
+    for (let remaining = 5; remaining >= 0; remaining--) {
+        if (sing_box_process_count() == 0 && sing_box_service_pid_runtime() <= 0)
+            return true;
+        signal_all_sing_box_processes("-KILL");
+        if (remaining > 0)
+            command_success_from_args([ "sleep", "1" ]);
+    }
+    return sing_box_process_count() == 0 && sing_box_service_pid_runtime() <= 0;
+}
+
 function start_managed_sing_box_and_verify(timeout) {
     timeout = int(timeout || 15);
     let process_count = sing_box_process_count();
@@ -2093,6 +2135,8 @@ else if (mode == "reload-sing-box-runtime")
     reload_sing_box_runtime(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
 else if (mode == "stop-managed-sing-box-runtime")
     exit(stop_managed_sing_box_and_wait(ARGV[1]) ? 0 : 1);
+else if (mode == "stop-all-sing-box-runtime")
+    exit(stop_all_sing_box_and_wait(ARGV[1]) ? 0 : 1);
 else if (mode == "start-managed-sing-box-runtime")
     exit(start_managed_sing_box_and_verify(ARGV[1]) ? 0 : 1);
 else if (mode == "controlled-replace-managed-sing-box-runtime")

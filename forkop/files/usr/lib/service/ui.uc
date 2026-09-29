@@ -1138,6 +1138,12 @@ function current_ui_state_json() {
 
     let capabilities = capability_flags();
     let forkop_is_running = forkop_running() ? 1 : 0;
+    // Health requires sole procd ownership, but Stop must remain available
+    // when that check fails while a sing-box or Forkop nft policy remains.
+    let stop_available = forkop_is_running ||
+        int(trim(command_output_from_args([ "ucode", "-L", LIB_DIR, STATE_UC, "sing-box-process-count" ]))) > 0 ||
+        dns_configured() ||
+        command_success_from_args([ "nft", "list", "table", "inet", NFT_TABLE_NAME ]);
     let forkop_is_enabled = service_enabled() ? 1 : 0;
     let sing_box_is_running = forkop_is_running ? 1 : (sing_box_running() ? 1 : 0);
     let sing_box_is_enabled = sing_box_enabled() ? 1 : 0;
@@ -1159,6 +1165,7 @@ function current_ui_state_json() {
         service: {
             forkop: {
                 running: forkop_is_running,
+                stop_available: stop_available ? 1 : 0,
                 enabled: forkop_is_enabled,
                 status: forkop_status,
                 dns_configured: dns_configured() ? 1 : 0

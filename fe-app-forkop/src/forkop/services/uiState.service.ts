@@ -95,6 +95,9 @@ function applyServiceState(uiState: Forkop.UiState) {
       data: {
         singbox: uiState.service.sing_box.running,
         forkopRunning: uiState.service.forkop.running,
+        stopAvailable:
+          uiState.service.forkop.stop_available ??
+          uiState.service.forkop.running,
         forkopEnabled: uiState.service.forkop.enabled,
         forkopStatus: uiState.service.forkop.status,
       },

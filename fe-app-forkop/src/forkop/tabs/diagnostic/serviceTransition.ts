@@ -115,28 +115,39 @@ export function shouldShowRestartAction({
 
 export function shouldShowStartAction({
   forkopRunning,
+  stopAvailable = false,
   restartLoading,
   startLoading,
   stopLoading,
 }: {
   forkopRunning: boolean;
+  stopAvailable?: boolean;
   restartLoading: boolean;
   startLoading: boolean;
   stopLoading: boolean;
 }) {
-  return startLoading || (!restartLoading && !forkopRunning && !stopLoading);
+  return (
+    startLoading ||
+    (!restartLoading && !forkopRunning && !stopAvailable && !stopLoading)
+  );
 }
 
 export function shouldShowStopAction({
   forkopRunning,
+  stopAvailable = false,
   restartLoading,
   startLoading,
   stopLoading,
 }: {
   forkopRunning: boolean;
+  stopAvailable?: boolean;
   restartLoading: boolean;
   startLoading: boolean;
   stopLoading: boolean;
 }) {
-  return stopLoading || restartLoading || (forkopRunning && !startLoading);
+  return (
+    stopLoading ||
+    restartLoading ||
+    ((forkopRunning || stopAvailable) && !startLoading)
+  );
 }

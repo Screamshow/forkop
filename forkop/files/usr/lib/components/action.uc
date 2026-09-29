@@ -1257,7 +1257,7 @@ function stop_forkop_before_sing_box_change() {
     forkop_stopped_for_sing_box_change = true;
 
     if (forkop_was_running && file_exists(SERVICE_INIT))
-        run_logged("Stopping Forkop before sing-box package change", command_from_args([ SERVICE_INIT, "stop" ]));
+        run_logged("Stopping Forkop before sing-box package change", command_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", SERVICE_INIT, "stop" ]));
 
     if (forkop_was_running && file_exists(BIN_PATH))
         command_success_from_args([ BIN_PATH, "restore_dnsmasq" ]);
@@ -2060,7 +2060,7 @@ function install_sing_box_extended_package(action) {
     if (!wait_forkop_running_after_sing_box_change()) {
         updates_log("sing-box-extended package did not start cleanly; restoring previous sing-box variant", "error");
         if (file_exists(SERVICE_INIT))
-            command_success_from_args([ SERVICE_INIT, "stop" ]);
+            command_success_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", SERVICE_INIT, "stop" ]);
         if (restore_sing_box_after_failed_extended_package_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, package_file, cronet_touched, rollback_file)) {
             remove_file(backup_binary);
             remove_file(backup_cronet);
@@ -2258,7 +2258,7 @@ function install_sing_box_extended(action, compressed) {
     if (!wait_forkop_running_after_sing_box_change()) {
         updates_log(label + " did not start cleanly; restoring previous sing-box binary", "error");
         if (file_exists(SERVICE_INIT))
-            command_success_from_args([ SERVICE_INIT, "stop" ]);
+            command_success_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", SERVICE_INIT, "stop" ]);
         if (restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file)) {
             remove_file(backup_binary);
             remove_file(backup_cronet);
@@ -2625,7 +2625,7 @@ function upgrade_bounded_stop(script) {
     let seconds = int(getenv("FORKOP_UPGRADE_STOP_TIMEOUT_SECONDS") || "60");
     if (seconds < 1)
         seconds = 60;
-    let command = command_from_args([ script, "stop" ]) + " >/dev/null 2>&1 & pid=$!; " +
+    let command = command_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", script, "stop" ]) + " >/dev/null 2>&1 & pid=$!; " +
         "( sleep " + seconds + "; kill $pid 2>/dev/null || true ) & watcher=$!; " +
         "wait $pid 2>/dev/null; rc=$?; kill $watcher 2>/dev/null || true; " +
         "wait $watcher 2>/dev/null || true; exit $rc";

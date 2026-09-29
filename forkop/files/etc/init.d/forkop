@@ -77,6 +77,11 @@ disable() {
 
 stop_service() {
     initd_ucode stop-service "$$"
+    local status="$?"
+    # rc.common calls procd_kill even when stop_service returns an error.
+    # Abort this invocation when Stop fails so procd does not unregister a
+    # still-running Forkop service and report success.
+    [ "$status" -eq 0 ] || exit "$status"
 }
 
 reload_service() {

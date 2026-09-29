@@ -171,7 +171,9 @@ async function handleDownloadSupportReport() {
   try {
     downloadSupportReport();
     showToast(
-      _('Support report contains confidential information. Do not share it in public chats.'),
+      _(
+        'Support report contains confidential information. Do not share it in public chats.',
+      ),
       'error',
     );
   } catch (error) {
@@ -807,6 +809,7 @@ function renderDiagnosticAvailableActionsWidget() {
 
   const forkopEnabled = Boolean(servicesInfoWidget.data.forkopEnabled);
   const forkopRunning = Boolean(servicesInfoWidget.data.forkopRunning);
+  const stopAvailable = Boolean(servicesInfoWidget.data.stopAvailable);
   const serviceTransition = getServiceTransition(
     servicesInfoWidget.data.forkopStatus,
   );
@@ -831,12 +834,14 @@ function renderDiagnosticAvailableActionsWidget() {
     });
   const startVisible = shouldShowStartAction({
     forkopRunning,
+    stopAvailable,
     restartLoading,
     startLoading,
     stopLoading,
   });
   const stopVisible = shouldShowStopAction({
     forkopRunning,
+    stopAvailable,
     restartLoading,
     startLoading,
     stopLoading,

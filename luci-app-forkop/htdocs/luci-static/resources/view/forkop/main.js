@@ -4565,6 +4565,7 @@ var initialStore = {
     data: {
       singbox: 0,
       forkopRunning: 0,
+      stopAvailable: 0,
       forkopEnabled: 0,
       forkopStatus: ""
     }
@@ -5009,6 +5010,7 @@ function applyServiceState(uiState) {
       data: {
         singbox: uiState.service.sing_box.running,
         forkopRunning: uiState.service.forkop.running,
+        stopAvailable: uiState.service.forkop.stop_available ?? uiState.service.forkop.running,
         forkopEnabled: uiState.service.forkop.enabled,
         forkopStatus: uiState.service.forkop.status
       }
@@ -5615,6 +5617,7 @@ async function fetchServicesInfo() {
       data: {
         singbox: singbox.success ? singbox.data.running : previousData.singbox,
         forkopRunning: forkop.success ? forkop.data.running : previousData.forkopRunning,
+        stopAvailable: forkop.success ? forkop.data.stop_available ?? forkop.data.running : previousData.stopAvailable,
         forkopEnabled: forkop.success ? forkop.data.enabled : previousData.forkopEnabled,
         forkopStatus: forkop.success ? forkop.data.status : previousData.forkopStatus
       }
@@ -9616,19 +9619,21 @@ function shouldShowRestartAction({
 }
 function shouldShowStartAction({
   forkopRunning,
+  stopAvailable = false,
   restartLoading,
   startLoading,
   stopLoading
 }) {
-  return startLoading || !restartLoading && !forkopRunning && !stopLoading;
+  return startLoading || !restartLoading && !forkopRunning && !stopAvailable && !stopLoading;
 }
 function shouldShowStopAction({
   forkopRunning,
+  stopAvailable = false,
   restartLoading,
   startLoading,
   stopLoading
 }) {
-  return stopLoading || restartLoading || forkopRunning && !startLoading;
+  return stopLoading || restartLoading || (forkopRunning || stopAvailable) && !startLoading;
 }
 
 // src/forkop/tabs/diagnostic/diagnosticRunPersistence.ts
@@ -9979,7 +9984,9 @@ async function handleDownloadSupportReport() {
   try {
     downloadSupportReport();
     showToast(
-      _("Support report contains confidential information. Do not share it in public chats."),
+      _(
+        "Support report contains confidential information. Do not share it in public chats."
+      ),
       "error"
     );
   } catch (error) {
@@ -10483,6 +10490,7 @@ function renderDiagnosticAvailableActionsWidget() {
   logger.debug("[DIAGNOSTIC]", "renderDiagnosticAvailableActionsWidget");
   const forkopEnabled = Boolean(servicesInfoWidget.data.forkopEnabled);
   const forkopRunning = Boolean(servicesInfoWidget.data.forkopRunning);
+  const stopAvailable = Boolean(servicesInfoWidget.data.stopAvailable);
   const serviceTransition = getServiceTransition(
     servicesInfoWidget.data.forkopStatus
   );
@@ -10498,12 +10506,14 @@ function renderDiagnosticAvailableActionsWidget() {
   });
   const startVisible = shouldShowStartAction({
     forkopRunning,
+    stopAvailable,
     restartLoading,
     startLoading,
     stopLoading
   });
   const stopVisible = shouldShowStopAction({
     forkopRunning,
+    stopAvailable,
     restartLoading,
     startLoading,
     stopLoading
