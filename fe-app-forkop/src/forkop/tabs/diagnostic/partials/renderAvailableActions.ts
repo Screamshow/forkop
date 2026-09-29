@@ -3,6 +3,7 @@ import {
   renderCircleCheckBigIcon24,
   renderCirclePlayIcon24,
   renderCircleStopIcon24,
+  renderCircleXIcon24,
   renderCogIcon24,
   renderDownloadIcon24,
   renderPauseIcon24,
@@ -20,6 +21,7 @@ interface ActionProps {
 }
 
 interface IRenderAvailableActionsProps {
+  restartBlocked: boolean;
   restart: ActionProps;
   start: ActionProps;
   stop: ActionProps;
@@ -32,6 +34,7 @@ interface IRenderAvailableActionsProps {
 }
 
 export function renderAvailableActions({
+  restartBlocked,
   restart,
   start,
   stop,
@@ -44,6 +47,27 @@ export function renderAvailableActions({
 }: IRenderAvailableActionsProps) {
   return E('div', { class: 'fkp_diagnostic-page__right-bar__actions' }, [
     E('b', {}, _('Available actions')),
+    ...insertIf(restartBlocked, [
+      E('div', { class: 'fkp_diagnostic_alert fkp_diagnostic_alert--error' }, [
+        E('span', { class: 'fkp_diagnostic_alert__icon' }, [
+          renderCircleXIcon24(),
+        ]),
+        E('div', { class: 'fkp_diagnostic_alert__content' }, [
+          E(
+            'b',
+            { class: 'fkp_diagnostic_alert__title' },
+            _('Cannot restart Forkop X'),
+          ),
+          E(
+            'div',
+            { class: 'fkp_diagnostic_alert__description' },
+            _(
+              'sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again.',
+            ),
+          ),
+        ]),
+      ]),
+    ]),
     ...insertIf(restart.visible, [
       renderButton({
         classNames: ['cbi-button-apply'],

@@ -160,6 +160,7 @@ export interface StoreType {
       singbox: number;
       forkopRunning: number;
       stopAvailable: number;
+      restartBlocked: number;
       forkopEnabled: number;
       forkopStatus: string;
     };
@@ -282,6 +283,7 @@ const initialStore: StoreType = {
       singbox: 0,
       forkopRunning: 0,
       stopAvailable: 0,
+      restartBlocked: 0,
       forkopEnabled: 0,
       forkopStatus: '',
     },

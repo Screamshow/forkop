@@ -810,6 +810,7 @@ function renderDiagnosticAvailableActionsWidget() {
   const forkopEnabled = Boolean(servicesInfoWidget.data.forkopEnabled);
   const forkopRunning = Boolean(servicesInfoWidget.data.forkopRunning);
   const stopAvailable = Boolean(servicesInfoWidget.data.stopAvailable);
+  const restartBlocked = Boolean(servicesInfoWidget.data.restartBlocked);
   const serviceTransition = getServiceTransition(
     servicesInfoWidget.data.forkopStatus,
   );
@@ -850,10 +851,12 @@ function renderDiagnosticAvailableActionsWidget() {
   const container = document.getElementById('fkp_diagnostic-page-actions');
 
   const renderedActions = renderAvailableActions({
+    restartBlocked,
     restart: {
       loading: restartLoading,
       visible: shouldShowRestartAction({
         forkopRunning,
+        restartBlocked,
         restartLoading,
         startLoading,
         stopLoading,

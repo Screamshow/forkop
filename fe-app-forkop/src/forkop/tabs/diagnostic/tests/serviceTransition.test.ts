@@ -122,6 +122,15 @@ describe('diagnostic service transitions', () => {
     expect(
       shouldShowRestartAction({
         forkopRunning: true,
+        restartBlocked: true,
+        restartLoading: false,
+        startLoading: false,
+        stopLoading: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowRestartAction({
+        forkopRunning: true,
         restartLoading: false,
         startLoading: true,
         stopLoading: false,

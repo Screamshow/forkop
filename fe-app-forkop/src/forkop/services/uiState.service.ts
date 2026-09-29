@@ -98,6 +98,7 @@ function applyServiceState(uiState: Forkop.UiState) {
         stopAvailable:
           uiState.service.forkop.stop_available ??
           uiState.service.forkop.running,
+        restartBlocked: uiState.service.forkop.restart_blocked ?? 0,
         forkopEnabled: uiState.service.forkop.enabled,
         forkopStatus: uiState.service.forkop.status,
       },

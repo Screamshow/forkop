@@ -2938,3 +2938,11 @@ msgstr ""
 
 msgid "A configuration backup will be saved in /etc/forkop-backups. Older versions may not support all current settings."
 msgstr ""
+
+#: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts
+msgid "Cannot restart Forkop X"
+msgstr ""
+
+#: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts
+msgid "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again."
+msgstr ""

@@ -25,6 +25,7 @@ describe('fetchServicesInfo', () => {
           enabled: 1,
           status: 'restarting',
           dns_configured: 1,
+          restart_blocked: 1,
         },
         sing_box: {
           running: 1,
@@ -67,6 +68,7 @@ describe('fetchServicesInfo', () => {
     const state = store.get();
 
     expect(state.servicesInfoWidget.data.forkopStatus).toBe('restarting');
+    expect(state.servicesInfoWidget.data.restartBlocked).toBe(1);
     expect(state.diagnosticsActions.restart.loading).toBe(true);
   });
 
@@ -79,6 +81,7 @@ describe('fetchServicesInfo', () => {
           singbox: 1,
           forkopRunning: 1,
           stopAvailable: 1,
+          restartBlocked: 1,
           forkopEnabled: 1,
           forkopStatus: 'running & enabled',
         },
@@ -115,6 +118,7 @@ describe('fetchServicesInfo', () => {
       singbox: 0,
       forkopRunning: 1,
       stopAvailable: 1,
+      restartBlocked: 1,
       forkopEnabled: 1,
       forkopStatus: 'running & enabled',
     });

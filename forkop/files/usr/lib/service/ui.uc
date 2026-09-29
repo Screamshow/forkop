@@ -1138,6 +1138,7 @@ function current_ui_state_json() {
 
     let capabilities = capability_flags();
     let forkop_is_running = forkop_running() ? 1 : 0;
+    let restart_blocked = module_success(STATE_UC, [ "sing-box-process-conflict" ]);
     // Health requires sole procd ownership, but Stop must remain available
     // when that check fails while a sing-box or Forkop nft policy remains.
     let stop_available = forkop_is_running ||
@@ -1165,6 +1166,7 @@ function current_ui_state_json() {
         service: {
             forkop: {
                 running: forkop_is_running,
+                restart_blocked: restart_blocked ? 1 : 0,
                 stop_available: stop_available ? 1 : 0,
                 enabled: forkop_is_enabled,
                 status: forkop_status,

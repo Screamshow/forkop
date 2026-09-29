@@ -387,6 +387,7 @@ export namespace Forkop {
   export interface GetStatus {
     running: number;
     stop_available?: number;
+    restart_blocked?: number;
     enabled: number;
     status: string;
     dns_configured?: number;

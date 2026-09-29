@@ -4889,5 +4889,19 @@
     "places": [
       "src/forkop/tabs/diagnostic/checks/runZapret2Check.ts:107"
     ]
+  },
+  {
+    "call": "Cannot restart Forkop X",
+    "key": "Cannot restart Forkop X",
+    "places": [
+      "src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts"
+    ]
+  },
+  {
+    "call": "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again.",
+    "key": "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again.",
+    "places": [
+      "src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts"
+    ]
   }
 ]
