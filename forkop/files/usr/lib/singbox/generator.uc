@@ -2,6 +2,7 @@
 
 let fs = require("fs");
 let common = require("core.common");
+let core_ip = require("core.ip");
 let uci_core = require("core.uci");
 let runtime_constants = require("singbox.constants");
 let runtime_country = require("singbox.country");
@@ -16,6 +17,7 @@ let rule_config = require("config.rule");
 let connections = require("config.connections");
 let urltest_override = require("config.urltest_override");
 let subscription_share_link = require("subscription.share_link");
+const IPV6_TPROXY_ENABLED = core_ip.ipv6_tproxy_enabled();
 let uci = null;
 let fixture_uci_data = null;
 let runtime_settings_cache = null;
@@ -430,7 +432,9 @@ function cli_bool(value) {
 }
 
 function tproxy_inbound_matcher() {
-    return [ runtime_constants.TPROXY_INBOUND_TAG, runtime_constants.TPROXY_INBOUND6_TAG ];
+    return IPV6_TPROXY_ENABLED
+        ? [ runtime_constants.TPROXY_INBOUND_TAG, runtime_constants.TPROXY_INBOUND6_TAG ]
+        : [ runtime_constants.TPROXY_INBOUND_TAG ];
 }
 
 function source_dns_inbound_matcher() {
@@ -472,10 +476,11 @@ function base_config(settings, service_address, runtime_context) {
 
     runtime_context = object_or_empty(runtime_context);
     let inbounds = [
-        { type: "tproxy", tag: runtime_constants.TPROXY_INBOUND_TAG, listen: runtime_constants.TPROXY_INBOUND_ADDRESS, listen_port: runtime_constants.TPROXY_INBOUND_PORT, tcp_fast_open: true, udp_fragment: true },
-        { type: "tproxy", tag: runtime_constants.TPROXY_INBOUND6_TAG, listen: runtime_constants.TPROXY_INBOUND6_ADDRESS, listen_port: runtime_constants.TPROXY_INBOUND_PORT, tcp_fast_open: true, udp_fragment: true },
-        { type: "direct", tag: runtime_constants.DNS_INBOUND_TAG, listen: runtime_constants.DNS_INBOUND_ADDRESS, listen_port: runtime_constants.DNS_INBOUND_PORT }
+        { type: "tproxy", tag: runtime_constants.TPROXY_INBOUND_TAG, listen: runtime_constants.TPROXY_INBOUND_ADDRESS, listen_port: runtime_constants.TPROXY_INBOUND_PORT, tcp_fast_open: true, udp_fragment: true }
     ];
+    if (IPV6_TPROXY_ENABLED)
+        push(inbounds, { type: "tproxy", tag: runtime_constants.TPROXY_INBOUND6_TAG, listen: runtime_constants.TPROXY_INBOUND6_ADDRESS, listen_port: runtime_constants.TPROXY_INBOUND_PORT, tcp_fast_open: true, udp_fragment: true });
+    push(inbounds, { type: "direct", tag: runtime_constants.DNS_INBOUND_TAG, listen: runtime_constants.DNS_INBOUND_ADDRESS, listen_port: runtime_constants.DNS_INBOUND_PORT });
     if (runtime_context.source_aware_dns)
         push(inbounds, { type: "direct", tag: runtime_constants.SOURCE_DNS_INBOUND_TAG, listen: runtime_constants.SOURCE_DNS_INBOUND_ADDRESS, listen_port: runtime_constants.SOURCE_DNS_INBOUND_PORT });
     for (let inbound in dns_config.inbounds)

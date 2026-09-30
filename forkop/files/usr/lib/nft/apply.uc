@@ -17,6 +17,8 @@ const NFT_BATCH_FILE = getenv("FORKOP_NFT_BATCH_FILE") || "";
 const NFT_CANDIDATE_FAIL_PHASE = getenv("FORKOP_NFT_CANDIDATE_FAIL_PHASE") || "";
 const NFT_TRANSITION_GUARD_CHAIN = "forkop_transition_guard";
 
+const IPV6_TPROXY_ENABLED = core_ip.ipv6_tproxy_enabled();
+
 let common_read_json_file = common.read_json_file;
 let list_option = common.list_option;
 let bool_option = common.bool_option;
@@ -154,6 +156,10 @@ function command_output_quiet_from_args(args) {
 
 function log_debug(message) {
     run_args([ "logger", "-t", "forkop", "[debug] " + as_string(message) ]);
+}
+
+function log_info(message) {
+    run_args([ "logger", "-t", "forkop", "[info] " + as_string(message) ]);
 }
 
 function log_fatal(message) {
@@ -482,6 +488,10 @@ function nft_create_chain(table, name, definition) {
 }
 
 function nft_add_rule(table, chain, args) {
+    // All family-specific IPv6 interception rules use the ip6 expression,
+    // including priority rules and the IPv6 TPROXY target.
+    if (!IPV6_TPROXY_ENABLED && index(args, "ip6") >= 0)
+        return true;
     let command = [ "nft", "add", "rule", "inet", table, chain ];
     for (let arg in args)
         push(command, arg);
@@ -489,6 +499,8 @@ function nft_add_rule(table, chain, args) {
 }
 
 function nft_insert_rule(table, chain, args) {
+    if (!IPV6_TPROXY_ENABLED && index(args, "ip6") >= 0)
+        return true;
     let command = [ "nft", "insert", "rule", "inet", table, chain ];
     for (let arg in args)
         push(command, arg);
@@ -964,8 +976,8 @@ function nft_create_runtime_output_rules(table, localv4_set, common_set, port_se
         nft_add_rule(table, "mangle_output", [ "ip", "daddr", ".", "udp", "dport", "@" + as_string(ip_port_set), "meta", "mark", "set", fakeip_mark, "counter" ]) &&
         nft_add_rule(table, "mangle_output", [ "ip6", "daddr", ".", "tcp", "dport", "@" + as_string(ip_port6_set), "meta", "mark", "set", fakeip_mark, "counter" ]) &&
         nft_add_rule(table, "mangle_output", [ "ip6", "daddr", ".", "udp", "dport", "@" + as_string(ip_port6_set), "meta", "mark", "set", fakeip_mark, "counter" ]) &&
-        nft_add_rule(table, "mangle_output", [ "tcp", "dport", "@" + as_string(port_set), "meta", "mark", "set", fakeip_mark, "counter" ]) &&
-        nft_add_rule(table, "mangle_output", [ "udp", "dport", "@" + as_string(port_set), "meta", "mark", "set", fakeip_mark, "counter" ]) &&
+        nft_add_rule(table, "mangle_output", append_array(IPV6_TPROXY_ENABLED ? [] : [ "meta", "nfproto", "ipv4" ], [ "tcp", "dport", "@" + as_string(port_set), "meta", "mark", "set", fakeip_mark, "counter" ])) &&
+        nft_add_rule(table, "mangle_output", append_array(IPV6_TPROXY_ENABLED ? [] : [ "meta", "nfproto", "ipv4" ], [ "udp", "dport", "@" + as_string(port_set), "meta", "mark", "set", fakeip_mark, "counter" ])) &&
         nft_add_rule(table, "mangle_output", [ "ip", "daddr", fakeip_range, "meta", "l4proto", "tcp", "meta", "mark", "set", fakeip_mark, "counter" ]) &&
         nft_add_rule(table, "mangle_output", [ "ip", "daddr", fakeip_range, "meta", "l4proto", "udp", "meta", "mark", "set", fakeip_mark, "counter" ]) &&
         nft_add_rule(table, "mangle_output", [ "ip6", "daddr", fakeip6_range, "meta", "l4proto", "tcp", "meta", "mark", "set", fakeip_mark, "counter" ]) &&
@@ -1362,7 +1374,7 @@ function tproxy_route6_present(table) {
 }
 
 function tproxy_route_present(table) {
-    return tproxy_route4_present(table) && tproxy_route6_present(table);
+    return tproxy_route4_present(table) && (!IPV6_TPROXY_ENABLED || tproxy_route6_present(table));
 }
 
 function tproxy_marking_rule4_present(table, mark) {
@@ -1374,7 +1386,7 @@ function tproxy_marking_rule6_present(table, mark) {
 }
 
 function tproxy_marking_rule_present(table, mark) {
-    return tproxy_marking_rule4_present(table, mark) && tproxy_marking_rule6_present(table, mark);
+    return tproxy_marking_rule4_present(table, mark) && (!IPV6_TPROXY_ENABLED || tproxy_marking_rule6_present(table, mark));
 }
 
 function tproxy_route_rule_present(table, mark) {
@@ -1400,7 +1412,10 @@ function ensure_tproxy_route_rule(table, mark, rt_tables_path) {
         log_debug("IPv4 TPROXY route already exists");
     }
 
-    if (!tproxy_route6_present(table)) {
+    if (!IPV6_TPROXY_ENABLED) {
+        log_info("IPv6 is disabled or unavailable on loopback; skipping IPv6 TPROXY setup");
+    }
+    else if (!tproxy_route6_present(table)) {
         log_debug("Added IPv6 TPROXY route");
         if (!run_args([ "ip", "-6", "route", "add", "local", "::/0", "dev", "lo", "table", table ]) && !tproxy_route6_present(table)) {
             log_fatal("Failed to add IPv6 route for tproxy. Aborted.");
@@ -1422,14 +1437,14 @@ function ensure_tproxy_route_rule(table, mark, rt_tables_path) {
         log_debug("IPv4 TPROXY marking rule already exists");
     }
 
-    if (!tproxy_marking_rule6_present(table, mark)) {
+    if (IPV6_TPROXY_ENABLED && !tproxy_marking_rule6_present(table, mark)) {
         log_debug("Creating IPv6 TPROXY marking rule");
         if (!run_args([ "ip", "-6", "rule", "add", "fwmark", as_string(mark) + "/" + as_string(mark), "table", table, "priority", "105" ]) && !tproxy_marking_rule6_present(table, mark)) {
             log_fatal("Failed to create IPv6 marking rule. Aborted.");
             return false;
         }
     }
-    else {
+    else if (IPV6_TPROXY_ENABLED) {
         log_debug("IPv6 TPROXY marking rule already exists");
     }
 
@@ -1512,6 +1527,8 @@ function nft_rule_signature_body(body, section) {
 
 function nft_runtime_signature_from_settings_and_sections(settings, sections) {
     let body = "";
+
+    body = signature_add_value(body, "runtime.ipv6_tproxy", IPV6_TPROXY_ENABLED ? "1" : "0");
 
     body = signature_add_value(body, "settings.source_network_interfaces", option(settings, "source_network_interfaces", "br-lan"));
     body = signature_add_value(body, "settings.exclude_ntp", bool_option(settings, "exclude_ntp", false) ? "1" : "0");

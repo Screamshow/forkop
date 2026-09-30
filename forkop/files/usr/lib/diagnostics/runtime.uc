@@ -1449,7 +1449,7 @@ function sing_box_standard_ports_listening(netstat_data) {
         netstat_data,
         SB_DNS_INBOUND_ADDRESS,
         SB_TPROXY_INBOUND_PORT,
-        SB_TPROXY_INBOUND6_ADDRESS
+        core_ip.ipv6_tproxy_enabled() ? SB_TPROXY_INBOUND6_ADDRESS : ""
     );
 }
 

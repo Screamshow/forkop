@@ -28,6 +28,7 @@ ops/deployed-nginx/
 !/tests/list_cache_space.sh
 !/tests/list_download_space.sh
 !/tests/nft_atomic_apply.sh
+!/tests/ipv6_tproxy.sh
 !/tests/remote_lists_routing.sh
 !/tests/full_uninstall.sh
 !/tests/ruleset_cache.sh

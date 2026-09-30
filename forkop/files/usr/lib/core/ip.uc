@@ -1,5 +1,16 @@
 #!/usr/bin/env ucode
 
+let fs = require("fs");
+
+// A local IPv6 TPROXY route needs IPv6 in the kernel and on loopback.
+// The optional path permits isolated tests without changing host sysctls.
+function ipv6_tproxy_enabled() {
+    let root = getenv("FORKOP_IPV6_SYSCTL_DIR") || "/proc/sys/net/ipv6/conf";
+    let all = fs.readfile(root + "/all/disable_ipv6");
+    let lo = fs.readfile(root + "/lo/disable_ipv6");
+    return all != null && lo != null && trim(all) == "0" && trim(lo) == "0";
+}
+
 function as_string(value) {
     return value == null ? "" : "" + value;
 }
@@ -161,6 +172,7 @@ function is_cloudflare_shared_cidr(value) {
 const DISCORD_VOICE_PORTS_NFT = "5000-5020,3478,19294-19344,50000-65535";
 
 return {
+    ipv6_tproxy_enabled,
     valid_ipv4,
     valid_ipv4_cidr,
     valid_ipv6,

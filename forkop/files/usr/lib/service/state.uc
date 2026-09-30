@@ -3,6 +3,7 @@
 let fs = require("fs");
 let uci_core = require("core.uci");
 let netstat = require("core.netstat");
+let core_ip = require("core.ip");
 let rule_config = require("config.rule");
 let connections = require("config.connections");
 let zapret_validator = require("providers.zapret.validator");
@@ -984,7 +985,7 @@ function sing_box_runtime_ports_ready() {
         command_output_from_args([ "netstat", "-ln" ]),
         SB_DNS_INBOUND_ADDRESS,
         SB_TPROXY_INBOUND_PORT,
-        SB_TPROXY_INBOUND6_ADDRESS
+        core_ip.ipv6_tproxy_enabled() ? SB_TPROXY_INBOUND6_ADDRESS : ""
     );
 }
 
@@ -1303,6 +1304,8 @@ function section_rule_condition_csv(section, key, kind) {
 
 function nft_runtime_signature_body(settings, sections) {
     let body = "";
+
+    body = signature_add_value(body, "runtime.ipv6_tproxy", core_ip.ipv6_tproxy_enabled() ? "1" : "0");
 
     body = signature_add_value(body, "settings.source_network_interfaces", option(settings, "source_network_interfaces", "br-lan"));
     body = signature_add_value(body, "settings.exclude_ntp", bool_option(settings, "exclude_ntp", false) ? "1" : "0");
@@ -1711,6 +1714,8 @@ function append_sing_box_rule_signature_body(body, section, sections) {
 function sing_box_signature_body(settings, sections, mwan3_active) {
     settings = object_or_empty(settings);
     let body = "";
+
+    body = signature_add_value(body, "runtime.ipv6_tproxy", core_ip.ipv6_tproxy_enabled() ? "1" : "0");
 
     body = signature_add_value(body, "settings.dns_type", option(settings, "dns_type", "doh"));
     body = signature_add_value(body, "settings.dns_strategy", option(settings, "dns_strategy", "prefer_ipv4"));
