@@ -112,9 +112,9 @@ FORKOP_NFT_BATCH_FILE="$WORK_DIR/discord.nft" \
     forkop_discord_subnets 0x04000000 5000 forkop_subnets6 forkop_ip6_ports forkop_discord_subnets6
 grep -Fq 'discord_subnets { 66.22.196.0/22,162.159.128.0/21 }' "$WORK_DIR/discord.nft" ||
   fail "Discord-owned IPv4 ranges were not kept as ordinary subnets"
-grep -Fq 'discord_udp_ip_ports { 104.16.0.0/12 . 5000-5020' "$WORK_DIR/discord.nft" ||
+grep -Fq 'discord_udp_ip_ports { 104.16.0.0/12 . 443' "$WORK_DIR/discord.nft" ||
   fail "shared Cloudflare IPv4 range was not scoped to Discord voice ports"
-grep -Fq 'discord_udp_ip6_ports { 2606:4700::/32 . 5000-5020' "$WORK_DIR/discord.nft" ||
+grep -Fq 'discord_udp_ip6_ports { 2606:4700::/32 . 443' "$WORK_DIR/discord.nft" ||
   fail "shared Cloudflare IPv6 range was not scoped to Discord voice ports"
 if grep -Fq 'discord_subnets { 104.16.0.0/12' "$WORK_DIR/discord.nft"; then
   fail "104.16.0.0/12 leaked into the ordinary Discord subnet set"

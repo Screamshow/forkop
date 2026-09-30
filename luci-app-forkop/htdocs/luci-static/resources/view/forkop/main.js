@@ -11284,9 +11284,6 @@ function formatEndpoint(address, port) {
   if (!normalizedPort) {
     return normalizedAddress;
   }
-  if (normalizedPort === "443") {
-    return normalizedAddress;
-  }
   if (normalizedAddress.includes(":") && !normalizedAddress.startsWith("[")) {
     return `[${normalizedAddress}]:${normalizedPort}`;
   }

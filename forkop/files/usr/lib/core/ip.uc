@@ -169,7 +169,31 @@ function is_cloudflare_shared_cidr(value) {
     return false;
 }
 
-const DISCORD_VOICE_PORTS_NFT = "5000-5020,3478,19294-19344,50000-65535";
+// Discord voice compatibility, matching Tachyon's shared-Cloudflare policy.
+// https://github.com/Dushnilin/tachyon/blob/main/tachyon/files/usr/lib/core/ip.uc
+const DISCORD_VOICE_PORTS_NFT = "443,5000-5020,3478,19294-19344,50000-65535";
+const DISCORD_VOICE_PORT_RANGES = map(split(DISCORD_VOICE_PORTS_NFT, ","), function(port) {
+    return index(port, "-") >= 0 ? replace(port, "-", ":") : port + ":" + port;
+});
+const DEFAULT_DISCORD_VOICE_SUBNETS = [ "104.16.0.0/12", "162.158.0.0/15", "172.64.0.0/13", "2606:4700::/32" ];
+const DISCORD_DEDICATED_SUBNETS = [ "162.159.128.0/21" ];
+
+function community_subnet_rules(service, data) {
+    let regular = [];
+    let shared = [];
+    for (let line in split(as_string(data), "\n")) {
+        line = trim(replace(line, /\r/g, ""));
+        if (!valid_ip_or_cidr(line))
+            continue;
+        push(service == "discord" && is_cloudflare_shared_cidr(line) ? shared : regular, line);
+    }
+    let rules = [];
+    if (length(regular) > 0)
+        push(rules, { ip_cidr: regular });
+    if (length(shared) > 0)
+        push(rules, { network: "udp", ip_cidr: shared, port_range: DISCORD_VOICE_PORT_RANGES });
+    return rules;
+}
 
 return {
     ipv6_tproxy_enabled,
@@ -185,5 +209,9 @@ return {
     format_ipv6_tproxy_target,
     CLOUDFLARE_SHARED_CIDRS,
     is_cloudflare_shared_cidr,
-    DISCORD_VOICE_PORTS_NFT
+    DISCORD_VOICE_PORTS_NFT,
+    DISCORD_VOICE_PORT_RANGES,
+    DEFAULT_DISCORD_VOICE_SUBNETS,
+    DISCORD_DEDICATED_SUBNETS,
+    community_subnet_rules
 };

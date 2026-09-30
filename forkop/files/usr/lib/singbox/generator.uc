@@ -3107,6 +3107,32 @@ function add_combined_route_for_section(config, section) {
         push(rule_set_tags, ensured.tag);
         push(ensured.kind == "domains" ? dns_query_rule_set_tags : dns_response_rule_set_tags, ensured.tag);
     }
+    if (length(connections.community_lists(section)) > 0) {
+        let subnet_tag = section_name + "-community-subnets-lists-ruleset";
+        let subnet_path = runtime_ruleset_folder + "/" + subnet_tag + ".json";
+        let subnets = read_json_file(subnet_path);
+        if (type(subnets) == "object" && type(subnets.rules) == "array") {
+            if (length(subnets.rules) > 0) {
+                push(config.route.rule_set, { type: "local", tag: subnet_tag, format: "source", path: subnet_path });
+                push(rule_set_tags, subnet_tag);
+            }
+        }
+        else if (fs.stat(subnet_path) != null)
+            runtime_generate_unsupported("community subnet ruleset for '" + section_name + "' is invalid");
+        else if (index(connections.community_lists(section), "discord") >= 0) {
+            // Tachyon's cold-start fallback until downloaded subnets are
+            // materialized. Keep it local; never broaden shared ranges to TCP.
+            push(config.route.rule_set, {
+                type: "inline", tag: subnet_tag,
+                rules: [
+                    { ip_cidr: core_ip.DISCORD_DEDICATED_SUBNETS },
+                    { network: "udp", ip_cidr: core_ip.DEFAULT_DISCORD_VOICE_SUBNETS,
+                      port_range: core_ip.DISCORD_VOICE_PORT_RANGES }
+                ]
+            });
+            push(rule_set_tags, subnet_tag);
+        }
+    }
     for (let reference in connections.rule_sets(section)) {
         let ensured = ensure_custom_ruleset(config, as_string(reference));
         push(rule_set_tags, ensured.tag);

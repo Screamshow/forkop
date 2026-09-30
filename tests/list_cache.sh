@@ -386,18 +386,19 @@ legacy_bad_cmd list-cache-valid && fail "corrupt v1 cache was migrated"
 cat >"$WORK_DIR/bin/curl" <<'EOF_PROXY_CURL'
 #!/bin/sh
 proxy=0
+output=''
 while [ "$#" -gt 0 ]; do
   if [ "$1" = -x ] && [ "${2:-}" = 'http://127.0.0.1:18080' ]; then
     proxy=1
     shift
   elif [ "$1" = -o ]; then
-    [ "$proxy" = 1 ] || exit 1
-    printf 'proxied.example\n' >"$2"
-    exit 0
+    output="$2"
+    shift
   fi
   shift
 done
-exit 1
+[ "$proxy" = 1 ] && [ -n "$output" ] || exit 1
+printf 'proxied.example\n' >"$output"
 EOF_PROXY_CURL
 chmod +x "$WORK_DIR/bin/curl"
 PATH="$WORK_DIR/bin:$PATH" FORKOP_LIST_DOWNLOAD_MIN_FREE_BYTES=0 FORKOP_LIB="$FORKOP_LIB" \

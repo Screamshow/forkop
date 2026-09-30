@@ -3301,8 +3301,12 @@ function import_builtin_subnets_from_rule(section, settings) {
         return true;
     if (option(section, "action", "") == "dns")
         return true;
+    if (length(connections.community_lists(section)) == 0)
+        return true;
 
     let ok = true;
+    let materialized = { version: 3, rules: [] };
+    let materialized_path = TMP_RULESET_FOLDER + "/" + section_name(section) + "-community-subnets-lists-ruleset.json";
     for (let service in connections.community_lists(section)) {
         if (!singbox_rulesets_module().is_community(service))
             continue;
@@ -3324,6 +3328,9 @@ function import_builtin_subnets_from_rule(section, settings) {
                 remove_file(tmpfile);
                 continue;
             }
+
+            for (let rule in core_ip.community_subnet_rules(as_string(service), fs.readfile(tmpfile)))
+                push(materialized.rules, rule);
 
             if (!nft_module_success([
                 "nft-add-community-subnet-file-for-uci-section",
@@ -3347,6 +3354,10 @@ function import_builtin_subnets_from_rule(section, settings) {
         }
     }
 
+    // Publish the same downloaded subnet generation for sing-box. The list
+    // transaction snapshots/validates this managed file together with nft.
+    if (ok && !write_file(materialized_path, sprintf("%J\n", materialized)))
+        ok = false;
     return ok;
 }
 
