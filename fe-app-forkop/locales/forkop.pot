@@ -2944,5 +2944,5 @@ msgid "Cannot restart Forkop X"
 msgstr ""
 
 #: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts
-msgid "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again."
+msgid "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again."
 msgstr ""

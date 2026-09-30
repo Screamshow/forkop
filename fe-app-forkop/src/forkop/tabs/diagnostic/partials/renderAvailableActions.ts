@@ -62,7 +62,7 @@ export function renderAvailableActions({
             'div',
             { class: 'fkp_diagnostic_alert__description' },
             _(
-              'sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again.',
+              'Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again.',
             ),
           ),
         ]),

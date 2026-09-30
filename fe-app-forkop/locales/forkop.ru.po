@@ -2042,5 +2042,5 @@ msgstr "Резервная копия конфигурации будет сох
 msgid "Cannot restart Forkop X"
 msgstr "Не удаётся перезапустить Forkop X"
 
-msgid "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again."
-msgstr "Неясно, какие процессы sing-box принадлежат Forkop X. Трафик продолжает обрабатываться. Подождите и повторите попытку или остановите Forkop X, а затем запустите его снова."
+msgid "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again."
+msgstr "Обнаружено несколько процессов sing-box или их принадлежность неясна. Перезапуск недоступен. Маршрутизация не изменена. Чтобы завершить все процессы sing-box, нажмите «Остановить Forkop X», затем запустите Forkop X снова."

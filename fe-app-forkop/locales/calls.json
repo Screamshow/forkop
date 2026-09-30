@@ -4898,8 +4898,8 @@
     ]
   },
   {
-    "call": "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again.",
-    "key": "sing-box process ownership is unclear. Traffic is still running. Wait and retry, or stop Forkop X and then start it again.",
+    "call": "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again.",
+    "key": "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again.",
     "places": [
       "src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts"
     ]
