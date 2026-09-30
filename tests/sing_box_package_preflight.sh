@@ -12,6 +12,14 @@ version="${FORKOP_TEST_PACKAGE_VERSION:?missing package version}"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 run() { ucode -L "$lib" "$action" "$@"; }
 
+size_dir="$(mktemp -d)"
+trap 'rm -rf "$size_dir"' EXIT
+printf test >"$size_dir/present"
+: >"$size_dir/empty"
+[ "$(run sing-box-file-size-fixture "$size_dir/present")" = 4 ] || fail 'existing file size is wrong'
+[ "$(run sing-box-file-size-fixture "$size_dir/empty")" = 0 ] || fail 'empty file size is wrong'
+[ "$(run sing-box-file-size-fixture "$size_dir/missing")" = 0 ] || fail 'missing optional library invalidates backup size'
+
 info="$(run sing-box-package-info-fixture "$archive" "$name" "$version")" ||
   fail 'valid package metadata rejected'
 [ "$(printf '%s\n' "$info" | jsonfilter -e '@.name')" = "$name" ] ||

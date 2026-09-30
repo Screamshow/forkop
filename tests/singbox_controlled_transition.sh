@@ -60,6 +60,10 @@ export TEST_STOP_DELAY=0
 
 cat >"$WORK/bin/ubus" <<'SH'
 #!/bin/sh
+if [ "${3:-}" = delete ]; then
+  echo delete >>"$TEST_ACTION_LOG"
+  exit 1
+fi
 pid="$(cat "$TEST_PROCD_PID_FILE" 2>/dev/null || true)"
 case "$pid" in ''|*[!0-9]*) printf '{}\n' ;; *) printf '{"sing-box":{"instances":{"main":{"running":true,"pid":%s}}}}\n' "$pid" ;; esac
 SH
@@ -161,6 +165,18 @@ clear_processes() {
   managed_pid=""; extra_pid=""; new_pid=""
   : >"$TEST_SINGBOX_PIDS_FILE"; : >"$TEST_PROCD_PID_FILE"; : >"$TEST_ACTION_LOG"; : >"$TEST_LOG"
 }
+
+# Repeating Stop on an absent service succeeds, but a failed procd delete
+# must never signal a remaining runtime or report a completed Stop.
+state stop-all-sing-box-runtime 0 || fail "absent runtime stop failed"
+state stop-all-sing-box-runtime 0 || fail "repeated absent runtime stop failed"
+[ ! -s "$TEST_ACTION_LOG" ] || fail "absent runtime attempted service deletion"
+start_managed
+if state stop-all-sing-box-runtime 0; then
+  fail "failed service deletion with a live runtime was accepted"
+fi
+kill -0 "$managed_pid" || fail "failed service deletion signalled the runtime"
+clear_processes
 
 # An exited child may remain in procd briefly. Start must wait for that stale
 # PID to disappear, without signalling it or entering the caller's retry path.

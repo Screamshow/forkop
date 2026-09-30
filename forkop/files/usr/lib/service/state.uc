@@ -808,10 +808,12 @@ function signal_all_sing_box_processes(signal) {
 
 function stop_all_sing_box_and_wait(timeout) {
     timeout = int(timeout || 15);
+    if (sing_box_process_count() == 0 && sing_box_service_pid_runtime() <= 0)
+        return true;
     // Remove procd's respawn authority first. Calling the nested init script
     // here can deadlock against rc.common's service lock during Forkop Stop.
     if (!command_success_from_args([ "ubus", "call", "service", "delete", "{\"name\":\"sing-box\"}" ]))
-        return false;
+        return sing_box_process_count() == 0 && sing_box_service_pid_runtime() <= 0;
 
     for (let remaining = timeout; remaining >= 0; remaining--) {
         if (sing_box_process_count() == 0 && sing_box_service_pid_runtime() <= 0)

@@ -632,7 +632,8 @@ function available_kib(path) {
 }
 
 function file_bytes(path) {
-    return int(trim(command_output("wc -c <" + shell_quote(path))));
+    let stat = fs.stat(as_string(path));
+    return stat == null ? 0 : int(stat.size || 0);
 }
 
 function sing_box_space_error(overlay_kib, tmp_kib, target_bytes, previous_bytes, tmp_backup_bytes, recoverable_bytes) {
@@ -749,10 +750,12 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
     let previous_kib = previous == null ? 0 : int((previous.size + rollback_dependency_bytes + 1023) / 1024);
     let target_variant = target.name == "sing-box-extended" ? "extended" :
         target.name == "sing-box-tiny" ? "tiny" : "stable";
-    let previous_variant = previous == null ? "" :
+    let previous_variant = previous == null ?
+        (tmp_backup_bytes > 0 ? trim(module_output([ LIB_DIR + "/singbox/runtime.uc", "variant" ])) : "") :
         previous.name == "sing-box-extended" ? "extended" :
         previous.name == "sing-box-tiny" ? "tiny" : "stable";
-    let recoverable_bytes = sing_box_reclaimable_bytes(previous_variant, target_variant, previous);
+    let recoverable_bytes = sing_box_reclaimable_bytes(previous_variant, target_variant,
+        previous_variant == "extended-compressed" ? {} : previous);
     // Reserve 25% plus 8 MiB for extraction, metadata and filesystem
     // overhead. Check rollback separately rather than counting the old
     // package twice against already measured free space.
@@ -1242,13 +1245,14 @@ function capture_managed_upgrade_sing_box_marker() {
 
 function restart_forkop_after_successful_change() {
     if (!file_exists(SERVICE_INIT))
-        return;
+        return !forkop_was_running;
     if (!forkop_was_running) {
         updates_log("Forkop was not running before component change; restart skipped");
         prepare_sing_box_service_disabled();
-        return;
+        return true;
     }
-    run_logged("Restarting Forkop after successful component change", command_from_args([ SERVICE_INIT, "restart" ]));
+    let action = forkop_stopped_for_sing_box_change ? "start" : "restart";
+    return run_logged("Restarting Forkop after successful component change", command_from_args([ SERVICE_INIT, action ]));
 }
 
 function stop_forkop_before_sing_box_change() {
@@ -1687,6 +1691,10 @@ function restore_file_backup(target_path, backup_path) {
     return true;
 }
 
+function sing_box_variant_is_package_managed(variant) {
+    return variant == "stable" || variant == "tiny" || variant == "extended";
+}
+
 function restore_sing_box_service_from_marker(marker) {
     if (as_string(marker) == "extended-compressed")
         return install_managed_sing_box_service_script();
@@ -1854,10 +1862,6 @@ function restore_sing_box_package_variant(previous_variant) {
     return false;
 }
 
-function sing_box_variant_is_package_managed(variant) {
-    return variant == "stable" || variant == "tiny" || variant == "extended";
-}
-
 function restore_sing_box_install_backup(previous_variant, backup_binary, rollback_file) {
     if (sing_box_variant_is_package_managed(previous_variant)) {
         // The legacy compressed-archive action does not use this package
@@ -1892,15 +1896,16 @@ function restore_sing_box_after_failed_extended_install(previous_variant, backup
     if (as_string(archive_file) != "")
         remove_file(archive_file);
     let restore_status = true;
-    if (cronet_touched)
-        restore_file_backup("/usr/lib/libcronet.so", backup_cronet);
+    if (cronet_touched && !restore_file_backup("/usr/lib/libcronet.so", backup_cronet))
+        restore_status = false;
     if (!restore_sing_box_install_backup(previous_variant, backup_binary, rollback_file))
         restore_status = false;
     restore_sing_box_variant_state(previous_marker, previous_version_state);
-    restore_sing_box_service_from_marker(previous_marker);
+    if (!restore_sing_box_service_from_marker(previous_marker))
+        restore_status = false;
     clear_version_caches();
     if (restore_status)
-        restart_forkop_after_successful_change();
+        restore_status = restart_forkop_after_successful_change() && wait_forkop_running_after_sing_box_change();
     return restore_status;
 }
 
@@ -2056,8 +2061,7 @@ function install_sing_box_extended_package(action) {
     }
 
     write_sing_box_variant_state("extended", new_version);
-    restart_forkop_after_successful_change();
-    if (!wait_forkop_running_after_sing_box_change()) {
+    if (!restart_forkop_after_successful_change() || !wait_forkop_running_after_sing_box_change()) {
         updates_log("sing-box-extended package did not start cleanly; restoring previous sing-box variant", "error");
         if (file_exists(SERVICE_INIT))
             command_success_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", SERVICE_INIT, "stop" ]);
@@ -2254,8 +2258,7 @@ function install_sing_box_extended(action, compressed) {
     }
 
     write_sing_box_variant_state("extended-compressed", new_version);
-    restart_forkop_after_successful_change();
-    if (!wait_forkop_running_after_sing_box_change()) {
+    if (!restart_forkop_after_successful_change() || !wait_forkop_running_after_sing_box_change()) {
         updates_log(label + " did not start cleanly; restoring previous sing-box binary", "error");
         if (file_exists(SERVICE_INIT))
             command_success_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", SERVICE_INIT, "stop" ]);
@@ -2369,8 +2372,7 @@ function install_package_sing_box(action, tiny) {
         fail_package_sing_box_install(action, tiny, "package was installed, but the active binary is still sing-box-extended", new_version, latest_version,
             package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
     write_sing_box_variant_state(tiny ? "tiny" : "stable", new_version);
-    restart_forkop_after_successful_change();
-    if (!wait_forkop_running_after_sing_box_change())
+    if (!restart_forkop_after_successful_change() || !wait_forkop_running_after_sing_box_change())
         fail_package_sing_box_install(action, tiny, "was installed, but Forkop did not start cleanly", new_version, latest_version,
             package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
     remove_file(backup_binary);
@@ -3077,6 +3079,8 @@ else if (mode == "forkop-release-plan-fixture") {
         exit(1);
     write_json(release);
 }
+else if (mode == "sing-box-file-size-fixture")
+    print(file_bytes(ARGV[1]), "\n");
 else if (mode == "sing-box-package-info-fixture") {
     let info = staged_package_info(ARGV[1], ARGV[2], ARGV[3]);
     if (info == null)

@@ -23,6 +23,23 @@ reinstall receives no credit. `/tmp` is checked separately after staging,
 with 8 MiB reserved beyond any binary backup needed for the legacy
 compressed variant.
 
+Switching from the compressed variant also receives writable binary credit:
+its binary is moved to `/tmp` before the target package is installed. Missing
+optional libraries contribute zero bytes to the backup size.
+
+After a component transaction has stopped Forkop, recovery uses `start`
+instead of stopping it again through `restart`. An immediate start failure
+enters rollback without the normal health-check wait. Compressed rollback
+checks restoration of the service script and verifies that a previously
+running Forkop has recovered. Repeated Stop on an absent sing-box runtime is
+successful; a failed service deletion with a remaining process is an error.
+
+For integration validation on an existing VMware OpenWrt test VM with tiny
+running, execute `FORKOP_TEST_VM=1 sh tests/sing_box_component_transition_vm.sh`.
+It captures package/service state, checks repeated Stop, performs tiny to
+compressed and back, and injects one extended start failure to verify rollback.
+The test retains its logs in the printed `/tmp/forkop-transition-test.*` directory.
+
 Package-managed variants do not make a second full binary copy in `/overlay`.
 Their rollback uses the locally staged package archives and validates both
 the package-manager version and binary afterward. APK installation is
