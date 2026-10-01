@@ -919,14 +919,14 @@ function sing_box_component_action_running() {
 }
 
 function sing_box_package_installed_exact(package_name) {
-    let installed = command_output_from_args([ "apk", "list", "--installed", "--manifest" ]);
+    let installed = command_exists("apk") ? command_output_from_args([ "apk", "list", "--installed", "--manifest" ]) : "";
     for (let line in split(installed, "\n")) {
         let fields = split(trim(as_string(line)), /[ \t]+/);
         if (as_string(fields[0]) == as_string(package_name))
             return true;
     }
 
-    installed = command_output_from_args([ "opkg", "list-installed" ]);
+    installed = command_exists("opkg") ? command_output_from_args([ "opkg", "list-installed" ]) : "";
     for (let line in split(installed, "\n"))
         if (split(trim(as_string(line)), /[ \t]+/)[0] == as_string(package_name))
             return true;

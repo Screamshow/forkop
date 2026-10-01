@@ -918,6 +918,8 @@ function marker_is(expected) {
 }
 
 function apk_package_installed(package_name) {
+    if (!command_success_from_args([ "sh", "-c", "command -v apk" ]))
+        return false;
     let installed = command_output_from_args([ "apk", "list", "--installed", "--manifest" ]);
     for (let line in split(installed, "\n")) {
         let fields = split(trim(as_string(line)), /[ \t]+/);
@@ -932,7 +934,8 @@ function installed_sing_box_package_name() {
         if (apk_package_installed(package_name))
             return package_name;
 
-    let installed = command_output_from_args([ "opkg", "list-installed" ]);
+    let installed = command_success_from_args([ "sh", "-c", "command -v opkg" ]) ?
+        command_output_from_args([ "opkg", "list-installed" ]) : "";
     for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ]) {
         for (let line in split(installed, "\n"))
             if (split(trim(as_string(line)), /[ \t]+/)[0] == package_name)
