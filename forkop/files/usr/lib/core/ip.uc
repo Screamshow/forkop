@@ -175,8 +175,6 @@ const DISCORD_VOICE_PORTS_NFT = "443,5000-5020,3478,19294-19344,50000-65535";
 const DISCORD_VOICE_PORT_RANGES = map(split(DISCORD_VOICE_PORTS_NFT, ","), function(port) {
     return index(port, "-") >= 0 ? replace(port, "-", ":") : port + ":" + port;
 });
-const DEFAULT_DISCORD_VOICE_SUBNETS = [ "104.16.0.0/12", "162.158.0.0/15", "172.64.0.0/13", "2606:4700::/32" ];
-const DISCORD_DEDICATED_SUBNETS = [ "162.159.128.0/21" ];
 
 function community_subnet_rules(service, data) {
     let regular = [];
@@ -211,7 +209,5 @@ return {
     is_cloudflare_shared_cidr,
     DISCORD_VOICE_PORTS_NFT,
     DISCORD_VOICE_PORT_RANGES,
-    DEFAULT_DISCORD_VOICE_SUBNETS,
-    DISCORD_DEDICATED_SUBNETS,
     community_subnet_rules
 };

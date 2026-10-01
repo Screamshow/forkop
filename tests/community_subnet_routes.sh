@@ -37,17 +37,21 @@ for (let i,r in c.route.rule_set) if(r.type=="remote") c.route.rule_set[i]={type
 fs.writefile(ARGV[1],sprintf("%J",c));
 ' "$WORK_DIR/config.json" "$WORK_DIR/check.json"
 sing-box check -c "$WORK_DIR/check.json"
-# No materialized generation yet: Discord has Tachyon-compatible fallback.
+# Missing, empty and corrupt downloaded lists must fail instead of using
+# hardcoded Discord/Cloudflare ranges.
 rm "$WORK_DIR/config.json.rulesets/voice-community-subnets-lists-ruleset.json"
-ucode -L "$FORKOP_LIB" "$FORKOP_LIB/singbox/generator.uc" generate-config-fixture \
-  "$WORK_DIR/fixture.json" "$WORK_DIR/config.json" "127.0.0.1" "0" "1" "" "1.12.22"
-ucode -e '
-let c=json(require("fs").readfile(ARGV[0])); let found=false;
-for(let r in c.route.rule_set) if(r.tag=="voice-community-subnets-lists-ruleset") {
- if(r.type!="inline" || r.rules[1].network!="udp") die("fallback invalid\n"); found=true;
-}
-if(!found) die("Discord cold-start fallback absent\n");
-' "$WORK_DIR/config.json"
+for state in missing empty invalid; do
+  case "$state" in
+    empty) printf '{"version":3,"rules":[]}' > "$WORK_DIR/config.json.rulesets/voice-community-subnets-lists-ruleset.json" ;;
+    invalid) printf 'invalid' > "$WORK_DIR/config.json.rulesets/voice-community-subnets-lists-ruleset.json" ;;
+  esac
+  if ucode -L "$FORKOP_LIB" "$FORKOP_LIB/singbox/generator.uc" generate-config-fixture \
+    "$WORK_DIR/fixture.json" "$WORK_DIR/config.json" "127.0.0.1" "0" "1" "" "1.12.22" > "$WORK_DIR/error.log" 2>&1; then
+    echo "FAIL: $state Discord subnets accepted" >&2
+    exit 1
+  fi
+  grep -Eq 'subnet ruleset.*(missing|empty|invalid)' "$WORK_DIR/error.log"
+done
 printf 'Community subnet routing checks passed\n'
 
 # Rebuild from a checked cached source generation, without network or active
