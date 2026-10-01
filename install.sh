@@ -64,6 +64,11 @@ LEGACY_BACKEND_PACKAGE="${LEGACY_BRAND}-plus"
 LEGACY_CONFIG_PACKAGE_ALT="${LEGACY_BRAND}_plus"
 LEGACY_CONFIG_BACKUP=""
 LEGACY_CONFIG_PATH=""
+UPDATE_TRANSACTION_ACTIVE=0
+UPDATE_ROLLBACK_ATTEMPTED=0
+UPDATE_ROLLBACK_FAILED=0
+UPDATE_ROLLBACK_MANIFEST=""
+UPDATE_HAD_I18N=0
 
 command -v apk >/dev/null 2>&1 && PKG_IS_APK=1
 
@@ -77,7 +82,8 @@ warn() {
 
 fail() {
     rollback_legacy_config_on_failure
-    restore_current_forkop_on_failure
+    rollback_current_update
+    [ "$UPDATE_ROLLBACK_ATTEMPTED" -ne 0 ] || restore_current_forkop_on_failure
     printf '\033[31;1m%s\033[0m\n' "$1" >&2
     exit 1
 }
@@ -140,7 +146,12 @@ parse_args() {
 }
 
 cleanup() {
+    rollback_current_update
     rollback_package_mirror
+    if [ "$UPDATE_ROLLBACK_FAILED" -eq 1 ]; then
+        warn "Rollback files retained for recovery: $TMP_DIR"
+        return
+    fi
     [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR"
 }
 
@@ -1446,27 +1457,36 @@ function installer_post_install() {
 
     let config_ready = env("FORKOP_CONFIG_READY", "1") == "1";
 
-    if (config_ready && env("FORKOP_WAS_ENABLED", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
-        run_args([ INSTALLER_FORKOP_INIT, "enable" ]);
+    let updating = env("FORKOP_INSTALL_MODE", "") == "update";
+    if (config_ready && path_executable(INSTALLER_FORKOP_INIT) &&
+        (updating || env("FORKOP_WAS_ENABLED", "0") == "1") &&
+        !run_args([ INSTALLER_FORKOP_INIT, env("FORKOP_WAS_ENABLED", "0") == "1" ? "enable" : "disable" ]))
+        return false;
 
     if (config_ready && env("FORKOP_WAS_RUNNING", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT)) {
         if (!run_args([ INSTALLER_FORKOP_INIT, "start" ]) &&
-            !run_args([ INSTALLER_FORKOP_INIT, "restart" ]))
+            !run_args([ INSTALLER_FORKOP_INIT, "restart" ])) {
             warn("Failed to start Forkop after upgrade.\n");
+            return false;
+        }
     }
 
+    if (config_ready && updating && env("FORKOP_WAS_RUNNING", "0") != "1")
+        return installer_stop_old_forkop(INSTALLER_FORKOP_INIT);
     return true;
 }
 
 function installer_restore_previous_service() {
-    if (env("FORKOP_WAS_ENABLED", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
-        run_args([ INSTALLER_FORKOP_INIT, "enable" ]);
+    if (!path_executable(INSTALLER_FORKOP_INIT))
+        return false;
+    if (!run_args([ INSTALLER_FORKOP_INIT, env("FORKOP_WAS_ENABLED", "0") == "1" ? "enable" : "disable" ]))
+        return false;
 
     if (env("FORKOP_WAS_RUNNING", "0") == "1" && path_executable(INSTALLER_FORKOP_INIT))
         return run_args([ INSTALLER_FORKOP_INIT, "start" ]) ||
             run_args([ INSTALLER_FORKOP_INIT, "restart" ]);
 
-    return true;
+    return installer_stop_old_forkop(INSTALLER_FORKOP_INIT);
 }
 
 function list_has(values, needle) {
@@ -1685,6 +1705,22 @@ else if (mode == "release-asset-url")
     release_asset_url(ARGV[1], ARGV[2]);
 else if (mode == "release-asset-sha256")
     release_asset_sha256(ARGV[1], ARGV[2]);
+else if (mode == "release-catalog-entry") {
+    let catalog = read_stdin_json();
+    for (let release in catalog?.releases || [])
+        if (release.tag_name == ARGV[1] && release_version_valid(release.tag_name)) {
+            print(sprintf("%J", release));
+            exit(0);
+        }
+    exit(1);
+}
+else if (mode == "installer-capture-service") {
+    let enabled = installer_service_enabled_state(INSTALLER_FORKOP_INIT);
+    let running = installer_service_running_state(INSTALLER_FORKOP_INIT);
+    if (!enabled.known || !running.known) exit(1);
+    print("FORKOP_WAS_ENABLED=", enabled.value ? "1" : "0", "\n",
+        "FORKOP_WAS_RUNNING=", running.value ? "1" : "0", "\n");
+}
 else if (mode == "uci-get") {
     let value = uci_get(ARGV[1]);
     if (value != "")
@@ -1700,6 +1736,8 @@ else if (mode == "installer-post-install")
     exit(installer_post_install() ? 0 : 1);
 else if (mode == "installer-restore-previous-service")
     exit(installer_restore_previous_service() ? 0 : 1);
+else if (mode == "installer-stop-current")
+    exit(installer_stop_old_forkop(INSTALLER_FORKOP_INIT) ? 0 : 1);
 else if (mode == "managed-upgrade-sing-box-marker")
     managed_upgrade_sing_box_marker(ARGV[1]);
 else if (mode == "sing-box-exe-path-fixture")
@@ -1993,7 +2031,11 @@ pkg_install_name() {
 
 pkg_install_files() {
     if [ "$PKG_IS_APK" -eq 1 ]; then
-        apk add --allow-untrusted "$@" </dev/null
+        if [ -n "${FORKOP_INIT:-}" ]; then
+            apk --preserve-env add --allow-untrusted "$@" </dev/null
+        else
+            apk add --allow-untrusted "$@" </dev/null
+        fi
     else
         opkg install --force-overwrite --force-downgrade "$@" </dev/null
     fi
@@ -2126,6 +2168,14 @@ forkop_install_required_space_kb() {
     done
 
     [ "$archive_kb" -gt 0 ] || return 1
+    if [ -n "$UPDATE_ROLLBACK_MANIFEST" ] && [ -r "$UPDATE_ROLLBACK_MANIFEST" ]; then
+        rollback_archive_kb=0
+        while IFS="$(printf '\t')" read -r rollback_name rollback_version rollback_file; do
+            package_kb="$(file_size_kb "$rollback_file")" || return 1
+            rollback_archive_kb=$((rollback_archive_kb + package_kb))
+        done < "$UPDATE_ROLLBACK_MANIFEST"
+        [ "$archive_kb" -ge "$rollback_archive_kb" ] || archive_kb="$rollback_archive_kb"
+    fi
 
     missing_dependency_count=0
     for dependency in \
@@ -2302,6 +2352,143 @@ restore_current_forkop_on_failure() {
         warn "The previous Forkop service state was restored after the installation failure"
     else
         warn "Failed to restore the previous Forkop service state automatically"
+    fi
+}
+
+installed_forkop_package_version() {
+    ucode -L /usr/lib/forkop /usr/lib/forkop/core/packages.uc version "$1"
+}
+
+prepare_current_update_rollback() {
+    [ "$INSTALL_MODE" = "update" ] || return 0
+    rollback_catalog="$(http_get "$MIRROR_BASE_URL/forkop/updates/releases.json")" ||
+        fail "Cannot obtain exact previous Forkop packages for rollback"
+    mkdir -p "$TMP_DIR/rollback" || fail "Cannot prepare update rollback"
+    UPDATE_ROLLBACK_MANIFEST="$TMP_DIR/rollback/packages.tsv"
+    : > "$UPDATE_ROLLBACK_MANIFEST"
+    rollback_ext=ipk
+    [ "$PKG_IS_APK" -eq 0 ] || rollback_ext=apk
+    for rollback_name in luci-app-forkop luci-i18n-forkop-ru forkop; do
+        rollback_version="$(installed_forkop_package_version "$rollback_name")" ||
+            fail "Cannot determine installed $rollback_name version"
+        if [ -z "$rollback_version" ]; then
+            [ "$rollback_name" = luci-i18n-forkop-ru ] && continue
+            fail "Cannot cache missing $rollback_name for rollback"
+        fi
+        [ "$rollback_name" != luci-i18n-forkop-ru ] || UPDATE_HAD_I18N=1
+        rollback_tag="$(printf '%s' "$rollback_version" | sed 's/_rc\([0-9][0-9]*\)$/-canary.\1/')"
+        rollback_release="$(printf '%s' "$rollback_catalog" | install_json_ucode release-catalog-entry "$rollback_tag")" ||
+            fail "Previous $rollback_name release is not available for safe rollback"
+        case "$rollback_name" in
+            forkop) rollback_kind=backend ;;
+            luci-app-forkop) rollback_kind=app ;;
+            *) rollback_kind=i18n ;;
+        esac
+        rollback_url="$(printf '%s' "$rollback_release" | install_json_ucode release-asset-url "$rollback_kind" "$rollback_ext")"
+        rollback_hash="$(printf '%s' "$rollback_release" | install_json_ucode release-asset-sha256 "$rollback_kind" "$rollback_ext")"
+        [ -n "$rollback_url" ] && [ -n "$rollback_hash" ] || fail "Incomplete rollback metadata for $rollback_name"
+        rollback_file="$TMP_DIR/rollback/$rollback_name.$rollback_ext"
+        download_with_retry "$(mirror_asset_url "$rollback_url")" "$rollback_file" "$rollback_name rollback" ||
+            fail "Cannot download previous $rollback_name package"
+        verify_download_sha256 "$rollback_file" "$rollback_hash" "$rollback_name rollback"
+        printf '%s\t%s\t%s\n' "$rollback_name" "$rollback_version" "$rollback_file" >> "$UPDATE_ROLLBACK_MANIFEST"
+    done
+    cp "${FORKOP_INSTALLER_BACKUP_DIR:-/etc/forkop-backups}/configuration.tar.gz" "$TMP_DIR/rollback/configuration.tar.gz" ||
+        fail "Cannot preserve configuration for update rollback"
+    install_json_ucode installer-capture-service > "$TMP_DIR/rollback/service.env" ||
+        fail "Cannot capture service state for update rollback"
+    # shellcheck disable=SC1091
+    . "$TMP_DIR/rollback/service.env"
+    prepare_package_init_adapter || fail "Cannot prepare package lifecycle adapter"
+    msg "Previous Forkop packages, configuration and service state cached for rollback"
+}
+
+prepare_package_init_adapter() {
+    cat > "$TMP_DIR/package-init" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = stop ]; then
+    active=0
+    for exe in /proc/[0-9]*/exe; do
+        target="$(readlink "$exe" 2>/dev/null || true)"
+        case "$target" in /usr/bin/sing-box|'/usr/bin/sing-box (deleted)') active=1; break ;; esac
+    done
+    if [ "$active" = 0 ] &&
+        ! nft list table inet "${NFT_TABLE_NAME:-ForkopTable}" >/dev/null 2>&1 &&
+        ! uci -q show dhcp | grep -q '^dhcp\.forkop='; then
+        exit 0
+    fi
+fi
+exec /etc/init.d/forkop "$@"
+EOF
+    chmod 0700 "$TMP_DIR/package-init" || return 1
+    FORKOP_INIT="$TMP_DIR/package-init"
+    export FORKOP_INIT
+}
+
+rollback_current_update() {
+    [ "$UPDATE_TRANSACTION_ACTIVE" -eq 1 ] || return 0
+    [ "$UPDATE_ROLLBACK_ATTEMPTED" -eq 0 ] || return 0
+    UPDATE_ROLLBACK_ATTEMPTED=1
+    UPDATE_TRANSACTION_ACTIVE=0
+    # An interrupt during rollback must retain recovery files as well.
+    UPDATE_ROLLBACK_FAILED=1
+    warn "Restoring previous Forkop configuration and packages"
+    rollback_ok=1
+    # Stop through the existing ownership-aware installer adapter. Never signal
+    # arbitrary sing-box processes, and do not overwrite files if stop fails.
+    if ! install_json_ucode installer-stop-current; then
+        UPDATE_ROLLBACK_FAILED=1
+        return 0
+    fi
+    rollback_config_dir="${FORKOP_INSTALLER_CONFIG_DIR:-/etc/config}"
+    rollback_config_tmp="$(mktemp "$rollback_config_dir/.forkop-restore.XXXXXX")" || rollback_ok=0
+    if [ "$rollback_ok" -eq 1 ]; then
+        if ! tar -xOzf "$TMP_DIR/rollback/configuration.tar.gz" forkop > "$rollback_config_tmp" ||
+            ! chmod 0600 "$rollback_config_tmp" || ! mv -f "$rollback_config_tmp" "$rollback_config_dir/forkop"; then
+            rm -f "$rollback_config_tmp"
+            rollback_ok=0
+        fi
+    fi
+    # APK needs the complete matching package set in one transaction. No global
+    # world-file overwrite: unrelated package-manager changes are preserved.
+    if [ "$rollback_ok" -eq 1 ]; then
+        set --
+        while IFS="$(printf '\t')" read -r rollback_name rollback_version rollback_file; do
+            set -- "$@" "$rollback_file"
+        done < "$UPDATE_ROLLBACK_MANIFEST"
+        if [ "$PKG_IS_APK" -eq 1 ]; then
+            apk --preserve-env add --no-network --allow-untrusted --force-reinstall "$@" </dev/null || rollback_ok=0
+        else
+            opkg install --force-overwrite --force-reinstall --force-downgrade "$@" </dev/null || rollback_ok=0
+        fi
+        if [ "$UPDATE_HAD_I18N" -eq 0 ] && pkg_is_installed luci-i18n-forkop-ru; then
+            pkg_remove_name luci-i18n-forkop-ru || rollback_ok=0
+        fi
+        while IFS="$(printf '\t')" read -r rollback_name rollback_version rollback_file; do
+            [ "$(installed_forkop_package_version "$rollback_name")" = "$rollback_version" ] || rollback_ok=0
+        done < "$UPDATE_ROLLBACK_MANIFEST"
+    fi
+    # The old package's postinst may migrate options using the update's
+    # environment. Reapply the snapshot after all old packages are installed.
+    if [ "$rollback_ok" -eq 1 ]; then
+        rollback_config_tmp="$(mktemp "$rollback_config_dir/.forkop-restore.XXXXXX")" || rollback_ok=0
+        if [ "$rollback_ok" -eq 1 ] &&
+            { ! tar -xOzf "$TMP_DIR/rollback/configuration.tar.gz" forkop > "$rollback_config_tmp" ||
+              ! chmod 0600 "$rollback_config_tmp" || ! mv -f "$rollback_config_tmp" "$rollback_config_dir/forkop"; }; then
+            rm -f "$rollback_config_tmp"
+            rollback_ok=0
+        fi
+    fi
+    if [ "$rollback_ok" -eq 1 ]; then
+        FORKOP_WAS_ENABLED="$FORKOP_WAS_ENABLED" FORKOP_WAS_RUNNING="$FORKOP_WAS_RUNNING" \
+            install_json_ucode installer-restore-previous-service || rollback_ok=0
+    fi
+    if [ "$rollback_ok" -eq 0 ]; then
+        UPDATE_ROLLBACK_FAILED=1
+        warn "Forkop rollback incomplete; recovery files will be retained"
+    else
+        UPDATE_ROLLBACK_FAILED=0
+        warn "Previous Forkop configuration, packages and service state restored"
     fi
 }
 
@@ -2688,6 +2875,32 @@ prepare_legacy_config_backup() {
     msg "$(installer_text legacy_backup_ready): $LEGACY_CONFIG_BACKUP"
 }
 
+prepare_current_config_backup() {
+    [ "$INSTALL_MODE" = "update" ] || return 0
+    config_dir="${FORKOP_INSTALLER_CONFIG_DIR:-/etc/config}"
+    backup_dir="${FORKOP_INSTALLER_BACKUP_DIR:-/etc/forkop-backups}"
+    mkdir -p "$backup_dir" && chmod 0700 "$backup_dir" ||
+        fail "Failed to prepare Forkop configuration backup directory"
+    backup_tmp="$(mktemp "$backup_dir/.configuration.XXXXXX")" ||
+        fail "Failed to create Forkop configuration backup"
+    # Match LuCI's bounded, atomic backup policy. Keep the previous archive if
+    # creating or validating the replacement fails.
+    if ! tar -czf "$backup_tmp" -C "$config_dir" forkop ||
+        ! tar -tzf "$backup_tmp" >/dev/null || ! chmod 0600 "$backup_tmp" ||
+        ! mv -f "$backup_tmp" "$backup_dir/configuration.tar.gz"; then
+        rm -f "$backup_tmp"
+        fail "Failed to back up Forkop configuration"
+    fi
+    for old_backup in "$backup_dir"/before-*.tar.gz; do
+        [ -f "$old_backup" ] || continue
+        old_name="${old_backup##*/}"
+        if printf '%s\n' "$old_name" | grep -Eq '^before-[0-9]+\.[0-9]+\.[0-9]+(-canary\.[0-9]+)?-[0-9]+\.tar\.gz$'; then
+            rm -f "$old_backup" || fail "Failed to remove superseded Forkop configuration backup"
+        fi
+    done
+    msg "Forkop configuration backup: $backup_dir/configuration.tar.gz"
+}
+
 rollback_legacy_config_on_failure() {
     [ -n "$LEGACY_CONFIG_BACKUP" ] && [ -r "$LEGACY_CONFIG_BACKUP" ] || return 0
     if [ "$LEGACY_CLEANUP_STARTED" -eq 0 ]; then
@@ -2828,6 +3041,7 @@ install_ui_packages() {
 post_install() {
     FORKOP_WAS_ENABLED="$FORKOP_WAS_ENABLED" FORKOP_WAS_RUNNING="$FORKOP_WAS_RUNNING" \
     FORKOP_CONFIG_READY="$FORKOP_CONFIG_READY" \
+    FORKOP_INSTALL_MODE="$INSTALL_MODE" \
         install_json_ucode installer-post-install ||
         fail "Failed to complete Forkop post-install actions"
 }
@@ -2859,6 +3073,8 @@ main() {
     download_forkop_packages
 
     confirm_legacy_migration
+    prepare_current_config_backup
+    prepare_current_update_rollback
     ensure_flash_space
 
     if [ "$INSTALL_MODE" = "legacy" ]; then
@@ -2867,6 +3083,7 @@ main() {
         begin_legacy_migration
         migrate_legacy_configuration
     else
+        [ "$INSTALL_MODE" != "update" ] || UPDATE_TRANSACTION_ACTIVE=1
         cleanup_legacy_installation
         install_backend_package
     fi
@@ -2874,8 +3091,12 @@ main() {
     persist_release_channel
     install_selected_sing_box
     validate_installed_configuration
+    if [ "$INSTALL_MODE" = "update" ] && [ "$FORKOP_CONFIG_READY" -eq 0 ]; then
+        fail "Updated Forkop configuration failed validation: $FORKOP_CONFIG_VALIDATION_ERROR"
+    fi
     post_install
     remove_legacy_backup
+    UPDATE_TRANSACTION_ACTIVE=0
 
     msg "Forkop $FORKOP_PACKAGE_VERSION has been installed successfully"
     msg "Source mirror: ${MIRROR_BASE_URL} (${FORKOP_RELEASE_TAG})"

@@ -47,6 +47,11 @@ ops/deployed-nginx/
 !/tests/vm_support_report_http.sh
 !/tests/forkop_release_plan.sh
 !/tests/install_i18n_default.sh
+!/tests/installer_configuration_backup.sh
+!/tests/installer_update_rollback.sh
+!/tests/forkop_update_vm.sh
+!/tests/reality_xhttp.uc
+!/tests/reality_xhttp_vm.sh
 !/tests/dns_apply.sh
 !/tests/dns_rollback_transaction.sh
 !/tests/subscription_bootstrap_dns.sh

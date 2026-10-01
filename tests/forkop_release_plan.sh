@@ -106,6 +106,13 @@ for partial_i18n in "luci-i18n-forkop-ru_${VERSION}.ipk\t" '\t/i18n.ipk'; do
 done
 
 printf 'Forkop release plan checks passed (5 positive, 8 negative)\n'
+ext=ipk
+command -v apk >/dev/null 2>&1 && ext=apk
+resolved="$(make_release_json "$ext" 1 none |
+    env FORKOP_LIB="$TEST_LIB" FORKOP_MIRROR_BASE_URL="$MIRROR_URL" \
+    ucode -L /usr/lib/forkop "$ACTION_UC" forkop-resolve-release-fixture "$VERSION")" || fail 'full release resolution failed'
+[ "$(json_field "$resolved" backend_name)" = "forkop_$VERSION.$ext" ] || fail 'full release package name'
+[ "$(printf '%s' "$resolved" | jsonfilter -e '@.assets[0].name')" = "forkop_$VERSION.$ext" ] || fail 'full release assets lost'
 
 # Catalog parsing must reject incomplete, foreign, and malformed releases.
 for ext in ipk apk; do
@@ -151,4 +158,15 @@ rm "$backup_work/config/forkop"
 if run_backup; then fail 'accepted missing configuration'; fi
 [ "$(sha256sum "$backup_work/backups/configuration.tar.gz")" = "$before_failure" ] || fail 'failed backup damaged previous archive'
 [ "$(find "$backup_work/backups" -name '.configuration.*' | wc -l)" = 0 ] || fail 'temporary archive leaked'
+printf 'configuration changed by migration\n' > "$backup_work/config/forkop"
+ucode -L /usr/lib/forkop "$ACTION_UC" forkop-restore-backup-fixture \
+  "$backup_work/backups/configuration.tar.gz" "$backup_work/config" || fail 'configuration rollback failed'
+[ "$(cat "$backup_work/config/forkop")" = 'second configuration' ] || fail 'rollback retained migrated configuration'
+printf corrupt > "$backup_work/backups/corrupt.tar.gz"
+if ucode -L /usr/lib/forkop "$ACTION_UC" forkop-restore-backup-fixture \
+    "$backup_work/backups/corrupt.tar.gz" "$backup_work/config"; then
+  fail 'accepted corrupt rollback archive'
+fi
+[ "$(cat "$backup_work/config/forkop")" = 'second configuration' ] || fail 'failed restore damaged configuration'
+[ "$(find "$backup_work/config" -name '.forkop-restore.*' | wc -l)" = 0 ] || fail 'temporary restore leaked'
 printf 'Single configuration backup checks passed\n'

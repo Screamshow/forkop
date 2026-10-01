@@ -1,0 +1,16 @@
+#!/bin/sh
+# Older package hooks stop the service a second time during a managed update.
+# Accept the already stopped state only after checking the actual dataplane.
+if [ "${1:-}" = stop ]; then
+    active=0
+    for exe in /proc/[0-9]*/exe; do
+        target="$(readlink "$exe" 2>/dev/null || true)"
+        case "$target" in /usr/bin/sing-box|'/usr/bin/sing-box (deleted)') active=1; break ;; esac
+    done
+    if [ "$active" = 0 ] &&
+        ! nft list table inet "${NFT_TABLE_NAME:-ForkopTable}" >/dev/null 2>&1 &&
+        ! uci -q show dhcp | grep -q '^dhcp\.forkop='; then
+        exit 0
+    fi
+fi
+exec /etc/init.d/forkop "$@"

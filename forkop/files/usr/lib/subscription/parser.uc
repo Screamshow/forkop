@@ -126,6 +126,10 @@ function xhttp_copy_known_settings(target, source) {
         "sc_min_posts_interval_ms",
         "scStreamUpServerSecs",
         "sc_stream_up_server_secs",
+        "uplinkHttpMethod", "uplinkHTTPMethod", "uplink_http_method",
+        "sessionPlacement", "SessionIDPlacement", "sessionIDPlacement", "session_placement",
+        "sessionKey", "SessionIDKey", "sessionIDKey", "session_key",
+        "scMaxBufferedPosts", "sc_max_buffered_posts",
         "xmux"
     ]) {
         if (xhttp_value_present(source[key]))
@@ -160,9 +164,12 @@ function xhttp_extra_settings(query) {
 function xhttp_setting_value(query, extra_settings, camel_key, snake_key) {
     query = type(query) == "object" ? query : {};
     extra_settings = type(extra_settings) == "object" ? extra_settings : {};
-    for (let value in [query[camel_key], query[snake_key], extra_settings[camel_key], extra_settings[snake_key]]) {
-        if (xhttp_value_present(value))
-            return value;
+    let aliases = type(camel_key) == "array" ? camel_key : [camel_key];
+    push(aliases, snake_key);
+    for (let source in [query, extra_settings]) {
+        for (let key in aliases)
+            if (xhttp_value_present(source[key]))
+                return source[key];
     }
     return null;
 }
@@ -238,6 +245,24 @@ function xhttp_optional_bool(object, key, value) {
         object[key] = is_true(value);
 }
 
+function xhttp_apply_remnawave_settings(result, primary, extra) {
+    let method = uc(trim(as_string(xhttp_setting_value(primary, extra,
+        ["uplinkHttpMethod", "uplinkHTTPMethod"], "uplink_http_method"))));
+    if (method == "POST" || method == "GET")
+        result.uplink_http_method = method;
+    let placement = lc(trim(as_string(xhttp_setting_value(primary, extra,
+        ["sessionPlacement", "SessionIDPlacement", "sessionIDPlacement"], "session_placement"))));
+    if (placement == "path" || placement == "query" || placement == "header" || placement == "cookie")
+        result.session_placement = placement;
+    let key = xhttp_setting_value(primary, extra, ["sessionKey", "SessionIDKey", "sessionIDKey"], "session_key");
+    if (type(key) == "string" && key != "")
+        result.session_key = key;
+    let buffered = xhttp_non_negative_integer_value(xhttp_setting_value(primary, extra,
+        "scMaxBufferedPosts", "sc_max_buffered_posts"));
+    if (buffered != null)
+        result.sc_max_buffered_posts = buffered;
+}
+
 function xhttp_object_setting_value(source, camel_key, snake_key) {
     source = type(source) == "object" ? source : {};
     for (let value in [source[camel_key], source[snake_key]]) {
@@ -273,6 +298,19 @@ function xhttp_normalize_xmux(value) {
     xhttp_optional_xmux_integer(result, "h_keep_alive_period", xhttp_object_setting_value(source, "hKeepAlivePeriod", "h_keep_alive_period"));
 
     return length(keys(result)) > 0 ? result : null;
+}
+
+function xhttp_apply_query_settings(result, query) {
+    let extra = xhttp_extra_settings(query);
+    xhttp_optional_positive_range(result, "x_padding_bytes", xhttp_setting_value(query, extra, "xPaddingBytes", "x_padding_bytes"));
+    xhttp_optional_bool(result, "no_grpc_header", xhttp_setting_value(query, extra, "noGRPCHeader", "no_grpc_header"));
+    xhttp_optional_positive_range(result, "sc_max_each_post_bytes", xhttp_setting_value(query, extra, "scMaxEachPostBytes", "sc_max_each_post_bytes"));
+    xhttp_optional_range(result, "sc_min_posts_interval_ms", xhttp_setting_value(query, extra, "scMinPostsIntervalMs", "sc_min_posts_interval_ms"));
+    xhttp_optional_range(result, "sc_stream_up_server_secs", xhttp_setting_value(query, extra, "scStreamUpServerSecs", "sc_stream_up_server_secs"));
+    xhttp_apply_remnawave_settings(result, query, extra);
+    let xmux = xhttp_normalize_xmux(xhttp_setting_value(query, extra, "xmux", "xmux"));
+    if (xmux)
+        result.xmux = xmux;
 }
 
 function json_decode_text(text) {
@@ -618,6 +656,11 @@ function add_tls(url, security, default_tls) {
             tls.reality.public_key = public_key;
         if (short_id != "")
             tls.reality.short_id = short_id;
+        let preference = query.support_x25519mlkem768;
+        if (preference == null)
+            preference = query.supportX25519MLKEM768;
+        if (preference != null)
+            tls.reality.support_x25519mlkem768 = is_true(preference);
     }
 
     return [tls, true];
@@ -692,6 +735,7 @@ function add_transport(url) {
         xhttp_optional_positive_range(result, "sc_max_each_post_bytes", xhttp_setting_value(query, extra_settings, "scMaxEachPostBytes", "sc_max_each_post_bytes"));
         xhttp_optional_range(result, "sc_min_posts_interval_ms", xhttp_setting_value(query, extra_settings, "scMinPostsIntervalMs", "sc_min_posts_interval_ms"));
         xhttp_optional_range(result, "sc_stream_up_server_secs", xhttp_setting_value(query, extra_settings, "scStreamUpServerSecs", "sc_stream_up_server_secs"));
+        xhttp_apply_remnawave_settings(result, query, extra_settings);
         let xmux = xhttp_normalize_xmux(xhttp_setting_value(query, extra_settings, "xmux", "xmux"));
         if (xmux)
             result.xmux = xmux;
@@ -2186,11 +2230,7 @@ function xray_transport_from_stream(stream) {
             result.mode = "auto";
         if (as_string(settings.host || "") != "")
             result.host = as_string(settings.host);
-        xhttp_optional_positive_range(result, "x_padding_bytes", xhttp_setting_value(settings, settings, "xPaddingBytes", "x_padding_bytes"));
-        xhttp_optional_bool(result, "no_grpc_header", xhttp_setting_value(settings, settings, "noGRPCHeader", "no_grpc_header"));
-        xhttp_optional_positive_range(result, "sc_max_each_post_bytes", xhttp_setting_value(settings, settings, "scMaxEachPostBytes", "sc_max_each_post_bytes"));
-        xhttp_optional_range(result, "sc_min_posts_interval_ms", xhttp_setting_value(settings, settings, "scMinPostsIntervalMs", "sc_min_posts_interval_ms"));
-        xhttp_optional_range(result, "sc_stream_up_server_secs", xhttp_setting_value(settings, settings, "scStreamUpServerSecs", "sc_stream_up_server_secs"));
+        xhttp_apply_query_settings(result, settings);
         let xmux = xhttp_normalize_xmux(settings.xmux);
         if (xmux)
             result.xmux = xmux;
@@ -2675,11 +2715,71 @@ function normalize_sing_box_xhttp_transport(outbound) {
     if (outbound.transport.type != "xhttp")
         return outbound;
 
+    let source = {};
+    xhttp_copy_known_settings(source, outbound.transport);
+    for (let key in ["uplinkHttpMethod", "uplinkHTTPMethod", "uplink_http_method",
+        "sessionPlacement", "SessionIDPlacement", "sessionIDPlacement", "session_placement",
+        "sessionKey", "SessionIDKey", "sessionIDKey", "session_key",
+        "scMaxBufferedPosts", "sc_max_buffered_posts",
+        "sessionIDTable", "SessionIDTable", "sessionIDLength", "SessionIDLength"])
+        delete outbound.transport[key];
+    xhttp_apply_remnawave_settings(outbound.transport, source, {});
+
     outbound.transport.x_padding_bytes = xhttp_positive_range_or_default(outbound.transport.x_padding_bytes, "100-1000");
     let sc_max_each_post_bytes = xhttp_present_positive_range_or_default(outbound.transport.sc_max_each_post_bytes, 1000000);
     if (sc_max_each_post_bytes != null)
         outbound.transport.sc_max_each_post_bytes = sc_max_each_post_bytes;
     return outbound;
+}
+
+function repair_cached_outbounds(outbounds) {
+    for (let outbound in outbounds || []) {
+        if (type(outbound) != "object")
+            continue;
+        normalize_sing_box_xhttp_transport(outbound);
+        // Old URI imports kept the original link even when transport fields
+        // were dropped. Recover only missing fields for the same endpoint.
+        let parsed = parse_share_link(as_string(outbound.share_link));
+        if (type(parsed) != "object" || parsed.type != outbound.type ||
+            parsed.server != outbound.server || parsed.server_port != outbound.server_port ||
+            parsed.uuid != outbound.uuid || parsed.password != outbound.password)
+            continue;
+        if (type(outbound.transport) == "object" && outbound.transport.type == "xhttp" &&
+            type(parsed.transport) == "object" && parsed.transport.type == "xhttp") {
+            for (let key in ["uplink_http_method", "session_placement", "session_key", "sc_max_buffered_posts"])
+                if (!exists(outbound.transport, key) && exists(parsed.transport, key))
+                    outbound.transport[key] = parsed.transport[key];
+        }
+        if (type(outbound.tls) == "object" && type(outbound.tls.reality) == "object" &&
+            type(parsed.tls) == "object" && type(parsed.tls.reality) == "object" &&
+            !exists(outbound.tls.reality, "support_x25519mlkem768") &&
+            exists(parsed.tls.reality, "support_x25519mlkem768"))
+            outbound.tls.reality.support_x25519mlkem768 = parsed.tls.reality.support_x25519mlkem768;
+    }
+    return outbounds;
+}
+
+function repair_cached_subscription_file(path) {
+    let content = fs.readfile(path);
+    let subscription;
+    try { subscription = json(content); } catch (e) { return false; }
+    if (type(subscription) != "object" || type(subscription.outbounds) != "array")
+        return false;
+    let before = sprintf("%J", subscription);
+    repair_cached_outbounds(subscription.outbounds);
+    let after = sprintf("%J", subscription);
+    if (before == after)
+        return true;
+    let stamp = clock();
+    let temporary = sprintf("%s.%d.%d.repair", path, stamp[0], stamp[1]);
+    if (fs.writefile(temporary, after + "\n") == null)
+        return false;
+    let quoted = "'" + replace(temporary, /'/g, "'\\''") + "'";
+    if (system("chmod 600 " + quoted) != 0 || !fs.rename(temporary, path)) {
+        fs.unlink(temporary);
+        return false;
+    }
+    return true;
 }
 
 function normalize_sing_box_hysteria2_outbound(outbound) {
@@ -2995,7 +3095,10 @@ function module_exports() {
         normalized_skipped_message,
         try_decode_gzip_content_file,
         extract_ui_metadata_file,
-        runtime_outbounds_equal
+        runtime_outbounds_equal,
+        xhttp_apply_query_settings,
+        repair_cached_outbounds,
+        repair_cached_subscription_file
     };
 }
 

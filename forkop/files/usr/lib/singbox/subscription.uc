@@ -3,6 +3,7 @@
 let fs = require("fs");
 let common = require("core.common");
 let subscription_share_link = require("subscription.share_link");
+let subscription_parser = require("subscription.parser");
 
 let as_string = common.as_string;
 let read_json_file = common.read_json_file;
@@ -14,7 +15,7 @@ const TMP_SUBSCRIPTION_FOLDER = getenv("TMP_SUBSCRIPTION_FOLDER") || "/tmp/sing-
 const FORKOP_RUNTIME_STATE_DIR = getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop";
 const FORKOP_SECTION_CACHE_DIR = getenv("FORKOP_SECTION_CACHE_DIR") || FORKOP_RUNTIME_STATE_DIR + "/section-cache";
 const FORKOP_SUBSCRIPTION_METADATA_DIR = getenv("FORKOP_SUBSCRIPTION_METADATA_DIR") || FORKOP_RUNTIME_STATE_DIR + "/subscription-metadata";
-const FORKOP_RUNTIME_CACHE_FORMAT = int(getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "10");
+const FORKOP_RUNTIME_CACHE_FORMAT = int(getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "11");
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR") || "/etc/forkop/subscription-cache";
 
 let section_cache_dir = FORKOP_SECTION_CACHE_DIR;
@@ -374,7 +375,7 @@ function source_json_path(source_section) {
 
 function read_source_outbounds(source_section) {
     let subscription = object_or_empty(read_json_file(source_json_path(source_section)));
-    return array_or_empty(subscription.outbounds);
+    return subscription_parser.repair_cached_outbounds(array_or_empty(subscription.outbounds));
 }
 
 function new_section_state(section_name) {

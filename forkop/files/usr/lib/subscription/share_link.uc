@@ -85,7 +85,11 @@ function add_xhttp_extra_query(params, transport) {
         ["noGRPCHeader", "no_grpc_header"],
         ["scMaxEachPostBytes", "sc_max_each_post_bytes"],
         ["scMinPostsIntervalMs", "sc_min_posts_interval_ms"],
-        ["scStreamUpServerSecs", "sc_stream_up_server_secs"]
+        ["scStreamUpServerSecs", "sc_stream_up_server_secs"],
+        ["uplinkHTTPMethod", "uplink_http_method"],
+        ["sessionIDPlacement", "session_placement"],
+        ["sessionIDKey", "session_key"],
+        ["scMaxBufferedPosts", "sc_max_buffered_posts"]
     ]) {
         if (transport[item[1]] != null)
             extra[item[0]] = transport[item[1]];
@@ -125,6 +129,8 @@ function add_tls_query(params, outbound, trojan_default_tls) {
         add_query(params, "security", "reality");
         add_query(params, "pbk", reality.public_key);
         add_query(params, "sid", reality.short_id);
+        if (type(reality.support_x25519mlkem768) == "bool")
+            add_query(params, "support_x25519mlkem768", reality.support_x25519mlkem768 ? "true" : "false");
     }
     else {
         add_query(params, "security", "tls");

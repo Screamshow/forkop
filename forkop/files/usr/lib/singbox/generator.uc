@@ -17,6 +17,7 @@ let rule_config = require("config.rule");
 let connections = require("config.connections");
 let urltest_override = require("config.urltest_override");
 let subscription_share_link = require("subscription.share_link");
+let subscription_parser = require("subscription.parser");
 const IPV6_TPROXY_ENABLED = core_ip.ipv6_tproxy_enabled();
 let uci = null;
 let fixture_uci_data = null;
@@ -1809,6 +1810,11 @@ function apply_link_tls(outbound, scheme, query) {
             public_key: as_string(query.pbk || ""),
             short_id: as_string(query.sid || "")
         };
+        let preference = query.support_x25519mlkem768;
+        if (preference == null)
+            preference = query.supportX25519MLKEM768;
+        if (preference != null)
+            tls.reality.support_x25519mlkem768 = bool_query(preference);
     }
     outbound.tls = tls;
 }
@@ -1877,6 +1883,7 @@ function apply_link_transport(outbound, query) {
         result.sc_max_each_post_bytes = 1000000;
         result.sc_min_posts_interval_ms = 30;
         optional_query_string(result, "host", as_string(query.host || "") != "" ? query.host : query.sni);
+        subscription_parser.xhttp_apply_query_settings(result, query);
     }
     else {
         warn("unknown manual proxy link transport '", transport, "' ignored\n");
@@ -2132,7 +2139,9 @@ function manual_link_outbound(link, tag_name) {
     if (scheme == "vmess")
         return manual_vmess_outbound(link, tag_name);
 
-    link = url_strip_fragment_value(url_decode(link));
+    // Decode query values individually: decoding the whole URI turns an
+    // encoded '&' inside xHTTP extra/session keys into a query separator.
+    link = url_strip_fragment_value(scheme == "vless" || scheme == "trojan" ? link : url_decode(link));
     scheme = url_scheme(link);
     if (scheme == "socks4" || scheme == "socks4a" || scheme == "socks5")
         return manual_socks_outbound(link, tag_name);
@@ -3371,6 +3380,24 @@ function section_by_name(sections, name) {
     return null;
 }
 
+function apply_reality_key_share(config, version) {
+    // Match the Extended suffix, not the upstream sing-box core version.
+    let parts = match(as_string(version), /^v?[0-9]+[.][0-9]+[.][0-9]+-extended-([0-9]+)[.]([0-9]+)[.]([0-9]+)([+][A-Za-z0-9.-]+)?$/);
+    if (parts == null)
+        return;
+    let supported = int(parts[1]) > 2 || (int(parts[1]) == 2 &&
+        (int(parts[2]) > 7 || (int(parts[2]) == 7 && int(parts[3]) >= 2)));
+    if (!supported)
+        return;
+    for (let outbound in array_or_empty(config.outbounds)) {
+        let tls = type(outbound) == "object" ? outbound.tls : null;
+        let reality = type(tls) == "object" ? tls.reality : null;
+        if (type(reality) == "object" && reality.enabled === true && tls.enabled !== false &&
+            !exists(reality, "support_x25519mlkem768"))
+            reality.support_x25519mlkem768 = true;
+    }
+}
+
 function generate_config(output_path, service_address, mwan3_active, supports_xhttp, deferred_sections, sing_box_version) {
     runtime_supports_xhttp = supports_xhttp == null || as_string(supports_xhttp) == ""
         ? true
@@ -3410,6 +3437,7 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
         add_mixed_proxy_for_section(config, section, service_address);
 
     assert_unique_outbound_tags(config);
+    apply_reality_key_share(config, sing_box_version);
     strip_internal_fields(config);
     if (!write_json_file(output_path, config)) {
         warn("failed to write ", output_path, "\n");

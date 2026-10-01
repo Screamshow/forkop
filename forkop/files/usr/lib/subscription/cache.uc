@@ -21,7 +21,7 @@ const FORKOP_SUBSCRIPTION_METADATA_DIR = getenv("FORKOP_SUBSCRIPTION_METADATA_DI
 const FORKOP_OUTBOUND_METADATA_DIR = getenv("FORKOP_OUTBOUND_METADATA_DIR") || FORKOP_RUNTIME_STATE_DIR + "/outbound-metadata";
 const FORKOP_SECTION_CACHE_DIR = getenv("FORKOP_SECTION_CACHE_DIR") || FORKOP_RUNTIME_STATE_DIR + "/section-cache";
 const FORKOP_RUNTIME_CACHE_FORMAT_FILE = getenv("FORKOP_RUNTIME_CACHE_FORMAT_FILE") || FORKOP_RUNTIME_STATE_DIR + "/cache-format";
-const FORKOP_RUNTIME_CACHE_FORMAT = getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "10";
+const FORKOP_RUNTIME_CACHE_FORMAT = getenv("FORKOP_RUNTIME_CACHE_FORMAT") || "11";
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR") || "/etc/forkop/subscription-cache";
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE") || FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR + "/cache-format";
 const FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT = getenv("FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT") || "9";
@@ -636,8 +636,16 @@ function ensure_runtime_cache_format() {
 
     if (file_first_line_value(FORKOP_RUNTIME_CACHE_FORMAT_FILE) != FORKOP_RUNTIME_CACHE_FORMAT) {
         log_message("Runtime subscription cache format changed; clearing old subscription cache", "info");
-        if (file_first_line_value(FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE) == FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT)
+        if (file_first_line_value(FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT_FILE) == FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_FORMAT) {
+            for (let path in fs.glob(FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR + "/*.json")) {
+                let cached = read_json(path);
+                if (type(cached) != "object" || type(cached.outbounds) != "array")
+                    continue;
+                if (!subscription_parser().repair_cached_subscription_file(path))
+                    log_message("Cannot repair cached subscription " + path, "warn");
+            }
             subscription_share_link.populate_subscription_dir(FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR);
+        }
         clear_subscription_runtime_cache();
         ensure_runtime_dirs();
         write_file(FORKOP_RUNTIME_CACHE_FORMAT_FILE, FORKOP_RUNTIME_CACHE_FORMAT + "\n");
@@ -732,7 +740,7 @@ function restore_persistent_subscription_cache(source_section, tmp_dir, persiste
 
     let runtime_json = source_json_path(tmp_dir, source_section);
     if (subscription_cache_is_usable(runtime_json))
-        return true;
+        return subscription_parser().repair_cached_subscription_file(runtime_json);
 
     let persistent_json = source_json_path(persistent_dir, source_section);
     if (!subscription_cache_is_usable(persistent_json))
@@ -748,7 +756,8 @@ function restore_persistent_subscription_cache(source_section, tmp_dir, persiste
     if (!hwid_matches_config(expected_hwid, cached_hwid))
         return false;
 
-    return copy_file(persistent_json, runtime_json) &&
+    return subscription_parser().repair_cached_subscription_file(persistent_json) &&
+        copy_file(persistent_json, runtime_json) &&
         write_text(source_url_path(tmp_dir, source_section), cached_url) &&
         write_text(source_user_agent_path(tmp_dir, source_section), cached_user_agent) &&
         write_text(source_hwid_path(tmp_dir, source_section), cached_hwid);

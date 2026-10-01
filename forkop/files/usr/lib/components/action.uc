@@ -29,10 +29,14 @@ const TORRSERVER_DIRECT_UC = LIB_DIR + "/torrserver/direct.uc";
 let tmp_dir = "";
 let lock_held = false;
 let forkop_was_running = false;
+let forkop_was_enabled = false;
 let forkop_stopped_for_sing_box_change = false;
 let last_logged_output = "";
 let sing_box_target_dependency_files = [];
 let sing_box_rollback_dependency_files = [];
+let forkop_configuration_backup = "";
+let preserve_update_recovery_files = false;
+let forkop_package_init = "";
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -252,6 +256,8 @@ function helper_success_input(input, mode, args) {
 }
 
 function cleanup_tmp_dir() {
+    if (preserve_update_recovery_files)
+        return;
     if (tmp_dir != "") {
         command_success_from_args([ "rm", "-rf", tmp_dir ]);
         tmp_dir = "";
@@ -413,9 +419,12 @@ function pkg_install_name_downgrade(package_name, package_version) {
 
 function pkg_install_files_command(files) {
     let args = is_apk() ? [ "apk", "add", "--allow-untrusted" ] : [ "opkg", "install", "--force-overwrite", "--force-downgrade" ];
+    if (is_apk() && forkop_package_init != "")
+        args = [ "apk", "--preserve-env", "add", "--allow-untrusted" ];
     for (let file in files)
         push(args, file);
-    return command_from_args(args) + " </dev/null";
+    return (forkop_package_init != "" ? command_env({ FORKOP_INIT: forkop_package_init }) + " " : "") +
+        command_from_args(args) + " </dev/null";
 }
 
 function pkg_install_sing_box_files_command(files) {
@@ -2441,7 +2450,15 @@ function resolve_forkop_release(latest_version, selected) {
     let asset_ext = is_apk() ? "apk" : "ipk";
     let i18n_required = pkg_is_installed("luci-i18n-forkop-ru") ? "1" : "0";
     let plan = helper_output_input(release_json, "forkop-release-plan", [ latest_version, asset_ext, i18n_required ]);
-    return parse_forkop_release_plan(plan, latest_version, i18n_required);
+    let release = parse_forkop_release_plan(plan, latest_version, i18n_required);
+    if (release != null) {
+        try {
+            let assets = json(release_json).assets;
+            release.assets = type(assets) == "array" ? assets : [];
+        }
+        catch (e) { return null; }
+    }
+    return release;
 }
 
 function stage_forkop_release_archive(release, name, version) {
@@ -2533,37 +2550,113 @@ function forkop_package_preflight(backend_file, app_file, i18n_file, rollback_pa
 }
 
 function pkg_restore_file_command(path) {
-    return is_apk() ?
-        command_from_args([ "apk", "add", "--no-network", "--allow-untrusted", "--force-reinstall", path ]) + " </dev/null" :
-        command_from_args([ "opkg", "install", "--force-overwrite", "--force-reinstall", "--force-downgrade", path ]) + " </dev/null";
+    return (forkop_package_init != "" ? command_env({ FORKOP_INIT: forkop_package_init }) + " " : "") + (is_apk() ?
+        command_from_args([ "apk", "--preserve-env", "add", "--no-network", "--allow-untrusted", "--force-reinstall", path ]) + " </dev/null" :
+        command_from_args([ "opkg", "install", "--force-overwrite", "--force-reinstall", "--force-downgrade", path ]) + " </dev/null");
+}
+
+function forkop_package_init_adapter() {
+    let path = tmp_dir + "/package-init";
+    let source = fs.readfile("/usr/share/forkop/package-init");
+    if (source == null)
+        source = fs.readfile(getenv("FORKOP_PACKAGE_INIT_ADAPTER") || "");
+    if (source == null || !write_file(path, source) ||
+        !command_success_from_args([ "chmod", "700", path ]))
+        return "";
+    return path;
+}
+
+function restore_forkop_configuration_backup(backup, config_dir) {
+    if (backup == "")
+        return false;
+    let temporary = trim(command_output_from_args([ "mktemp", config_dir + "/.forkop-restore.XXXXXX" ]));
+    if (temporary == "")
+        return false;
+    if (!command_success(command_from_args([ "tar", "-xOzf", backup, "forkop" ]) +
+            " >" + shell_quote(temporary)) ||
+        !command_success_from_args([ "chmod", "600", temporary ]) ||
+        !fs.rename(temporary, config_dir + "/forkop")) {
+        remove_file(temporary);
+        return false;
+    }
+    return true;
+}
+
+function stop_forkop_for_package_restore() {
+    let script = forkop_package_init || SERVICE_INIT;
+    command_success_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", script, "stop" ]);
+    if (!wait_for_service_action_idle())
+        return false;
+    // Older init scripts can return an error after a successful asynchronous
+    // stop. The adapter confirms that the dataplane is actually absent.
+    return command_success_from_args([ "env", "FORKOP_INTERNAL_SERVICE_STOP=1", script, "stop" ]);
 }
 
 function restore_forkop_packages(staged) {
     let restored = true;
     // Keep the backend last, just as in the normal opkg upgrade. Its postinst
     // owns service restoration after the matching LuCI files are back in place.
-    for (let archive in staged) {
-        if (!run_logged("Restoring previous " + archive.name + " package",
-            pkg_restore_file_command(archive.path)))
-            restored = false;
+    if (is_apk()) {
+        let args = [ "apk", "--preserve-env", "add", "--no-network", "--allow-untrusted", "--force-reinstall" ];
+        for (let archive in staged)
+            push(args, archive.path);
+        restored = run_logged("Restoring previous Forkop package set",
+            command_env({ FORKOP_INIT: forkop_package_init }) + " " + command_from_args(args) + " </dev/null");
     }
-    for (let archive in staged)
-        if (installed_package_version(archive.name) != archive.version)
+    else {
+        for (let archive in staged) {
+            if (!run_logged("Restoring previous " + archive.name + " package",
+                pkg_restore_file_command(archive.path)))
+                restored = false;
+        }
+    }
+    for (let archive in staged) {
+        let actual = installed_package_version(archive.name);
+        if (actual != archive.version) {
+            updates_log("Restored " + archive.name + " version mismatch: expected " + archive.version + ", got " + actual, "error");
             restored = false;
+        }
+    }
+    if (restored) {
+        if (!stop_forkop_for_package_restore()) {
+            updates_log("Cannot confirm stopped Forkop after restoring previous packages", "error");
+            restored = false;
+        }
+        else if (!restore_forkop_configuration_backup(forkop_configuration_backup, "/etc/config")) {
+            updates_log("Cannot reapply configuration after previous package hooks", "error");
+            restored = false;
+        }
+    }
+    if (!command_success_from_args([ SERVICE_INIT, forkop_was_enabled ? "enable" : "disable" ])) {
+        updates_log("Cannot restore Forkop enabled state", "error");
+        restored = false;
+    }
     if (forkop_was_running && !wait_for_forkop_restore()) {
         if (file_exists(SERVICE_INIT))
             command_success_from_args([ SERVICE_INIT, "start" ]);
-        if (!wait_for_forkop_restore())
+        if (!wait_for_forkop_restore(true)) {
+            updates_log("Forkop did not become ready after package rollback", "error");
             restored = false;
+        }
     }
     return restored;
 }
 
 function fail_forkop_package_install(staged, failed_step, latest_version) {
+    // Restore the pre-migration configuration before the old backend's postinst
+    // validates it and tries to bring the service back.
+    if (!stop_forkop_for_package_restore() ||
+        !restore_forkop_configuration_backup(forkop_configuration_backup, "/etc/config")) {
+        preserve_update_recovery_files = true;
+        action_fail("forkop", "install", failed_step +
+            "; cannot safely restore configuration, recovery packages retained in " + tmp_dir,
+            FORKOP_VERSION, latest_version);
+    }
     let restored = restore_forkop_packages(staged);
+    preserve_update_recovery_files = !restored;
     action_fail("forkop", "install", failed_step + (restored ?
-        "; previous packages and service restored" :
-        "; rollback incomplete, inspect installed package versions and service state"),
+        "; previous configuration, packages and service restored" :
+        "; rollback incomplete, recovery packages retained in " + tmp_dir),
         FORKOP_VERSION, latest_version);
 }
 
@@ -2708,6 +2801,11 @@ function install_forkop(requested_version) {
 
     if (requested_version == "") write_forkop_latest_version_cache(latest_version, now_seconds());
     init_tmp_dir() || action_fail("forkop", "install", "Failed to create temporary directory", FORKOP_VERSION, latest_version);
+    let package_init = forkop_package_init_adapter();
+    if (package_init == "")
+        action_fail("forkop", "install", "Failed to prepare package lifecycle adapter", FORKOP_VERSION, latest_version);
+    // package.uc supports FORKOP_INIT in older releases as well.
+    forkop_package_init = package_init;
     updates_log("Resolving Forkop release " + latest_version + " packages");
     let release = resolve_forkop_release(latest_version, selected);
     if (release == null)
@@ -2721,21 +2819,17 @@ function install_forkop(requested_version) {
         (release.i18n_url != "" && !download_with_retry(release.i18n_url, i18n_file, release.i18n_name)))
         action_fail("forkop", "install", "Failed to download Forkop release packages", FORKOP_VERSION, latest_version);
 
-    if (selected != null) {
+    {
         for (let file in [ backend_file, app_file, i18n_file ]) {
             if (file == "") continue;
             let name = replace(file, /^.*\//, "");
             let expected = "";
-            for (let asset in selected.assets)
+            for (let asset in release.assets)
                 if (asset.name == name) expected = asset.sha256;
             let actual = split(trim(command_output_from_args([ "sha256sum", file ])), /[ \t]+/)[0];
             if (expected == "" || actual != expected)
                 action_fail("forkop", "install", "Release package checksum mismatch", FORKOP_VERSION, latest_version);
         }
-        let backup = save_forkop_configuration_backup("/etc/config", "/etc/forkop-backups");
-        if (backup == "")
-            action_fail("forkop", "install", "Failed to back up Forkop configuration", FORKOP_VERSION, latest_version);
-        updates_log("Forkop configuration backup: " + backup);
     }
 
     let rollback_packages = stage_forkop_rollback_packages();
@@ -2750,6 +2844,11 @@ function install_forkop(requested_version) {
     if (!wait_for_service_action_idle())
         action_fail("forkop", "install", "Timed out waiting for the current Forkop service action before upgrade", FORKOP_VERSION, latest_version);
     capture_forkop_running_state();
+    forkop_was_enabled = command_success_from_args([ SERVICE_INIT, "enabled" ]);
+    forkop_configuration_backup = save_forkop_configuration_backup("/etc/config", "/etc/forkop-backups");
+    if (forkop_configuration_backup == "")
+        action_fail("forkop", "install", "Failed to back up Forkop configuration", FORKOP_VERSION, latest_version);
+    updates_log("Forkop configuration backup: " + forkop_configuration_backup);
 
     // Capture before apk/opkg runs the currently installed package's prerm.
     // The new lifecycle will accept only this exact PID/starttime for a short
@@ -2816,6 +2915,9 @@ function install_forkop(requested_version) {
     // therefore sees a stopped service and normally has nothing to restore.
     // Start it directly instead of restarting a service that procd no longer
     // has registered.
+    if (!command_success_from_args([ SERVICE_INIT, forkop_was_enabled ? "enable" : "disable" ]) ||
+        (!forkop_was_running && !stop_forkop_for_package_restore()))
+        fail_forkop_package_install(rollback_packages, "Failed to restore Forkop service state", latest_version);
     if (forkop_was_running && wait_for_forkop_restore())
         updates_log("Forkop was restored by the package upgrade; final restart skipped");
     else {
@@ -3033,6 +3135,8 @@ else if (mode == "forkop-backup-fixture") {
     if (backup == "") exit(1);
     print(backup, "\n");
 }
+else if (mode == "forkop-restore-backup-fixture")
+    exit(restore_forkop_configuration_backup(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "forkop-release-catalog-fixture") {
     let input = fs.open("/dev/stdin", "r");
     let data = input ? input.read("all") : "";
@@ -3068,6 +3172,14 @@ else if (mode == "forkop-package-preflight-fixture") {
 }
 else if (mode == "forkop-releases")
     forkop_releases();
+else if (mode == "forkop-resolve-release-fixture") {
+    let input = fs.open("/dev/stdin", "r");
+    let release = resolve_forkop_release(ARGV[1], json(input.read("all")));
+    input.close();
+    if (release == null)
+        exit(1);
+    write_json(release);
+}
 else if (mode == "forkop-release-plan-fixture") {
     let input = fs.open("/dev/stdin", "r");
     let fixture_input = input ? input.read("all") : "";
