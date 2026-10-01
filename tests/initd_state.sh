@@ -108,6 +108,8 @@ if initd_ucode initd-should-queue-config-change-reload on_config_change on_confi
 fi
 
 pending_file="$WORK_DIR/reload.pending"
+ucode -L "$FORKOP_LIB" "$STATE_UC" run-pending-reload-if-requested "$WORK_DIR/missing.pending" /bin/false ||
+  fail "absent pending reload must succeed without calling an undefined helper"
 if FORKOP_PENDING_RELOAD_FILE="$pending_file" \
   initd_ucode reload-begin-fixture on_config_change 123 0 1 start >/dev/null 2>&1; then
   fail "queued config-change reload should not run immediately while service is starting"

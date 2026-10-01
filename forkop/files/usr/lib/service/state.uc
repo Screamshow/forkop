@@ -291,7 +291,7 @@ function run_pending_reload_if_requested(path, init_script) {
     if (package_upgrade_quiescing())
         return true;
 
-    if (!file_exists(path))
+    if (fs.stat(path) == null)
         return true;
 
     command_success_from_args([ "logger", "-t", "forkop", "[info] Applying pending Forkop reload" ]);
