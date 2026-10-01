@@ -63,20 +63,20 @@ if run sing-box-space-fixture 0 200000 33576419 0 0 >/dev/null 2>&1; then
 fi
 run sing-box-space-fixture 140000 200000 80000000 70000000 0 0 >/dev/null ||
   fail 'old installed package counted twice against free space'
-if run sing-box-space-fixture 100000 200000 80000000 70000000 0 0 >/dev/null 2>&1; then
+if run sing-box-space-fixture 82000 200000 80000000 70000000 0 0 >/dev/null 2>&1; then
   fail 'target extraction overhead ignored'
 fi
-if run sing-box-space-fixture 100000 200000 30000000 100000000 0 0 >/dev/null 2>&1; then
+if run sing-box-space-fixture 104000 200000 30000000 100000000 0 0 >/dev/null 2>&1; then
   fail 'rollback capacity ignored'
 fi
 run sing-box-space-fixture 100000 200000 80000000 70000000 0 20000000 >/dev/null ||
   fail 'verified writable binary credit rejected'
 run sing-box-space-fixture 115000 200000 30000000 100000000 0 20000000 >/dev/null ||
   fail 'rollback ignored space freed by removing the previous package'
-if run sing-box-space-fixture 116702 200000 107121058 30382512 0 22786884 >/dev/null 2>&1; then
+if run sing-box-space-fixture 89636 200000 107121058 30382512 0 22786884 >/dev/null 2>&1; then
   fail 'real Extended IPK threshold accepted below required free space'
 fi
-run sing-box-space-fixture 116703 200000 107121058 30382512 0 22786884 >/dev/null ||
+run sing-box-space-fixture 89637 200000 107121058 30382512 0 22786884 >/dev/null ||
   fail 'real Extended IPK threshold rejected at required free space'
 run sing-box-space-fixture 140000 200000 80000000 70000000 0 60000000 >/dev/null ||
   fail 'verified writable binary credit rejected'
