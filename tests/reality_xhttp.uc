@@ -44,7 +44,6 @@ function fields(outbound, key, buffered) {
     expect(t.session_key == key, "session key");
     expect(t.sc_max_buffered_posts == buffered, "buffered posts");
     expect(!exists(t, "SessionIDPlacement") && !exists(t, "sessionIDKey"), "canonical names only");
-    expect(!exists(t, "session_id_table") && !exists(t, "session_id_length"), "unmapped session ID fields");
 }
 function generate(link_values, json_values, version) {
     let output = work + "/generated" + number++ + ".json";
@@ -74,7 +73,7 @@ for (let aliases in [
     extra[aliases[1]] = "HEADER";
     extra[aliases[2]] = "X & session=key";
     extra.scMaxBufferedPosts = 17;
-    extra.sessionIDTable = "ignored";
+    extra.sessionIDTable = "Base62";
     extra.sessionIDLength = "12-20";
     let query = "";
     for (let k, v in extra) query += "&" + k + "=" + encode("" + v);
@@ -146,7 +145,7 @@ run(["env", "FORKOP_RUNTIME_STATE_DIR=" + runtime, "FORKOP_RUNTIME_CACHE_FORMAT_
     "FORKOP_SECTION_CACHE_DIR=" + runtime + "/sections", "FORKOP_SUBSCRIPTION_LINKS_DIR=" + runtime + "/links",
     "FORKOP_SUBSCRIPTION_METADATA_DIR=" + runtime + "/metadata", "FORKOP_OUTBOUND_METADATA_DIR=" + runtime + "/outbounds",
     "ucode", "-L", lib, lib + "/subscription/cache.uc", "ensure-runtime-cache-format"]);
-expect(fs.readfile(runtime + "/cache-format") == "11\n", "runtime cache format upgraded");
+expect(fs.readfile(runtime + "/cache-format") == "12\n", "runtime cache format upgraded");
 expect(fs.stat(persistent + "/" + source + ".json") != null, "offline persistent cache retained");
 
 // Generation must also recover an old runtime cache without a network refresh.
@@ -185,6 +184,55 @@ let off = normalize(base);
 off.tls.reality.enabled = false;
 let off_result = vless_outbound(generate([], [sprintf("%J",off)], "1.14.1-extended-2.7.2"));
 expect(!exists(off_result.tls.reality,"support_x25519mlkem768"), "disabled Reality excluded");
+// Full CDN profiles: import, generated config, export and cache recovery.
+for (let extra in [
+    {seqKey:"part_index",sessionKey:"token",seqPlacement:"cookie",sessionPlacement:"header",
+     uplinkHTTPMethod:"GET",uplinkDataPlacement:"header",uplinkDataKey:"X-Media-Data",
+     xPaddingBytes:"96-1040",xPaddingKey:"_t",xPaddingHeader:"X-Media-Token",
+     xPaddingMethod:"tokenish",xPaddingPlacement:"queryInHeader",xPaddingObfsMode:true,
+     sessionIDTable:"Base62",sessionIDLength:"16-32",uplinkChunkSize:0,scMaxEachPostBytes:32768},
+    {seqKey:"offset",sessionKey:"auth",seqPlacement:"query",sessionPlacement:"query",
+     uplinkHTTPMethod:"GET",uplinkDataPlacement:"body",uplinkChunkSize:"65536-65536",
+     xPaddingBytes:"100-1000",sessionIDLength:"16-32",scMaxBufferedPosts:100,
+     scMaxEachPostBytes:"65536-65536",scMinPostsIntervalMs:"60-75",scStreamUpServerSecs:"75-210"}
+]) {
+    let uri = base + "&extra=" + encode(sprintf("%J",extra));
+    let original = normalize(uri);
+    expect(original.transport.seq_key == extra.seqKey, "CDN sequence key");
+    expect(original.transport.seq_placement == extra.seqPlacement, "CDN sequence placement");
+    expect(original.transport.uplink_data_placement == extra.uplinkDataPlacement, "CDN data placement");
+    expect(original.transport.session_id_length == "16-32", "CDN session ID length");
+    expect(original.transport.uplink_chunk_size == extra.uplinkChunkSize, "CDN chunk size including zero");
+    if (extra.xPaddingObfsMode) {
+        expect(original.transport.x_padding_obfs_mode === true, "CDN padding obfuscation");
+        expect(original.transport.x_padding_method == "tokenish" && original.transport.x_padding_key == "_t" &&
+            original.transport.x_padding_header == "X-Media-Token", "CDN padding format");
+        expect(original.transport.uplink_data_key == "X-Media-Data" && original.transport.session_id_table == "Base62",
+            "CDN header and session alphabet");
+    }
+    let transport = sprintf("%J",original.transport);
+    delete original.share_link;
+    expect(sprintf("%J",normalize(links.serialize_outbound_link(original)).transport) == transport, "full CDN export round trip");
+    expect(sprintf("%J",vless_outbound(generate([uri],[],"1.14.1-extended-2.7.2")).transport) == transport,
+        "full CDN generated transport");
+    original.share_link = uri;
+    for (let k in ["seq_key","seq_placement","uplink_data_placement","uplink_data_key","uplink_chunk_size",
+        "x_padding_obfs_mode","x_padding_method","x_padding_key","x_padding_header","x_padding_placement",
+        "session_id_table","session_id_length"])
+        delete original.transport[k];
+    parser.repair_cached_outbounds([original]);
+    let expected_transport = json(transport);
+    expect(length(keys(original.transport)) == length(keys(expected_transport)), "CDN cache field count");
+    for (let k,v in expected_transport)
+        expect(sprintf("%J",original.transport[k]) == sprintf("%J",v), "CDN cache recovered " + k);
+    delete original.share_link;
+    delete original.remark;
+    if (binary) {
+        let path = work + "/cdn-check" + number++ + ".json";
+        write(path,{outbounds:[original]});
+        run([binary,"check","-c",path]);
+    }
+}
 // Check actual Extended decoding with minimal independent configs.
 if (binary) {
     for (let o in [last, repaired, xray]) {

@@ -89,7 +89,14 @@ function add_xhttp_extra_query(params, transport) {
         ["uplinkHTTPMethod", "uplink_http_method"],
         ["sessionIDPlacement", "session_placement"],
         ["sessionIDKey", "session_key"],
-        ["scMaxBufferedPosts", "sc_max_buffered_posts"]
+        ["scMaxBufferedPosts", "sc_max_buffered_posts"],
+        ["seqPlacement", "seq_placement"], ["seqKey", "seq_key"],
+        ["uplinkDataPlacement", "uplink_data_placement"], ["uplinkDataKey", "uplink_data_key"],
+        ["uplinkChunkSize", "uplink_chunk_size"],
+        ["xPaddingObfsMode", "x_padding_obfs_mode"], ["xPaddingKey", "x_padding_key"],
+        ["xPaddingHeader", "x_padding_header"], ["xPaddingPlacement", "x_padding_placement"],
+        ["xPaddingMethod", "x_padding_method"],
+        ["sessionIDTable", "session_id_table"], ["sessionIDLength", "session_id_length"]
     ]) {
         if (transport[item[1]] != null)
             extra[item[0]] = transport[item[1]];

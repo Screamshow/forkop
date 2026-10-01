@@ -39,14 +39,29 @@ function block(label) {
 }
 function write(name,value) {fs.writefile(root+"/"+name,sprintf("%J",value));}
 let uuid="00000000-0000-4000-8000-000000000001";
+let profile=getenv("FORKOP_XHTTP_PROFILE") || "v1";
+let extra_settings=profile=="v2" ? {
+    uplinkHTTPMethod:"GET",sessionPlacement:"query",sessionKey:"auth",seqPlacement:"query",seqKey:"offset",
+    uplinkDataPlacement:"body",uplinkChunkSize:"65536-65536",sessionIDLength:"16-32",
+    xPaddingBytes:"100-1000",scMaxBufferedPosts:9,scMaxEachPostBytes:65536,
+    scMinPostsIntervalMs:"60-75",scStreamUpServerSecs:"75-210"
+} : {
+    uplinkHTTPMethod:"GET",sessionPlacement:"header",sessionKey:"X-Probe-Session",
+    seqPlacement:"cookie",seqKey:"part_index",uplinkDataPlacement:"header",uplinkDataKey:"X-Media-Data",
+    xPaddingBytes:"96-1040",xPaddingObfsMode:true,xPaddingKey:"_t",xPaddingHeader:"X-Media-Token",
+    xPaddingPlacement:"queryInHeader",xPaddingMethod:"tokenish",sessionIDTable:"Base62",
+    sessionIDLength:"16-32",uplinkChunkSize:0,scMaxEachPostBytes:32768,scMaxBufferedPosts:9
+};
+extra_settings.sessionIDPlacement=extra_settings.sessionPlacement;
+extra_settings.sessionIDKey=extra_settings.sessionKey;
 write("destination.json",{log:{level:"debug"},inbounds:[{type:"http",listen:"127.0.0.1",listen_port:18443,
     tls:{enabled:true,certificate:[block("CERTIFICATE")],key:[block("PRIVATE KEY")]}}],outbounds:[{type:"direct"}]});
 write("server.json",{log:{loglevel:"debug"},inbounds:[{listen:"127.0.0.1",port:19443,protocol:"vless",
     settings:{clients:[{id:uuid}],decryption:"none"},streamSettings:{network:"xhttp",security:"reality",
         realitySettings:{show:true,target:"127.0.0.1:18443",serverNames:["example.test"],privateKey:private_key,shortIds:["0123456789abcdef"]},
-        xhttpSettings:{path:"/probe",mode:"packet-up",extra:{uplinkHTTPMethod:"GET",sessionIDPlacement:"header",
-            sessionIDKey:"X-Probe-Session",scMaxBufferedPosts:9}}}}],outbounds:[{protocol:"freedom",tag:"direct",settings:{finalRules:[{action:"allow",ip:["127.0.0.1"],port:18090}]}}]});
-let extra="%7B%22uplinkHTTPMethod%22%3A%22GET%22%2C%22SessionIDPlacement%22%3A%22header%22%2C%22SessionIDKey%22%3A%22X-Probe-Session%22%2C%22scMaxBufferedPosts%22%3A9%7D";
+        xhttpSettings:{path:"/probe",mode:"packet-up",extra:extra_settings}}}],outbounds:[{protocol:"freedom",tag:"direct",settings:{finalRules:[{action:"allow",ip:["127.0.0.1"],port:18090}]}}]});
+let extra="";let extra_json=sprintf("%J",extra_settings);
+for(let i=0;i<length(extra_json);i++)extra+=sprintf("%%%02X",ord(substr(extra_json,i,1)));
 let link="vless://"+uuid+"@127.0.0.1:19443?encryption=none&type=xhttp&mode=packet-up&security=reality&pbk="+
     public_key+"&sid=0123456789abcdef&sni=example.test&fp=chrome&path=%2Fprobe&extra="+extra;
 write("fixture.json",{settings:{".name":"settings",".type":"settings",dns_server:"1.1.1.1"},section:[{
@@ -60,7 +75,7 @@ let fs=require("fs");let root=ARGV[0];let c=json(fs.readfile(root+"/generated.js
 let outbound;
 for(let o in c.outbounds) if(o.type=="vless") outbound=o;
 if(outbound==null||outbound.tls.reality.support_x25519mlkem768!==true||outbound.transport.uplink_http_method!="GET"||
-    outbound.transport.session_placement!="header"||outbound.transport.session_key!="X-Probe-Session"||
+    outbound.transport.seq_key!=(getenv("FORKOP_XHTTP_PROFILE")=="v2"?"offset":"part_index")||
     outbound.transport.sc_max_buffered_posts!=9) die("generated fields missing");
 outbound.tag="proxy";
 fs.writefile(root+"/client.json",sprintf("%J",{log:{level:"debug"},inbounds:[{type:"socks",listen:"127.0.0.1",listen_port:19444}],
@@ -91,4 +106,4 @@ sha256sum /etc/config/forkop > "$LAB/config.after"
 /etc/init.d/forkop status > "$LAB/service.after"
 /etc/init.d/forkop enabled && echo 1 > "$LAB/enabled.after" || echo 0 > "$LAB/enabled.after"
 for state in packages config service enabled; do cmp "$LAB/$state.before" "$LAB/$state.after"; done
-echo 'Reality + xHTTP GET/header traffic passed; original VM state unchanged'
+echo "Reality + xHTTP CDN ${FORKOP_XHTTP_PROFILE:-v1} traffic passed; original VM state unchanged"

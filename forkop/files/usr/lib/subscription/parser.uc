@@ -130,6 +130,14 @@ function xhttp_copy_known_settings(target, source) {
         "sessionPlacement", "SessionIDPlacement", "sessionIDPlacement", "session_placement",
         "sessionKey", "SessionIDKey", "sessionIDKey", "session_key",
         "scMaxBufferedPosts", "sc_max_buffered_posts",
+        "seqPlacement", "seq_placement", "seqKey", "seq_key",
+        "uplinkDataPlacement", "uplink_data_placement", "uplinkDataKey", "uplink_data_key",
+        "uplinkChunkSize", "uplink_chunk_size",
+        "xPaddingObfsMode", "x_padding_obfs_mode", "xPaddingKey", "x_padding_key",
+        "xPaddingHeader", "x_padding_header", "xPaddingPlacement", "x_padding_placement",
+        "xPaddingMethod", "x_padding_method",
+        "sessionIDTable", "SessionIDTable", "session_id_table",
+        "sessionIDLength", "SessionIDLength", "session_id_length",
         "xmux"
     ]) {
         if (xhttp_value_present(source[key]))
@@ -261,6 +269,32 @@ function xhttp_apply_remnawave_settings(result, primary, extra) {
         "scMaxBufferedPosts", "sc_max_buffered_posts"));
     if (buffered != null)
         result.sc_max_buffered_posts = buffered;
+
+    for (let item in [
+        ["seqPlacement", "seq_placement", ["path", "query", "header", "cookie"]],
+        ["uplinkDataPlacement", "uplink_data_placement", ["auto", "body", "header", "cookie"]],
+        ["xPaddingPlacement", "x_padding_placement", ["queryInHeader", "query", "header", "cookie"]],
+        ["xPaddingMethod", "x_padding_method", ["repeat-x", "tokenish"]]
+    ]) {
+        let value = xhttp_setting_value(primary, extra, item[0], item[1]);
+        if (index(item[2], value) >= 0)
+            result[item[1]] = value;
+    }
+    for (let item in [
+        ["seqKey", "seq_key"], ["uplinkDataKey", "uplink_data_key"],
+        ["xPaddingKey", "x_padding_key"], ["xPaddingHeader", "x_padding_header"],
+        [["sessionIDTable", "SessionIDTable"], "session_id_table"]
+    ]) {
+        let value = xhttp_setting_value(primary, extra, item[0], item[1]);
+        if (type(value) == "string" && value != "")
+            result[item[1]] = value;
+    }
+    xhttp_optional_bool(result, "x_padding_obfs_mode",
+        xhttp_setting_value(primary, extra, "xPaddingObfsMode", "x_padding_obfs_mode"));
+    xhttp_optional_range(result, "uplink_chunk_size",
+        xhttp_setting_value(primary, extra, "uplinkChunkSize", "uplink_chunk_size"));
+    xhttp_optional_positive_range(result, "session_id_length",
+        xhttp_setting_value(primary, extra, ["sessionIDLength", "SessionIDLength"], "session_id_length"));
 }
 
 function xhttp_object_setting_value(source, camel_key, snake_key) {
@@ -2721,7 +2755,9 @@ function normalize_sing_box_xhttp_transport(outbound) {
         "sessionPlacement", "SessionIDPlacement", "sessionIDPlacement", "session_placement",
         "sessionKey", "SessionIDKey", "sessionIDKey", "session_key",
         "scMaxBufferedPosts", "sc_max_buffered_posts",
-        "sessionIDTable", "SessionIDTable", "sessionIDLength", "SessionIDLength"])
+        "sessionIDTable", "SessionIDTable", "sessionIDLength", "SessionIDLength",
+        "seqPlacement", "seqKey", "uplinkDataPlacement", "uplinkDataKey", "uplinkChunkSize",
+        "xPaddingObfsMode", "xPaddingKey", "xPaddingHeader", "xPaddingPlacement", "xPaddingMethod"])
         delete outbound.transport[key];
     xhttp_apply_remnawave_settings(outbound.transport, source, {});
 
@@ -2746,7 +2782,10 @@ function repair_cached_outbounds(outbounds) {
             continue;
         if (type(outbound.transport) == "object" && outbound.transport.type == "xhttp" &&
             type(parsed.transport) == "object" && parsed.transport.type == "xhttp") {
-            for (let key in ["uplink_http_method", "session_placement", "session_key", "sc_max_buffered_posts"])
+            for (let key in ["uplink_http_method", "session_placement", "session_key", "sc_max_buffered_posts",
+                "seq_placement", "seq_key", "uplink_data_placement", "uplink_data_key", "uplink_chunk_size",
+                "x_padding_obfs_mode", "x_padding_key", "x_padding_header", "x_padding_placement",
+                "x_padding_method", "session_id_table", "session_id_length"])
                 if (!exists(outbound.transport, key) && exists(parsed.transport, key))
                     outbound.transport[key] = parsed.transport[key];
         }
