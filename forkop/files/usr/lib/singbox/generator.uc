@@ -3209,14 +3209,22 @@ function add_combined_route_for_section(config, section) {
         let rule_set_rule = {
             action: target.action,
             inbound: tproxy_inbound_matcher(),
-            rule_set: single_or_array(rule_set_tags)
+            rule_set: null
         };
         if (target.outbound)
             rule_set_rule.outbound = target.outbound;
         if (length(source_ip_cidr) > 0)
             rule_set_rule.source_ip_cidr = source_ip_cidr;
         add_port_matchers(rule_set_rule, section);
-        push_section_route_rule(config, section, rule_set_rule);
+        // Separate equivalent alternatives so Clash connection metadata names
+        // the actual matching list instead of every list in the section.
+        for (let tag_name in rule_set_tags) {
+            let alternative = {};
+            for (let key, value in rule_set_rule)
+                alternative[key] = value;
+            alternative.rule_set = tag_name;
+            push_section_route_rule(config, section, alternative);
+        }
     }
 
     let rewrite_ttl = int_option(runtime_settings(), "dns_rewrite_ttl", "60");

@@ -11214,6 +11214,62 @@ function render3() {
   );
 }
 
+// src/forkop/tabs/monitoring/routeReason.ts
+function formatRouteReason(rule = "", payload = "", translate2 = (value) => value) {
+  const text = rule.trim();
+  if (!text) return translate2("Not available");
+  if (/^(?:final|match|default)$/i.test(text))
+    return translate2("Default route");
+  const tags = [...text.matchAll(/rule_set=(?:\[([^\]]*)\]|([^\s)]+))/g)].flatMap((match) => (match[1] || match[2]).split(/[\s,]+/)).filter(Boolean);
+  if (tags.length) {
+    const labels = [...new Set(tags)].map((tag) => {
+      const community = tag.match(/-(.+)-community-ruleset$/);
+      if (community) {
+        const services = [
+          "russia_inside",
+          "russia_outside",
+          "ukraine_inside",
+          "ads_hagezi_pro",
+          "google_play",
+          "google_ai",
+          "digitalocean",
+          "cloudflare",
+          "cloudfront",
+          "geoblock",
+          "telegram",
+          "discord",
+          "youtube",
+          "twitter",
+          "github",
+          "supercell",
+          "hetzner",
+          "roblox",
+          "hdrezka",
+          "tiktok",
+          "anime",
+          "hodca",
+          "meta",
+          "news",
+          "porn",
+          "block",
+          "ovh"
+        ];
+        const service = services.find(
+          (name) => tag.endsWith(`-${name}-community-ruleset`)
+        );
+        if (service)
+          return service === "google_ai" ? "Google AI" : service === "github" ? "GitHub" : service === "geoblock" ? "Geo Block" : service.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+      }
+      if (tag.endsWith("-community-subnets-lists-ruleset"))
+        return translate2("Built-in subnets");
+      return tag;
+    });
+    return labels.length === 1 ? labels[0] : `${translate2("One of")}: ${labels.join(", ")}`;
+  }
+  const conditions = text.replace(/\s*=>\s*.*$/, "").trim();
+  return payload ? `${conditions}: ${payload}` : conditions;
+}
+
 // src/forkop/tabs/monitoring/initController.ts
 function normalizeConnectionsPayload(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -11421,6 +11477,19 @@ function getRoute(connection) {
 function getNetwork(connection) {
   return normalizeString(connection.metadata?.network).toLowerCase() || "-";
 }
+function getRouteReason(connection) {
+  const labels = {
+    "Not available": _("Not available"),
+    "Default route": _("Default route"),
+    "Built-in subnets": _("Built-in subnets"),
+    "One of": _("One of")
+  };
+  return formatRouteReason(
+    connection.rule,
+    connection.rulePayload,
+    (value) => labels[value] || value
+  );
+}
 function sortConnections(connections, tab) {
   return [...connections].sort((a, b) => {
     if (tab === "closed") {
@@ -11444,6 +11513,7 @@ function getSearchValues(connection) {
     target.primary,
     getNetwork(connection),
     getRoute(connection),
+    getRouteReason(connection),
     formatConnectionDuration(connection),
     formatBytes2(connection.download),
     formatBytes2(connection.upload),
@@ -11726,7 +11796,11 @@ function renderConnectionRow(connection) {
         renderValue(getNetwork(connection), "fkp_monitoring-page__network")
       ]),
       renderTableCell(_("Route"), [
-        renderValue(getRoute(connection), "fkp_monitoring-page__route")
+        renderValue(getRoute(connection), "fkp_monitoring-page__route"),
+        renderValue(
+          getRouteReason(connection),
+          "fkp_monitoring-page__reason"
+        )
       ]),
       renderTableCell(_("Time"), [
         renderValue(formatConnectionDuration(connection))
@@ -12793,6 +12867,16 @@ var styles5 = `
     color: var(--text-color-medium);
     font-size: 12px;
     line-height: 1.25;
+}
+
+.fkp_monitoring-page__reason {
+    display: block;
+    margin-top: 4px;
+    max-width: 280px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: var(--text-color-medium, #bbb);
+    font-size: 11px;
 }
 
 .fkp_monitoring-page__route {

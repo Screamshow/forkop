@@ -1583,7 +1583,14 @@ for (let rule_set in lists.route.rule_set || [])
     if (rule_set.tag == "proxy-lists-ruleset")
         local_ruleset = rule_set;
 assert(local_ruleset && local_ruleset.type == "local" && local_ruleset.format == "source", "domain_ip_lists local ruleset");
-assert(route_rule(lists, r => contains(r.rule_set, "proxy-lists-ruleset") && length(as_array(r.rule_set)) >= 2) != null, "domain_ip_lists and rule_set_with_subnets route");
+assert(route_rule(lists, r => r.outbound == "proxy-out" && contains(r.rule_set, "proxy-lists-ruleset")) != null, "domain_ip_lists route");
+for (let rule_set in lists.route.rule_set || []) {
+    if (rule_set.path == dir + "/with-subnets.json")
+        assert(route_rule(lists, r => r.outbound == "proxy-out" && contains(r.rule_set, rule_set.tag)) != null, "rule_set_with_subnets has its own route");
+}
+for (let rule in lists.route.rules || [])
+    if (rule.rule_set != null)
+        assert(length(as_array(rule.rule_set)) == 1, "route identifies one matching list");
 assert(dns_rule(lists, r => contains(r.rule_set, "proxy-lists-ruleset")) != null, "domain_ip_lists fakeip DNS rule");
 
 let generated_list = json(fs.readfile(dir + "/domain-ip-rulesets.json.rulesets/proxy-lists-ruleset.json"));

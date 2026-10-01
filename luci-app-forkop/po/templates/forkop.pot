@@ -2946,3 +2946,15 @@ msgstr ""
 #: src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts
 msgid "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again."
 msgstr ""
+
+msgid "Not available"
+msgstr ""
+
+msgid "Default route"
+msgstr ""
+
+msgid "Built-in subnets"
+msgstr ""
+
+msgid "One of"
+msgstr ""

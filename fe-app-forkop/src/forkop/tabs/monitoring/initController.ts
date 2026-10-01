@@ -12,6 +12,7 @@ import { getOutboundTagBySection } from '../../runtimeTags';
 import { getClashApiSecret } from '../../methods/custom/getClashApiSecret';
 import { logger, socket, store, StoreType } from '../../services';
 import { Forkop } from '../../types';
+import { formatRouteReason } from './routeReason';
 import {
   getCachedRuntimeUiState,
   refreshRuntimeUiState,
@@ -340,6 +341,20 @@ function getNetwork(connection: MonitoredConnection): string {
   return normalizeString(connection.metadata?.network).toLowerCase() || '-';
 }
 
+function getRouteReason(connection: MonitoredConnection): string {
+  const labels: Record<string, string> = {
+    'Not available': _('Not available'),
+    'Default route': _('Default route'),
+    'Built-in subnets': _('Built-in subnets'),
+    'One of': _('One of'),
+  };
+  return formatRouteReason(
+    connection.rule,
+    connection.rulePayload,
+    (value) => labels[value] || value,
+  );
+}
+
 function sortConnections(
   connections: MonitoredConnection[],
   tab: MonitoringTabId,
@@ -375,6 +390,7 @@ function getSearchValues(connection: MonitoredConnection): string[] {
     target.primary,
     getNetwork(connection),
     getRoute(connection),
+    getRouteReason(connection),
     formatConnectionDuration(connection),
     formatBytes(connection.download),
     formatBytes(connection.upload),
@@ -729,6 +745,10 @@ function renderConnectionRow(connection: MonitoredConnection) {
       ]),
       renderTableCell(_('Route'), [
         renderValue(getRoute(connection), 'fkp_monitoring-page__route'),
+        renderValue(
+          getRouteReason(connection),
+          'fkp_monitoring-page__reason',
+        ),
       ]),
       renderTableCell(_('Time'), [
         renderValue(formatConnectionDuration(connection)),

@@ -420,6 +420,16 @@ export const styles = `
     line-height: 1.25;
 }
 
+.fkp_monitoring-page__reason {
+    display: block;
+    margin-top: 4px;
+    max-width: 280px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: var(--text-color-medium, #bbb);
+    font-size: 11px;
+}
+
 .fkp_monitoring-page__route {
     display: inline-block;
     width: auto;
