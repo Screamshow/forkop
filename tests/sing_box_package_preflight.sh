@@ -44,9 +44,9 @@ run sing-box-space-fixture 200000 200000 33576419 33576419 0 >/dev/null ||
   fail 'ample free space rejected'
 run sing-box-space-fixture 36568 200000 31138816 0 0 >/dev/null ||
   fail 'fresh Tiny install with reported router free space rejected'
-run sing-box-space-fixture 33977 200000 31138816 0 0 >/dev/null ||
+run sing-box-space-fixture 33369 200000 31138816 0 0 >/dev/null ||
   fail 'fresh install rejected at exact reserve threshold'
-if run sing-box-space-fixture 33976 200000 31138816 0 0 >/dev/null 2>&1; then
+if run sing-box-space-fixture 33368 200000 31138816 0 0 >/dev/null 2>&1; then
   fail 'fresh install accepted below reserve threshold'
 fi
 if run sing-box-space-fixture 1000 200000 33576419 0 0 >/dev/null 2>&1; then

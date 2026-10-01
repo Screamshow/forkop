@@ -654,10 +654,10 @@ function sing_box_space_error(overlay_kib, tmp_kib, target_bytes, previous_bytes
     // The old package is already reflected in df's available space. A
     // conflicting package is removed before installing the target, and a
     // failed target is removed before rollback. Budget for the larger step.
-    // Fresh installs have no previous component to restore. Keep 5% for
+    // Fresh installs have no previous component to restore. Keep 3% for
     // filesystem overhead and 2 MiB free, rather than the upgrade reserve.
     let fresh_install = previous_kib == 0 && tmp_backup_bytes == 0;
-    let install_need = target_kib + int(target_kib / (fresh_install ? 20 : 4)) +
+    let install_need = target_kib + (fresh_install ? int(target_kib * 3 / 100) : int(target_kib / 4)) +
         (fresh_install ? 2048 : 8192) - recoverable_kib;
     let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 4) + 8192 - recoverable_kib : 0;
     let overlay_need = install_need > rollback_need ? install_need : rollback_need;
@@ -769,7 +769,7 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
         previous.name == "sing-box-tiny" ? "tiny" : "stable";
     let recoverable_bytes = sing_box_reclaimable_bytes(previous_variant, target_variant,
         previous_variant == "extended-compressed" ? {} : previous);
-    // Fresh installs reserve 5% plus 2 MiB; component replacements keep
+    // Fresh installs reserve 3% plus 2 MiB; component replacements keep
     // the larger reserve and check rollback separately.
     let space_error = sing_box_space_error(overlay_kib, tmp_kib, target.size + target_dependency_bytes,
         previous == null ? 0 : previous.size + rollback_dependency_bytes, tmp_backup_bytes, recoverable_bytes);
@@ -779,7 +779,7 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
     if (recoverable_kib > target_kib)
         recoverable_kib = target_kib;
     let fresh_install = previous_kib == 0 && tmp_backup_bytes == 0;
-    let install_need = target_kib + int(target_kib / (fresh_install ? 20 : 4)) +
+    let install_need = target_kib + (fresh_install ? int(target_kib * 3 / 100) : int(target_kib / 4)) +
         (fresh_install ? 2048 : 8192) - recoverable_kib;
     let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 4) + 8192 - recoverable_kib : 0;
     let overlay_need = install_need > rollback_need ? install_need : rollback_need;
