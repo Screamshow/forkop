@@ -2044,3 +2044,12 @@ msgstr "Не удаётся перезапустить Forkop X"
 
 msgid "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again."
 msgstr "Обнаружено несколько процессов sing-box или их принадлежность неясна. Перезапуск недоступен. Маршрутизация не изменена. Чтобы завершить все процессы sing-box, нажмите «Остановить Forkop X», затем запустите Forkop X снова."
+
+msgid "Forkop X is applying changes. Please wait."
+msgstr "Forkop X применяет изменения. Пожалуйста, подождите."
+
+msgid "Restart temporarily unavailable"
+msgstr "Перезапуск временно недоступен"
+
+msgid "Could not confirm the sing-box process state. Check the logs before trying again."
+msgstr "Не удалось подтвердить состояние процесса sing-box. Посмотрите журнал перед повторной попыткой."

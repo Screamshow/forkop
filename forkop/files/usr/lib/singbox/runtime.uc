@@ -210,6 +210,17 @@ function sing_box_marker_is(value) {
     return file_first_line(SB_VARIANT_STATE_FILE) == as_string(value);
 }
 
+function sing_box_compressed_variant_active() {
+    if (!sing_box_marker_is("extended-compressed"))
+        return false;
+    // A manually installed package replaces the unpackaged compressed binary
+    // without updating Forkop's saved variant marker.
+    for (let name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ])
+        if (command_success_from_args([ "ucode", "-L", LIB_DIR, LIB_DIR + "/core/packages.uc", "installed", name ]))
+            return false;
+    return true;
+}
+
 function sing_box_version_state() {
     return file_first_line(SB_VERSION_STATE_FILE);
 }
@@ -251,7 +262,7 @@ function sing_box_restore_variant_marker(variant) {
 function sing_box_version() {
     if (!command_exists("sing-box"))
         return "";
-    if (sing_box_marker_is("extended-compressed"))
+    if (sing_box_compressed_variant_active())
         return sing_box_version_state();
     return first_line_last_field(sing_box_version_output());
 }
@@ -283,7 +294,7 @@ function sing_box_supports_tailscale(version, version_output) {
     version = as_string(version);
     version_output = as_string(version_output);
 
-    if (command_exists("sing-box") && sing_box_marker_is("extended-compressed"))
+    if (command_exists("sing-box") && sing_box_compressed_variant_active())
         return true;
     if (sing_box_is_extended(version))
         return true;
@@ -311,7 +322,7 @@ function sing_box_is_tiny(version, version_output) {
     version = as_string(version);
     version_output = as_string(version_output);
 
-    if (command_exists("sing-box") && sing_box_marker_is("extended-compressed"))
+    if (command_exists("sing-box") && sing_box_compressed_variant_active())
         return false;
     if (sing_box_is_extended(version != "" ? version : sing_box_version()))
         return false;
@@ -327,12 +338,12 @@ function sing_box_variant() {
 
     if (!command_exists("sing-box"))
         return "not-installed";
-    if (sing_box_marker_is("extended-compressed"))
+    if (sing_box_compressed_variant_active())
         return "extended-compressed";
 
     version = sing_box_version();
     if (sing_box_is_extended(version))
-        return sing_box_marker_is("extended-compressed") ? "extended-compressed" : "extended";
+        return "extended";
     if (sing_box_is_tiny(version, ""))
         return "tiny";
     return "stable";

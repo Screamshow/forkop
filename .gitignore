@@ -35,6 +35,9 @@ ops/deployed-nginx/
 !/tests/ruleset_cache.sh
 !/tests/singbox_single_process.sh
 !/tests/sing_box_runtime.sh
+!/tests/sing_box_manual_version.sh
+!/tests/release_queue_vm.sh
+!/tests/release_update_vm.sh
 !/tests/list_update_final_reload.sh
 !/tests/sing_box_dns114.sh
 !/tests/log_hygiene.sh

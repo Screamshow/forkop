@@ -2958,3 +2958,12 @@ msgstr ""
 
 msgid "One of"
 msgstr ""
+
+msgid "Forkop X is applying changes. Please wait."
+msgstr ""
+
+msgid "Restart temporarily unavailable"
+msgstr ""
+
+msgid "Could not confirm the sing-box process state. Check the logs before trying again."
+msgstr ""

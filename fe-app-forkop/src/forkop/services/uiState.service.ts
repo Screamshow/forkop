@@ -4,6 +4,10 @@ import type { Forkop } from '../types';
 import { getLocalActionOverlay } from './localActionOverlay.service';
 import { store } from './store.service';
 import type { StoreType } from './store.service';
+import { observeRestartConflict } from '../helpers/restartConflict';
+import type { RestartConflictObservation } from '../helpers/restartConflict';
+
+let restartConflictObservation: RestartConflictObservation | undefined;
 
 type UiActionMap = Partial<Forkop.UiState['actions']>;
 
@@ -74,6 +78,23 @@ function normalizeLatencyProgress(
 }
 
 function applyServiceState(uiState: Forkop.UiState) {
+  const localActions = getLocalActionOverlay();
+  const transitioning =
+    ['starting', 'stopping', 'restarting', 'reloading'].includes(
+      uiState.service.forkop.status,
+    ) ||
+    [
+      ...(uiState.actions.service || []),
+      ...(uiState.actions.component || []),
+    ].some(isRunningAction) ||
+    localActions.serviceActions.size > 0 ||
+    localActions.componentActions.size > 0;
+  restartConflictObservation = observeRestartConflict(
+    restartConflictObservation,
+    Boolean(uiState.service.forkop.restart_blocked),
+    transitioning,
+    Date.now(),
+  );
   const currentSystemInfo = store.get().diagnosticsSystemInfo;
   const nextSystemInfo = {
     ...currentSystemInfo,
@@ -99,6 +120,8 @@ function applyServiceState(uiState: Forkop.UiState) {
           uiState.service.forkop.stop_available ??
           uiState.service.forkop.running,
         restartBlocked: uiState.service.forkop.restart_blocked ?? 0,
+        restartConflictConfirmed:
+          restartConflictObservation?.confirmed ?? false,
         forkopEnabled: uiState.service.forkop.enabled,
         forkopStatus: uiState.service.forkop.status,
       },

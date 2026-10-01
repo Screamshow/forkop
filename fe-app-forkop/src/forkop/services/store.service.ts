@@ -161,6 +161,7 @@ export interface StoreType {
       forkopRunning: number;
       stopAvailable: number;
       restartBlocked: number;
+      restartConflictConfirmed?: boolean;
       forkopEnabled: number;
       forkopStatus: string;
     };

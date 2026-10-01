@@ -2056,3 +2056,12 @@ msgstr "Встроенные подсети"
 
 msgid "One of"
 msgstr "Один из"
+
+msgid "Forkop X is applying changes. Please wait."
+msgstr "Forkop X применяет изменения. Пожалуйста, подождите."
+
+msgid "Restart temporarily unavailable"
+msgstr "Перезапуск временно недоступен"
+
+msgid "Could not confirm the sing-box process state. Check the logs before trying again."
+msgstr "Не удалось подтвердить состояние процесса sing-box. Посмотрите журнал перед повторной попыткой."

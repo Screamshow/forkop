@@ -942,13 +942,15 @@ function sing_box_installed_package_name() {
     return "";
 }
 
-function sing_box_regular_package_installed() {
-    return sing_box_package_installed_exact("sing-box");
+function sing_box_compressed_binary() {
+    // Managed compressed installs remove all sing-box packages. A package
+    // installed manually supersedes the old variant marker.
+    return sing_box_marker_is("extended-compressed") && sing_box_installed_package_name() == "";
 }
 
 function sing_box_live_probe_disabled() {
-    return !sing_box_regular_package_installed() && (sing_box_marker_is("extended") ||
-        sing_box_marker_is("extended-compressed") || sing_box_component_action_running());
+    // Never launch a binary while a component transaction may replace it.
+    return sing_box_component_action_running() || sing_box_compressed_binary();
 }
 
 function sing_box_tiny_package_installed() {
@@ -960,14 +962,14 @@ function sing_box_capability_flags(sing_box_version, sing_box_version_output) {
     let tiny = 0;
     let tailscale = 0;
     let package_name = sing_box_installed_package_name();
-    let regular_installed = package_name == "sing-box";
+    let unpackaged = package_name == "";
 
-    if (package_name == "sing-box-extended" || (!regular_installed && (sing_box_marker_is("extended") ||
+    if (package_name == "sing-box-extended" || (unpackaged && (sing_box_marker_is("extended") ||
         sing_box_marker_is("extended-compressed"))) ||
         module_success(SINGBOX_RUNTIME_UC, [ "is-extended", sing_box_version ]))
         extended = 1;
 
-    if (package_name == "sing-box-tiny" || (!regular_installed && extended == 0 &&
+    if (package_name == "sing-box-tiny" || (unpackaged && extended == 0 &&
         (sing_box_marker_is("tiny") || sing_box_tiny_package_installed())))
         tiny = 1;
 
@@ -1030,7 +1032,7 @@ function build_system_info() {
     }
 
     let flags = sing_box_capability_flags(sing_box_version, sing_box_version_output);
-    let sing_box_compressed = flags.extended == 1 && sing_box_marker_is("extended-compressed") ? 1 : 0;
+    let sing_box_compressed = flags.extended == 1 && sing_box_compressed_binary() ? 1 : 0;
 
     let zapret_installed = provider_installed(ZAPRET_RUNTIME_UC) ? 1 : 0;
     let zapret_version = zapret_installed ? provider_version(ZAPRET_RUNTIME_UC) : "not installed";

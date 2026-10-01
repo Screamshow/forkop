@@ -74,6 +74,9 @@ fi
 if /usr/bin/forkop reload on_config_change >/dev/null 2>&1; then
   fail "lifecycle accepted reload while sing-box ownership was ambiguous"
 fi
+if /usr/bin/forkop restart >/dev/null 2>&1; then
+  fail "lifecycle accepted restart while sing-box ownership was ambiguous"
+fi
 [ "$(table_policy_hash)" = "$table_hash" ] ||
   fail "ambiguous sing-box ownership tore down the active nft policy"
 [ "$(state sing-box-service-runtime-pid)" = "$expected_pid" ] ||

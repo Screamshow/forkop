@@ -291,14 +291,13 @@ function run_pending_reload_if_requested(path, init_script) {
     if (package_upgrade_quiescing())
         return true;
 
-    if (!consume_pending_reload(path))
+    if (!file_exists(path))
         return true;
 
     command_success_from_args([ "logger", "-t", "forkop", "[info] Applying pending Forkop reload" ]);
-    // Do not acknowledge the durable request before its replacement owns the
-    // reload handoff. A detached init.d invocation leaves a window in which a
-    // latency worker can take reload.lock again while the marker is gone.
-    if (system(shell_quote(init_script) + " reload pending </dev/null >/dev/null 2>&1 1000>&-") != 0) {
+    // A caller may still hold the rc.common procd lock. Return before the
+    // replacement claims that lock, retaining the marker until it owns reload.
+    if (system(shell_quote(init_script) + " reload pending </dev/null >/dev/null 2>&1 1000>&- &") != 0) {
         mark_pending_reload(path, "pending_handoff_failed");
         command_success_from_args([ "logger", "-t", "forkop", "[warn] Pending Forkop reload handoff failed; request was retained" ]);
         return false;

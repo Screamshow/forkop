@@ -320,14 +320,14 @@ function run_pending_reload_if_requested(path, init_script) {
     path = as_string(path || PENDING_RELOAD_FILE);
     init_script = as_string(init_script || SERVICE_INIT);
 
-    if (!consume_pending_reload(path))
+    if (!file_exists(path))
         return true;
 
     command_success_from_args([ "logger", "-t", SERVICE_NAME, "[info] Applying pending Forkop reload" ]);
-    // Wait for the nested init.d reload to claim and finish the handoff.
-    // Detaching here would consume reload.pending before that process owns
-    // reload.lock, allowing another worker to win the gap.
-    if (system(shell_quote(init_script) + " reload pending </dev/null >/dev/null 2>&1 1000>&-") != 0) {
+    // rc.common still owns procd_forkop.lock until this invocation returns.
+    // Waiting for another init.d reload here deadlocks on that same lock.
+    // Keep the marker until the detached reload acquires the runtime lock.
+    if (system(shell_quote(init_script) + " reload pending </dev/null >/dev/null 2>&1 1000>&- &") != 0) {
         mark_pending_reload(path, "pending_handoff_failed");
         command_success_from_args([ "logger", "-t", SERVICE_NAME, "[warn] Pending Forkop reload handoff failed; request was retained" ]);
         return false;

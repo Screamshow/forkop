@@ -851,7 +851,13 @@ function renderDiagnosticAvailableActionsWidget() {
   const container = document.getElementById('fkp_diagnostic-page-actions');
 
   const renderedActions = renderAvailableActions({
-    restartBlocked,
+    restartBlocked:
+      restartBlocked &&
+      Boolean(servicesInfoWidget.data.restartConflictConfirmed) &&
+      !atLeastOneMutatingActionLoading &&
+      !componentActionLoading,
+    transitioning:
+      restartLoading || startLoading || stopLoading || componentActionLoading,
     restart: {
       loading: restartLoading,
       visible: shouldShowRestartAction({

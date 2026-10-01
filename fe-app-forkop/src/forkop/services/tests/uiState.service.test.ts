@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyUiStateToStore } from '../uiState.service';
 import { store } from '../store.service';
 import { Forkop } from '../../types';
@@ -9,6 +9,46 @@ import {
   setLocalServiceAction,
   setLocalSubscriptionAction,
 } from '../localActionOverlay.service';
+
+describe('confirmed restart conflict in UI state', () => {
+  it('preserves the immediate guard and resets warnings on a transition', () => {
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      const state = createUiState();
+      applyUiStateToStore(state);
+      state.service.forkop.status = 'running & enabled';
+      state.service.forkop.restart_blocked = 1;
+      clock.mockReturnValue(1000);
+      applyUiStateToStore(state);
+      expect(store.get().servicesInfoWidget.data.restartBlocked).toBe(1);
+      expect(store.get().servicesInfoWidget.data.restartConflictConfirmed).toBe(
+        false,
+      );
+      clock.mockReturnValue(6000);
+      applyUiStateToStore(state);
+      expect(store.get().servicesInfoWidget.data.restartConflictConfirmed).toBe(
+        true,
+      );
+      state.service.forkop.restart_blocked = 0;
+      applyUiStateToStore(state);
+      expect(store.get().servicesInfoWidget.data.restartConflictConfirmed).toBe(
+        false,
+      );
+      state.service.forkop.restart_blocked = 1;
+      applyUiStateToStore(state);
+      expect(store.get().servicesInfoWidget.data.restartConflictConfirmed).toBe(
+        false,
+      );
+      state.service.forkop.status = 'restarting';
+      applyUiStateToStore(state);
+      expect(store.get().servicesInfoWidget.data.restartConflictConfirmed).toBe(
+        false,
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
 
 function createUiState(
   actions: Partial<Forkop.UiState['actions']> = {},

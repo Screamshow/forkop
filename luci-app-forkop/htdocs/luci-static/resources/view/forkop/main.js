@@ -4935,7 +4935,22 @@ function getLocalActionOverlay() {
   };
 }
 
+// src/forkop/helpers/restartConflict.ts
+function observeRestartConflict(previous, blocked, transitioning, now) {
+  if (!blocked || transitioning) return void 0;
+  if (!previous || now < previous.lastSeen || now - previous.lastSeen > 15e3)
+    return { since: now, lastSeen: now, samples: 1, confirmed: false };
+  const samples = previous.samples + (now > previous.lastSeen ? 1 : 0);
+  return {
+    since: previous.since,
+    lastSeen: now,
+    samples,
+    confirmed: samples >= 2 && now - previous.since >= 5e3
+  };
+}
+
 // src/forkop/services/uiState.service.ts
+var restartConflictObservation;
 function isRunningAction(state) {
   return state.running === true;
 }
@@ -4992,6 +5007,19 @@ function normalizeLatencyProgress(progress) {
   };
 }
 function applyServiceState(uiState) {
+  const localActions = getLocalActionOverlay();
+  const transitioning = ["starting", "stopping", "restarting", "reloading"].includes(
+    uiState.service.forkop.status
+  ) || [
+    ...uiState.actions.service || [],
+    ...uiState.actions.component || []
+  ].some(isRunningAction) || localActions.serviceActions.size > 0 || localActions.componentActions.size > 0;
+  restartConflictObservation = observeRestartConflict(
+    restartConflictObservation,
+    Boolean(uiState.service.forkop.restart_blocked),
+    transitioning,
+    Date.now()
+  );
   const currentSystemInfo = store.get().diagnosticsSystemInfo;
   const nextSystemInfo = {
     ...currentSystemInfo,
@@ -5013,6 +5041,7 @@ function applyServiceState(uiState) {
         forkopRunning: uiState.service.forkop.running,
         stopAvailable: uiState.service.forkop.stop_available ?? uiState.service.forkop.running,
         restartBlocked: uiState.service.forkop.restart_blocked ?? 0,
+        restartConflictConfirmed: restartConflictObservation?.confirmed ?? false,
         forkopEnabled: uiState.service.forkop.enabled,
         forkopStatus: uiState.service.forkop.status
       }
@@ -9083,6 +9112,7 @@ ${styles3}
 // src/forkop/tabs/diagnostic/partials/renderAvailableActions.ts
 function renderAvailableActions({
   restartBlocked,
+  transitioning,
   restart,
   start,
   stop,
@@ -9095,6 +9125,13 @@ function renderAvailableActions({
 }) {
   return E("div", { class: "fkp_diagnostic-page__right-bar__actions" }, [
     E("b", {}, _("Available actions")),
+    ...insertIf(transitioning, [
+      E(
+        "div",
+        { role: "status" },
+        _("Forkop X is applying changes. Please wait.")
+      )
+    ]),
     ...insertIf(restartBlocked, [
       E("div", { class: "fkp_diagnostic_alert fkp_diagnostic_alert--error" }, [
         E("span", { class: "fkp_diagnostic_alert__icon" }, [
@@ -9104,13 +9141,13 @@ function renderAvailableActions({
           E(
             "b",
             { class: "fkp_diagnostic_alert__title" },
-            _("Cannot restart Forkop X")
+            _("Restart temporarily unavailable")
           ),
           E(
             "div",
             { class: "fkp_diagnostic_alert__description" },
             _(
-              "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again."
+              "Could not confirm the sing-box process state. Check the logs before trying again."
             )
           )
         ])
@@ -10547,7 +10584,8 @@ function renderDiagnosticAvailableActionsWidget() {
   });
   const container = document.getElementById("fkp_diagnostic-page-actions");
   const renderedActions = renderAvailableActions({
-    restartBlocked,
+    restartBlocked: restartBlocked && Boolean(servicesInfoWidget.data.restartConflictConfirmed) && !atLeastOneMutatingActionLoading && !componentActionLoading,
+    transitioning: restartLoading || startLoading || stopLoading || componentActionLoading,
     restart: {
       loading: restartLoading,
       visible: shouldShowRestartAction({

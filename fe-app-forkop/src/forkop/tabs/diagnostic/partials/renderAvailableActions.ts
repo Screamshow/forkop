@@ -22,6 +22,7 @@ interface ActionProps {
 
 interface IRenderAvailableActionsProps {
   restartBlocked: boolean;
+  transitioning: boolean;
   restart: ActionProps;
   start: ActionProps;
   stop: ActionProps;
@@ -35,6 +36,7 @@ interface IRenderAvailableActionsProps {
 
 export function renderAvailableActions({
   restartBlocked,
+  transitioning,
   restart,
   start,
   stop,
@@ -47,6 +49,13 @@ export function renderAvailableActions({
 }: IRenderAvailableActionsProps) {
   return E('div', { class: 'fkp_diagnostic-page__right-bar__actions' }, [
     E('b', {}, _('Available actions')),
+    ...insertIf(transitioning, [
+      E(
+        'div',
+        { role: 'status' },
+        _('Forkop X is applying changes. Please wait.'),
+      ),
+    ]),
     ...insertIf(restartBlocked, [
       E('div', { class: 'fkp_diagnostic_alert fkp_diagnostic_alert--error' }, [
         E('span', { class: 'fkp_diagnostic_alert__icon' }, [
@@ -56,13 +65,13 @@ export function renderAvailableActions({
           E(
             'b',
             { class: 'fkp_diagnostic_alert__title' },
-            _('Cannot restart Forkop X'),
+            _('Restart temporarily unavailable'),
           ),
           E(
             'div',
             { class: 'fkp_diagnostic_alert__description' },
             _(
-              'Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again.',
+              'Could not confirm the sing-box process state. Check the logs before trying again.',
             ),
           ),
         ]),
