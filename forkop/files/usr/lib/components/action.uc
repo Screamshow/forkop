@@ -1772,6 +1772,23 @@ function resolve_sing_box_extended_release(compressed) {
     return set_sing_box_extended_release_from_json(release_json, compressed);
 }
 
+function previous_sing_box_extended_tag(version) {
+    // APK package versions concatenate the core and Extended versions, e.g.
+    // 1.14.0.2.7.1-r0; the public release is v1.14.0-extended-2.7.1.
+    let parts = match(as_string(version), /^v?([0-9]+[.][0-9]+[.][0-9]+)([.]|-extended-)([0-9]+[.][0-9]+[.][0-9]+)(-r?[0-9]+)?$/);
+    return parts == null ? "" : "v" + parts[1] + "-extended-" + parts[3];
+}
+
+function resolve_previous_sing_box_extended_release(version) {
+    let tag = previous_sing_box_extended_tag(version);
+    if (tag == "")
+        return null;
+    let release_json = http_get(FORKOP_MIRROR_BASE_URL +
+        "/forkop/sing-box-extended/releases/" + tag + "/release.json");
+    let release = set_sing_box_extended_release_from_json(release_json, false);
+    return release != null && release.tag == tag ? release : null;
+}
+
 function stage_previous_sing_box_package(variant) {
     let package_name = variant == "tiny" ? "sing-box-tiny" : variant == "stable" ? "sing-box" :
         variant == "extended" ? "sing-box-extended" : "";
@@ -1782,7 +1799,7 @@ function stage_previous_sing_box_package(variant) {
         return null;
     if (variant != "extended")
         return stage_repository_package(package_name, version);
-    let release = resolve_sing_box_extended_release(false);
+    let release = resolve_previous_sing_box_extended_release(version);
     if (release == null)
         return null;
     let path = tmp_dir + "/rollback-" + release.asset_name;
@@ -3193,6 +3210,14 @@ else if (mode == "forkop-release-plan-fixture") {
 }
 else if (mode == "sing-box-file-size-fixture")
     print(file_bytes(ARGV[1]), "\n");
+else if (mode == "sing-box-previous-release-tag-fixture")
+    print(previous_sing_box_extended_tag(ARGV[1]), "\n");
+else if (mode == "sing-box-previous-release-fixture") {
+    let release = resolve_previous_sing_box_extended_release(ARGV[1]);
+    if (release == null)
+        exit(1);
+    write_json(release);
+}
 else if (mode == "sing-box-package-info-fixture") {
     let info = staged_package_info(ARGV[1], ARGV[2], ARGV[3]);
     if (info == null)
