@@ -27,6 +27,12 @@ root_path() {
 mirror_supported() {
     release_file="$(root_path /etc/openwrt_release)"
     [ -r "$release_file" ] || return 1
+    release="$(sed -n "s/^DISTRIB_RELEASE='\(.*\)'/\1/p" "$release_file" | head -n 1)"
+    # Snapshot system packages must come from the firmware's own build feeds.
+    # Keep Forkop release downloads on our mirror, but never redirect these feeds.
+    case "$release" in
+        *SNAPSHOT*) return 1 ;;
+    esac
     target="$(sed -n "s/^DISTRIB_TARGET='\(.*\)'/\1/p" "$release_file" | head -n 1)"
     architecture="$(sed -n "s/^DISTRIB_ARCH='\(.*\)'/\1/p" "$release_file" | head -n 1)"
     [ "$target" = "mediatek/filogic" ] && [ "$architecture" = "aarch64_cortex-a53" ] || return 1

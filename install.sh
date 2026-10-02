@@ -2115,6 +2115,7 @@ check_system() {
     release="$(read_openwrt_release_value "DISTRIB_RELEASE")"
     target="$(read_openwrt_release_value "DISTRIB_TARGET")"
     architecture="$(read_openwrt_release_value "DISTRIB_ARCH")"
+    MIRROR_SUPPORTED=0
     major="$(printf '%s' "$release" | sed 's/[^0-9].*$//' | cut -d. -f1)"
 
     [ -n "$release" ] || fail "Unable to detect the OpenWrt release"
@@ -2122,6 +2123,10 @@ check_system() {
         fail "Forkop requires OpenWrt 24.10 or newer"
     fi
     case "$release" in
+        *SNAPSHOT*)
+            warn "OpenWrt SNAPSHOT support is conditional: system dependencies use native firmware feeds"
+            warn "Required kernel modules must match this firmware build and remain available in its feeds"
+            ;;
         24.10.*)
             [ "$PKG_IS_APK" -eq 0 ] || fail "OpenWrt $release must use opkg/IPK packages"
             ;;
@@ -2132,9 +2137,14 @@ check_system() {
             [ "$PKG_IS_APK" -eq 1 ] || fail "OpenWrt $release is expected to use apk packages"
             ;;
     esac
-    if [ "$target" = "mediatek/filogic" ] && [ "$architecture" = "aarch64_cortex-a53" ]; then
-        MIRROR_SUPPORTED=1
-    fi
+    case "$release" in
+        *SNAPSHOT*) ;;
+        *)
+            if [ "$target" = "mediatek/filogic" ] && [ "$architecture" = "aarch64_cortex-a53" ]; then
+                MIRROR_SUPPORTED=1
+            fi
+            ;;
+    esac
 
     msg "OpenWrt $release, target $target, architecture $architecture"
 
