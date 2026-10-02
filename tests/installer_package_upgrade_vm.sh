@@ -5,6 +5,10 @@ set -eu
 ROOT=${1:?staged test directory required}
 TARGET_VERSION=${2:-1.15.0}
 if command -v apk >/dev/null 2>&1; then PKG_IS_APK=1; EXT=apk; else PKG_IS_APK=0; EXT=ipk; fi
+EXPECTED_PACKAGE_VERSION=$TARGET_VERSION
+if [ "$PKG_IS_APK" = 1 ]; then
+    EXPECTED_PACKAGE_VERSION=$(printf '%s\n' "$TARGET_VERSION" | sed 's/-canary\./_rc/')
+fi
 TMP_DIR="$ROOT/adapter"
 mkdir -p "$TMP_DIR"
 sed -n '/^prepare_package_init_adapter() {/,/^}/p; /^pkg_install_files() {/,/^}/p' "$ROOT/install.sh" > "$ROOT/functions.sh"
@@ -45,7 +49,7 @@ for run in 1 2; do
     for name in forkop luci-app-forkop luci-i18n-forkop-ru; do
         pkg_install_files "$ROOT/target/${name}_$TARGET_VERSION.$EXT"
         version=$(ucode -L /usr/lib/forkop /usr/lib/forkop/core/packages.uc version "$name")
-        [ "$version" = "$TARGET_VERSION" ]
+        [ "$version" = "$EXPECTED_PACKAGE_VERSION" ]
     done
     cp -p /etc/config/forkop "$ROOT/config.target.$run"
     sed '/^[[:space:]]*option shutdown_correctly[[:space:]]/d' /etc/config/forkop > "$ROOT/config.actual"
