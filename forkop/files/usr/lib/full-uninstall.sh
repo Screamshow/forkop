@@ -73,12 +73,23 @@ run() {
     trap finish EXIT
     state running
     repository_plan
-    if command -v apk >/dev/null 2>&1; then MANAGER=apk
+    if [ -n "$ROOT" ]; then
+        # A fixture root must never fall back to the host package manager.
+        if [ -x "$ROOT/bin/apk" ]; then MANAGER=apk
+        elif [ -x "$ROOT/bin/opkg" ]; then MANAGER=opkg
+        else return 1; fi
+        PATH="$ROOT/bin:$PATH"
+        export PATH
+    elif command -v apk >/dev/null 2>&1; then MANAGER=apk
     elif command -v opkg >/dev/null 2>&1; then MANAGER=opkg
     else return 1; fi
 
     PHASE=stop
     state running
+    if [ -x "$ROOT/etc/init.d/forkop-support" ]; then
+        "$ROOT/etc/init.d/forkop-support" stop || true
+        "$ROOT/etc/init.d/forkop-support" disable || true
+    fi
     if [ -x "$ROOT/etc/init.d/forkop" ]; then
         "$ROOT/etc/init.d/forkop" stop
         "$ROOT/etc/init.d/forkop" disable
@@ -137,7 +148,7 @@ run() {
         /etc/config/sing-box.apk-old /etc/config/sing-box-opkg /etc/config/sing-box.opkg-new \
         /etc/config/sing-box.opkg-old /etc/config/sing-box.opkg-dist \
         /usr/bin/forkop /usr/bin/sing-box /usr/lib/libcronet.so \
-        /etc/init.d/forkop /etc/init.d/sing-box /etc/init.d/forkop-torrserver-direct \
+        /etc/init.d/forkop /etc/init.d/sing-box /etc/init.d/forkop-torrserver-direct /etc/init.d/forkop-support \
         /etc/uci-defaults/50_luci-forkop \
         /usr/share/luci/menu.d/luci-app-forkop.json /usr/share/rpcd/acl.d/luci-app-forkop.json; do
         rm -f "$ROOT$file"

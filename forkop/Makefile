@@ -66,6 +66,7 @@ endef
 define Package/forkop/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/forkop $(1)/etc/init.d/forkop
+	$(INSTALL_BIN) ./files/etc/init.d/forkop-support $(1)/etc/init.d/forkop-support
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/forkop $(1)/etc/config/forkop
@@ -75,6 +76,7 @@ define Package/forkop/install
 
 	$(INSTALL_DIR) $(1)/usr/lib/forkop
 	$(CP) ./files/usr/lib/. $(1)/usr/lib/forkop/
+	$(INSTALL_BIN) ./files/usr/lib/support/ssh-gate.sh $(1)/usr/lib/forkop/support/ssh-gate.sh
 
 	$(INSTALL_DIR) $(1)/usr/share/forkop/defaults
 	$(INSTALL_CONF) ./files/etc/config/forkop $(1)/usr/share/forkop/defaults/forkop

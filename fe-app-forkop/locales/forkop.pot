@@ -2958,3 +2958,114 @@ msgstr ""
 
 msgid "Exact match unavailable"
 msgstr ""
+
+msgid "Remote support"
+msgstr ""
+
+msgid "One-time Tailscale auth key"
+msgstr ""
+
+msgid "I allow access to local router services for 30 minutes."
+msgstr ""
+
+msgid "A separate temporary Tailscale connection. Temporarily installs the support SSH public key. No LAN routes are advertised."
+msgstr ""
+
+msgid "Support operation failed. Refresh the status and check the installation and auth key."
+msgstr ""
+
+msgid "An existing Tailscale service is running. Its settings are preserved."
+msgstr ""
+
+msgid "Tailscale is not installed"
+msgstr ""
+
+msgid "Remaining time"
+msgstr ""
+
+msgid "minutes"
+msgstr ""
+
+msgid "Allow for 30 minutes"
+msgstr ""
+
+msgid "Disconnect now"
+msgstr ""
+
+msgid "Install Tailscale"
+msgstr ""
+
+msgid "Unable to read remote support status"
+msgstr ""
+
+msgid "Disconnected"
+msgstr ""
+
+msgid "Connecting"
+msgstr ""
+
+msgid "Installing"
+msgstr ""
+
+msgid "Connected"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Missing temporary auth key"
+msgstr ""
+
+msgid "Tailscale failed to start"
+msgstr ""
+
+msgid "Tailscale startup timed out"
+msgstr ""
+
+msgid "Tailscale authorization failed or timed out"
+msgstr ""
+
+msgid "Tailscale connection process exited"
+msgstr ""
+
+msgid "Tailscale installation failed"
+msgstr ""
+
+msgid "An existing Tailscale installation needs manual repair"
+msgstr ""
+
+msgid "Removing"
+msgstr ""
+
+msgid "Remove Tailscale"
+msgstr ""
+
+msgid "Remove the Tailscale package from this router? It will no longer be available for other applications."
+msgstr ""
+
+msgid "Removal is unavailable while the existing Tailscale service is running or enabled, or when the package is not managed by OpenWrt."
+msgstr ""
+
+msgid "Stop and disable the existing Tailscale service before removing it"
+msgstr ""
+
+msgid "Tailscale removal failed"
+msgstr ""
+
+msgid "Temporary SSH authorization failed"
+msgstr ""
+
+msgid "Forkop: remote support"
+msgstr ""
+
+msgid "Send these details to support so they can connect to your router."
+msgstr ""
+
+msgid "Copy IP"
+msgstr ""
+
+msgid "Support access is open"
+msgstr ""
+
+msgid "Connection details"
+msgstr ""

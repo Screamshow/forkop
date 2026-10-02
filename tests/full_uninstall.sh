@@ -33,6 +33,11 @@ SH
 #!/bin/sh
 printf 'torrserver-direct %s\n' "$1" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
 SH
+    cat > "$ROOT/etc/init.d/forkop-support" <<'SH'
+#!/bin/sh
+printf 'support %s\n' "$1" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
+SH
+    printf 'user Tailscale installation\n' > "$ROOT/etc/init.d/tailscale"
     cat > "$ROOT/usr/bin/ucode" <<'SH'
 #!/bin/sh
 printf 'torrserver-direct-rule %s\n' "$*" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
@@ -49,7 +54,7 @@ case "$1" in
 esac
 SH
     chmod +x "$ROOT/usr/bin/forkop" "$ROOT/usr/bin/ucode" \
-        "$ROOT/etc/init.d/forkop-torrserver-direct" "$ROOT/bin/opkg"
+        "$ROOT/etc/init.d/forkop-torrserver-direct" "$ROOT/etc/init.d/forkop-support" "$ROOT/bin/opkg"
 }
 
 run_case() {
@@ -83,6 +88,9 @@ done
 grep -qx dnsmasq_restore "$ROOT/service-calls"
 grep -qx 'torrserver-direct stop' "$ROOT/service-calls"
 grep -qx 'torrserver-direct disable' "$ROOT/service-calls"
+grep -qx 'support stop' "$ROOT/service-calls"
+[ ! -e "$ROOT/etc/init.d/forkop-support" ]
+grep -qx 'user Tailscale installation' "$ROOT/etc/init.d/tailscale"
 grep -Fq 'torrserver-direct-rule ' "$ROOT/service-calls"
 grep -Fq 'torrserver/direct.uc remove' "$ROOT/service-calls"
 [ ! -e "$ROOT/etc/init.d/forkop-torrserver-direct" ]
@@ -134,3 +142,10 @@ run_case complete
 grep -qx 'original apk repositories' "$ROOT/etc/apk/repositories.d/distfeeds.list"
 [ ! -e "$ROOT/etc/apk/repositories.d/forkop.list" ] && [ ! -e "$ROOT/etc/apk/keys/forkop-mirror.pem" ]
 printf 'Full uninstall checks passed\n'
+
+# Even if the host has apk/opkg, a fixture must fail without its own manager.
+fixture missing_manager
+rm -f "$ROOT/bin/opkg"
+run_case failed
+[ -e "$ROOT/packages/forkop" ]
+printf 'Missing fixture manager safely rejected\n'

@@ -317,6 +317,8 @@ function prerm_cleanup(action) {
     }
     remember_upgrade_state(action);
     if (!PACKAGE_TEST_MODE) {
+        if (path_exists('/etc/init.d/forkop-support'))
+            command_success_from_args([ '/etc/init.d/forkop-support', 'stop' ]);
         if (!command_success_from_args([ INIT_PATH, "stop" ])) {
             warn("Unable to stop Forkop before package replacement.\n");
             return false;

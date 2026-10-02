@@ -2056,3 +2056,114 @@ msgstr "Не удалось подтвердить состояние проце
 
 msgid "Exact match unavailable"
 msgstr "Точное совпадение недоступно"
+
+msgid "Remote support"
+msgstr "Удалённая помощь"
+
+msgid "One-time Tailscale auth key"
+msgstr "Одноразовый ключ Tailscale"
+
+msgid "I allow access to local router services for 30 minutes."
+msgstr "Разрешаю доступ к локальным сервисам роутера на 30 минут."
+
+msgid "A separate temporary Tailscale connection. Temporarily installs the support SSH public key. No LAN routes are advertised."
+msgstr "Отдельное временное подключение Tailscale. На время сеанса добавляется публичный SSH-ключ поддержки. Маршруты в домашнюю сеть не публикуются."
+
+msgid "Support operation failed. Refresh the status and check the installation and auth key."
+msgstr "Операция не выполнена. Обновите статус и проверьте установку и ключ авторизации."
+
+msgid "An existing Tailscale service is running. Its settings are preserved."
+msgstr "Основной Tailscale уже работает. Его настройки сохраняются."
+
+msgid "Tailscale is not installed"
+msgstr "Tailscale не установлен"
+
+msgid "Remaining time"
+msgstr "Осталось"
+
+msgid "minutes"
+msgstr "мин."
+
+msgid "Allow for 30 minutes"
+msgstr "Разрешить на 30 минут"
+
+msgid "Disconnect now"
+msgstr "Отключить сейчас"
+
+msgid "Install Tailscale"
+msgstr "Установить Tailscale"
+
+msgid "Unable to read remote support status"
+msgstr "Не удалось получить статус удалённой помощи"
+
+msgid "Disconnected"
+msgstr "Отключено"
+
+msgid "Connecting"
+msgstr "Подключение"
+
+msgid "Installing"
+msgstr "Установка"
+
+msgid "Connected"
+msgstr "Подключено"
+
+msgid "Failed"
+msgstr "Ошибка"
+
+msgid "Missing temporary auth key"
+msgstr "Отсутствует временный ключ авторизации"
+
+msgid "Tailscale failed to start"
+msgstr "Не удалось запустить Tailscale"
+
+msgid "Tailscale startup timed out"
+msgstr "Истекло время запуска Tailscale"
+
+msgid "Tailscale authorization failed or timed out"
+msgstr "Ошибка авторизации Tailscale или истекло время ожидания"
+
+msgid "Tailscale connection process exited"
+msgstr "Процесс подключения Tailscale завершился"
+
+msgid "Tailscale installation failed"
+msgstr "Не удалось установить Tailscale"
+
+msgid "An existing Tailscale installation needs manual repair"
+msgstr "Существующая установка Tailscale требует ручного восстановления"
+
+msgid "Removing"
+msgstr "Удаление"
+
+msgid "Remove Tailscale"
+msgstr "Удалить Tailscale"
+
+msgid "Remove the Tailscale package from this router? It will no longer be available for other applications."
+msgstr "Удалить пакет Tailscale с этого роутера? Он станет недоступен другим приложениям."
+
+msgid "Removal is unavailable while the existing Tailscale service is running or enabled, or when the package is not managed by OpenWrt."
+msgstr "Удаление недоступно, пока основной Tailscale работает или включён его автозапуск, а также если пакет не установлен средствами OpenWrt."
+
+msgid "Stop and disable the existing Tailscale service before removing it"
+msgstr "Перед удалением остановите основной Tailscale и отключите его автозапуск"
+
+msgid "Tailscale removal failed"
+msgstr "Не удалось удалить Tailscale"
+
+msgid "Temporary SSH authorization failed"
+msgstr "Не удалось временно разрешить SSH-доступ"
+
+msgid "Forkop: remote support"
+msgstr "Forkop: удалённая помощь"
+
+msgid "Send these details to support so they can connect to your router."
+msgstr "Передайте эти данные поддержке для подключения к роутеру."
+
+msgid "Copy IP"
+msgstr "Скопировать IP"
+
+msgid "Support access is open"
+msgstr "Доступ для поддержки открыт"
+
+msgid "Connection details"
+msgstr "Данные подключения"

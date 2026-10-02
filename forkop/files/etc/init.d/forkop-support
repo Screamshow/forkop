@@ -1,0 +1,24 @@
+#!/bin/sh /etc/rc.common
+# Boot only revokes leftover SSH authorization; it never starts a session.
+USE_PROCD=1
+START=9
+STOP=8
+
+boot() {
+    ucode /usr/lib/forkop/support/ssh-access.uc remove >/dev/null 2>&1 || true
+}
+
+start_service() {
+    [ -f /var/run/forkop/support/operation ] || return 1
+    procd_open_instance
+    procd_set_param command /bin/sh /usr/lib/forkop/support/worker.sh
+    procd_set_param term_timeout 5
+    procd_set_param stdout 0
+    procd_set_param stderr 0
+    procd_close_instance
+}
+
+stop_service() {
+    rm -f /var/run/forkop/support/auth.key
+    ucode /usr/lib/forkop/support/ssh-access.uc remove >/dev/null 2>&1 || true
+}

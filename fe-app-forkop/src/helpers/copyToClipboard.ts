@@ -6,7 +6,7 @@ export function copyToClipboard(text: string) {
   document.body.appendChild(textarea);
   textarea.select();
   try {
-    document.execCommand('copy');
+    if (!document.execCommand('copy')) throw new Error('Clipboard copy rejected');
     showToast(_('Copied'), 'success');
   } catch (_err) {
     showToast(_('Failed to copy!'), 'error');

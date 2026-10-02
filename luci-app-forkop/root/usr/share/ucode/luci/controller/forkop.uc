@@ -35,6 +35,30 @@ function action_support_report() {
 	stream.close();
 }
 
+function action_remote_support() {
+	http.header('Cache-Control', 'no-store');
+	http.prepare_content('application/json');
+	if (dispatched?.readonly && http.formvalue('operation') != 'status') {
+		http.status(403, 'Forbidden');
+		http.write('{"success":false,"error":"Write permission is required"}');
+		return;
+	}
+	try {
+		let session = loadfile('/usr/lib/forkop/support/session.uc')();
+		let result = session.request({
+			operation: http.formvalue('operation'),
+			auth_key: http.formvalue('auth_key'),
+			consent: http.formvalue('consent')
+		});
+		http.write(sprintf('%J', { success: true, data: result }));
+	} catch (e) {
+		// Never echo request data or exception contents containing credentials.
+		http.status(400, 'Support operation failed');
+		http.write(sprintf('%J', { success: false, error: 'Support operation failed. Refresh the status and check the installation and auth key.' }));
+	}
+}
+
 return {
-	action_support_report
+	action_support_report,
+	action_remote_support
 };

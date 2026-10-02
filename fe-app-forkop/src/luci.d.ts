@@ -9,6 +9,7 @@ type HtmlAttributes<T extends HtmlTag = 'div'> = Partial<
     'aria-busy'?: string;
     'aria-disabled'?: string;
     'aria-label'?: string;
+    role?: string;
     'data-latency-section'?: string;
     click?: (event: MouseEvent) => void;
     onclick?: (event: MouseEvent) => void;
@@ -47,6 +48,7 @@ declare global {
 
   const L: {
     url: (...parts: string[]) => string;
+    env: { token: string };
   };
 
   const ui = {

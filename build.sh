@@ -198,6 +198,7 @@ build_backend_root() {
   make_dir "$output_root/usr/share/forkop/defaults"
 
   install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop" "$output_root/etc/init.d/forkop"
+  install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop-support" "$output_root/etc/init.d/forkop-support"
   install -m 0755 "$ROOT_DIR/forkop/files/etc/init.d/forkop-torrserver-direct" "$output_root/etc/init.d/forkop-torrserver-direct"
   install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/etc/config/forkop"
   install -m 0644 "$ROOT_DIR/forkop/files/etc/config/forkop" "$output_root/usr/share/forkop/defaults/forkop"
@@ -212,6 +213,8 @@ build_backend_root() {
   normalize_package_root_modes "$output_root"
   chmod 0755 \
     "$output_root/etc/init.d/forkop" \
+    "$output_root/etc/init.d/forkop-support" \
+    "$output_root/usr/lib/forkop/support/ssh-gate.sh" \
     "$output_root/etc/init.d/forkop-torrserver-direct" \
     "$output_root/usr/bin/forkop" \
     "$output_root/usr/share/forkop/mirror-migration.sh" \
