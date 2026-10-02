@@ -2032,9 +2032,9 @@ pkg_install_name() {
 pkg_install_files() {
     if [ "$PKG_IS_APK" -eq 1 ]; then
         if [ -n "${FORKOP_INIT:-}" ]; then
-            apk --preserve-env add --allow-untrusted "$@" </dev/null
+            apk --preserve-env add --allow-untrusted --force-reinstall "$@" </dev/null
         else
-            apk add --allow-untrusted "$@" </dev/null
+            apk add --allow-untrusted --force-reinstall "$@" </dev/null
         fi
     else
         opkg install --force-overwrite --force-downgrade "$@" </dev/null

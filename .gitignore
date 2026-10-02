@@ -52,6 +52,7 @@ ops/deployed-nginx/
 !/tests/install_i18n_default.sh
 !/tests/installer_configuration_backup.sh
 !/tests/installer_update_rollback.sh
+!/tests/installer_package_upgrade_vm.sh
 !/tests/forkop_update_vm.sh
 !/tests/reality_xhttp.uc
 !/tests/reality_xhttp_vm.sh

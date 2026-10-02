@@ -305,8 +305,10 @@ function prerm_cleanup(action) {
     if (env("IPKG_INSTROOT", "") != "")
         return true;
 
-    if (!begin_upgrade_quiesce(action))
+    if (!begin_upgrade_quiesce(action)) {
+        warn("Unable to acquire Forkop package upgrade quiesce state.\n");
         return false;
+    }
     if (as_string(action) != "remove" && !wait_for_existing_service_action()) {
         warn("Timed out waiting for a Forkop service action before package upgrade.\n");
         unlink_if_exists(PACKAGE_UPGRADE_STATE);
@@ -315,8 +317,10 @@ function prerm_cleanup(action) {
     }
     remember_upgrade_state(action);
     if (!PACKAGE_TEST_MODE) {
-        if (!command_success_from_args([ INIT_PATH, "stop" ]))
+        if (!command_success_from_args([ INIT_PATH, "stop" ])) {
+            warn("Unable to stop Forkop before package replacement.\n");
             return false;
+        }
         restore_dnsmasq_if_needed();
         // The compressed variant is installed outside the package manager.
         // Keep its binary and managed init script across a Forkop upgrade;
@@ -324,7 +328,11 @@ function prerm_cleanup(action) {
         if (as_string(action) == "remove")
             remove_managed_sing_box();
     }
-    return remove_rt_tables_entry();
+    if (!remove_rt_tables_entry()) {
+        warn("Unable to remove Forkop routing table entry before package replacement.\n");
+        return false;
+    }
+    return true;
 }
 
 function postinst_restore() {

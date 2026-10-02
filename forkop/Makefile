@@ -43,7 +43,7 @@ define Package/forkop/prerm
 #!/usr/bin/ucode
 
 if (getenv("IPKG_INSTROOT") == null || getenv("IPKG_INSTROOT") == "") {
-	let status = system("/usr/bin/forkop package_prerm " + (ARGV[0] || "") + " >/dev/null 2>&1");
+	let status = system("/usr/bin/forkop package_prerm " + (ARGV[0] || ""));
 	exit(status > 255 ? int(status / 256) : status);
 }
 
