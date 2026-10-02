@@ -2,6 +2,12 @@
 let fs = require('fs');
 const DIR = '/var/run/forkop/support';
 const SERVICE = '/etc/init.d/forkop-support';
+const LITE = '/usr/lib/forkop-support';
+
+function lite_installed() {
+    return fs.lstat(LITE)?.type == 'directory' && fs.stat(LITE + '/.forkop-lite')?.type == 'file' && fs.stat(LITE + '/tailscale')?.type == 'file' && fs.stat(LITE + '/tailscaled')?.type == 'file';
+}
+function cli() { return lite_installed() ? LITE + '/tailscale' : 'tailscale'; }
 
 function output(command) {
     let p = fs.popen('(' + command + ') 2>/dev/null', 'r');
@@ -14,7 +20,7 @@ function read_json(path) {
 }
 function uptime() { return int(split(fs.readfile('/proc/uptime') || '0', ' ')[0]); }
 function available() {
-    return output('command -v tailscale') != '' && output('command -v tailscaled') != '';
+    return lite_installed() || (output('command -v tailscale') != '' && output('command -v tailscaled') != '');
 }
 function packaged() {
     return system('(if command -v apk >/dev/null 2>&1; then apk info -e tailscale; else opkg status tailscale | grep -q "Status: install ok installed"; fi) >/dev/null 2>&1') == 0;
@@ -43,8 +49,9 @@ function status() {
     let result = {
         installed: available(),
         package_installed: managed,
-        removable: managed && !active && !primary_running() && !primary_enabled(),
-        version: output('tailscale version | head -n 1'),
+        lite_installed: lite_installed(),
+        removable: !active && (lite_installed() || (managed && !primary_running() && !primary_enabled())),
+        version: output(cli() + ' version | head -n 1'),
         primary_running: primary_running(),
         active,
         phase: active ? (state.phase || 'starting') : (state.phase == 'failed' ? 'failed' : 'stopped'),
@@ -55,7 +62,7 @@ function status() {
         remaining_seconds: active ? max(0, int(state.deadline || 0) - uptime()) : 0,
         address: ''
     };
-    if (result.phase == 'failed' && state.error == 'Tailscale installation failed') {
+    if (result.phase == 'failed' && index(['Tailscale installation failed', 'Tailscale Lite installation failed', 'Tailscale Lite download failed', 'Tailscale Lite is unavailable for this architecture'], state.error) != -1) {
         let log = fs.open(DIR + '/package.log', 'r');
         if (log) {
             result.error_detail = log.read(4096) || '';
@@ -63,7 +70,7 @@ function status() {
         }
     }
     if (active && result.phase == 'connected') {
-        let address = output('tailscale --socket=' + DIR + '/socket ip -4');
+        let address = output(cli() + ' --socket=' + DIR + '/socket ip -4');
         if (match(address, /^100\.[0-9]+\.[0-9]+\.[0-9]+$/)) result.address = address;
     }
     return result;
@@ -93,8 +100,10 @@ function request(data) {
         if (data.consent != 'full-router-access') die('Explicit consent is required');
     } else if (data.operation == 'remove') {
         if (data.consent != 'remove-tailscale-package') die('Explicit removal consent is required');
-        if (!packaged()) die('Tailscale is not managed by the package manager');
-        if (primary_running() || primary_enabled()) die('Stop and disable the existing Tailscale service before removing it');
+        if (!lite_installed()) {
+            if (!packaged()) die('Tailscale is not managed by the package manager');
+            if (primary_running() || primary_enabled()) die('Stop and disable the existing Tailscale service before removing it');
+        }
     } else if (available()) {
         return status();
     } else if (primary_running()) {

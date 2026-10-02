@@ -1,11 +1,12 @@
 # Remote support in LuCI
 
-The optional Remote support card in Components provisions an absent OpenWrt
-Tailscale package and starts a separate, temporary userspace daemon. An existing
+The optional Remote support card in Components provisions an absent Tailscale
+using a standalone Lite binary from the Forkop mirror and starts a separate,
+temporary userspace daemon. An existing
 Tailscale installation is reused without upgrading it or changing its service,
-configuration, socket, state, DNS, routes or login. Package installation can
-start the standard daemon; only a newly provisioned installation is stopped and
-disabled after provisioning. Tailscale itself is not automatically uninstalled.
+configuration, socket, state, DNS, routes or login. Lite lives in
+`/usr/lib/forkop-support` and never registers or starts the standard service.
+Lite removal only deletes its own marked directory. No automatic uninstall occurs.
 
 ## Session authorization
 
@@ -131,4 +132,21 @@ restoration of the original DHCP file is not claimed. The fixture manager
 selection now only accepts executables inside its explicit fixture root; the
 corrected regression passed on OpenWrt 25 with real package state unchanged.
 
-Installation checks the filesystem containing /usr/bin before a package transaction. OPKG uses the indexed installed size plus 4 MiB reserve; APK or missing size metadata uses a conservative 32 MiB estimate. This is a preflight estimate, not a guarantee that all dependency changes fit. Installation failures expose up to 4096 bytes of package-manager output as text in LuCI; auth-client output remains suppressed. Mock tests cover insufficient space, unknown sizes, OPKG index/install failure, APK solver failure and bounded JSON-safe diagnostics.
+Lite installation uses pinned per-architecture file sizes and SHA-256 from
+`support/lite.json`. Flash preflight requires the exact binary size plus 1 MiB;
+RAM preflight requires download space plus 8 MiB available memory. Failed downloads
+and interrupted copies are cleaned up. The file is verified before becoming
+executable. Existing destination directories are never overwritten.
+
+The pinned upstream v1.98.3 source produces a stripped multicall binary with
+CLI, userspace netstack, local socket identity, routing/port detection and port
+mapping. Build tags remove optional features; no UPX is used. ARM64 is 15,990,946
+bytes (15.25 MiB); AMD64 is 17,133,730 bytes (16.34 MiB). Rebuild with
+`scripts/build-tailscale-lite.sh` from the pinned source revision.
+
+VM tests downloaded Lite from the public mirror, rejected insufficient storage
+and tampered content, started its real daemon with synthetic authorization,
+expired the session and removed Lite while another standard daemon stayed alive.
+The installed system package list, binaries and configuration hashes were unchanged.
+A real tailnet registration with Lite and real Filogic RAM measurements remain
+unverified and require a fresh auth key / device testing.

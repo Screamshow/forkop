@@ -3084,3 +3084,39 @@ msgstr ""
 
 msgid "Package manager details"
 msgstr ""
+
+msgid "Install Tailscale Lite"
+msgstr ""
+
+msgid "Remove Tailscale Lite"
+msgstr ""
+
+msgid "Remove the separate Tailscale Lite support installation? The system Tailscale is preserved."
+msgstr ""
+
+msgid "Tailscale Lite is unavailable for this architecture"
+msgstr ""
+
+msgid "Unable to check free memory"
+msgstr ""
+
+msgid "Not enough free memory to download Tailscale Lite"
+msgstr ""
+
+msgid "The Tailscale Lite directory already exists"
+msgstr ""
+
+msgid "Tailscale Lite download failed"
+msgstr ""
+
+msgid "Tailscale Lite verification failed"
+msgstr ""
+
+msgid "Cannot create Tailscale Lite directory"
+msgstr ""
+
+msgid "Tailscale Lite installation failed"
+msgstr ""
+
+msgid "Tailscale Lite removal failed"
+msgstr ""

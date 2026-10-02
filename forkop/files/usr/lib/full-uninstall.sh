@@ -136,6 +136,11 @@ run() {
 
     PHASE=files
     state running
+    if [ -f "$ROOT/usr/lib/forkop-support/.forkop-lite" ] && [ ! -L "$ROOT/usr/lib/forkop-support" ]; then
+        rm -f "$ROOT/usr/lib/forkop-support/tailscale" "$ROOT/usr/lib/forkop-support/tailscaled" \
+            "$ROOT/usr/lib/forkop-support/tailscale.combined" "$ROOT/usr/lib/forkop-support/.forkop-lite"
+        rmdir "$ROOT/usr/lib/forkop-support" 2>/dev/null || true
+    fi
     # Only known product paths are removed. Never recursively delete a path
     # supplied by a UCI option (it might point at /etc or other system data).
     for directory in /etc/forkop /etc/sing-box /tmp/sing-box /usr/lib/forkop \

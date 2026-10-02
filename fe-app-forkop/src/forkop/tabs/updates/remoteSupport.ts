@@ -4,6 +4,7 @@ import { copyToClipboard } from '../../../helpers/copyToClipboard';
 interface SupportStatus {
   installed: boolean;
   package_installed: boolean;
+  lite_installed: boolean;
   removable: boolean;
   version: string;
   primary_running: boolean;
@@ -186,7 +187,7 @@ export function renderRemoteSupport() {
         'div',
         {},
         status?.installed
-          ? `Tailscale ${status.version}`
+          ? `${status.lite_installed ? 'Tailscale Lite' : 'Tailscale'} ${status.version}`
           : _('Tailscale is not installed'),
       ),
       E(
@@ -276,7 +277,7 @@ export function renderRemoteSupport() {
     } else {
       buttons.push(
         renderButton({
-          text: _('Install Tailscale'),
+          text: _('Install Tailscale Lite'),
           disabled: busy || !status,
           onClick: () => {
             void act('install');
@@ -284,10 +285,15 @@ export function renderRemoteSupport() {
         }),
       );
     }
-    if (status?.package_installed && !status.active) {
+    if (
+      (status?.package_installed || status?.lite_installed) &&
+      !status.active
+    ) {
       buttons.push(
         renderButton({
-          text: _('Remove Tailscale'),
+          text: status.lite_installed
+            ? _('Remove Tailscale Lite')
+            : _('Remove Tailscale'),
           disabled: busy || !status.removable,
           onClick: () => {
             ui.showModal(
@@ -297,7 +303,9 @@ export function renderRemoteSupport() {
                   'p',
                   {},
                   _(
-                    'Remove the Tailscale package from this router? It will no longer be available for other applications.',
+                    status?.lite_installed
+                      ? 'Remove the separate Tailscale Lite support installation? The system Tailscale is preserved.'
+                      : 'Remove the Tailscale package from this router? It will no longer be available for other applications.',
                   ),
                 ),
                 E('div', { class: 'right' }, [

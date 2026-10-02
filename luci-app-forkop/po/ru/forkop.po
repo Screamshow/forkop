@@ -2194,3 +2194,39 @@ msgstr "Оценка необходимого места с запасом"
 
 msgid "Package manager details"
 msgstr "Подробности пакетного менеджера"
+
+msgid "Install Tailscale Lite"
+msgstr "Установить Tailscale Lite"
+
+msgid "Remove Tailscale Lite"
+msgstr "Удалить Tailscale Lite"
+
+msgid "Remove the separate Tailscale Lite support installation? The system Tailscale is preserved."
+msgstr "Удалить отдельную сборку Tailscale Lite для поддержки? Системный Tailscale сохранится."
+
+msgid "Tailscale Lite is unavailable for this architecture"
+msgstr "Tailscale Lite недоступен для этой архитектуры"
+
+msgid "Unable to check free memory"
+msgstr "Не удалось проверить свободную память"
+
+msgid "Not enough free memory to download Tailscale Lite"
+msgstr "Недостаточно свободной памяти для загрузки Tailscale Lite"
+
+msgid "The Tailscale Lite directory already exists"
+msgstr "Каталог Tailscale Lite уже существует"
+
+msgid "Tailscale Lite download failed"
+msgstr "Не удалось загрузить Tailscale Lite"
+
+msgid "Tailscale Lite verification failed"
+msgstr "Проверка Tailscale Lite не пройдена"
+
+msgid "Cannot create Tailscale Lite directory"
+msgstr "Не удалось создать каталог Tailscale Lite"
+
+msgid "Tailscale Lite installation failed"
+msgstr "Не удалось установить Tailscale Lite"
+
+msgid "Tailscale Lite removal failed"
+msgstr "Не удалось удалить Tailscale Lite"
