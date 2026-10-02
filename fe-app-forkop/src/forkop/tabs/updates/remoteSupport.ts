@@ -10,6 +10,9 @@ interface SupportStatus {
   active: boolean;
   phase: string;
   error: string;
+  error_detail: string;
+  free_kib: number;
+  required_kib: number;
   remaining_seconds: number;
   address: string;
 }
@@ -213,6 +216,30 @@ export function renderRemoteSupport() {
     if (status?.address)
       details.push(E('code', {}, `ssh root@${status.address}`));
     if (status?.error) details.push(E('div', {}, _(status.error)));
+    if (status?.phase === 'failed' && status.required_kib) {
+      details.push(
+        E(
+          'div',
+          {},
+          `${_('Free storage')}: ${(status.free_kib / 1024).toFixed(1)} MiB. ${_('Estimated storage required, including reserve')}: ${(status.required_kib / 1024).toFixed(1)} MiB.`,
+        ),
+      );
+    }
+    if (status?.error_detail) {
+      details.push(
+        E('details', {}, [
+          E('summary', {}, _('Package manager details')),
+          E(
+            'pre',
+            {
+              style:
+                'white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto',
+            },
+            status.error_detail,
+          ),
+        ]),
+      );
+    }
     information.replaceChildren(...details);
     form.hidden = !status?.installed || !!status.active;
     key.disabled = busy;

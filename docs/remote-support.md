@@ -130,3 +130,5 @@ run again. DNS configuration was regenerated during recovery, so a byte-for-byte
 restoration of the original DHCP file is not claimed. The fixture manager
 selection now only accepts executables inside its explicit fixture root; the
 corrected regression passed on OpenWrt 25 with real package state unchanged.
+
+Installation checks the filesystem containing /usr/bin before a package transaction. OPKG uses the indexed installed size plus 4 MiB reserve; APK or missing size metadata uses a conservative 32 MiB estimate. This is a preflight estimate, not a guarantee that all dependency changes fit. Installation failures expose up to 4096 bytes of package-manager output as text in LuCI; auth-client output remains suppressed. Mock tests cover insufficient space, unknown sizes, OPKG index/install failure, APK solver failure and bounded JSON-safe diagnostics.

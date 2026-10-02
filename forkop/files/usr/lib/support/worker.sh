@@ -6,10 +6,12 @@ daemon_pid=
 auth_pid=
 phase=stopped
 error=
+free_kib=0
+required_kib=0
 uptime_seconds() { cut -d. -f1 /proc/uptime; }
 deadline=$(( $(uptime_seconds) + ${FORKOP_SUPPORT_TTL:-1800} ))
 state() {
-    printf '{"phase":"%s","deadline":%s,"error":"%s"}\n' "$phase" "$deadline" "$error" > "$dir/status.new"
+    printf '{"phase":"%s","deadline":%s,"error":"%s","free_kib":%s,"required_kib":%s}\n' "$phase" "$deadline" "$error" "$free_kib" "$required_kib" > "$dir/status.new"
     mv "$dir/status.new" "$dir/status.json"
 }
 cleanup() {
@@ -48,15 +50,30 @@ if [ "$(cat "$dir/operation")" = remove ]; then
     phase=stopped; exit 0
 fi
 if [ "$(cat "$dir/operation")" = install ]; then
+    : > "$dir/package.log"
     phase=installing; state
     # Only provision an absent installation. Never upgrade or stop a user's client.
     if command -v tailscale >/dev/null 2>&1 || command -v tailscaled >/dev/null 2>&1; then
         phase=failed; error='An existing Tailscale installation needs manual repair'; exit 1
     fi
+    # Check the filesystem containing the binaries, including extroot setups.
+    # Reserve 4 MiB for dependencies/metadata; unknown package size uses 28 MiB.
+    free_kib=$(df -Pk /usr/bin | awk 'END { print $4 }')
+    case "$free_kib" in ''|*[!0-9]*) phase=failed; error='Unable to check free storage'; free_kib=0; exit 1;; esac
+    package_bytes=29360128
+    if ! command -v apk >/dev/null 2>&1; then
+        indexed_bytes=$(opkg info tailscale 2>/dev/null | awk '/^Installed-Size:/ {print $2; exit}')
+        case "$indexed_bytes" in ''|*[!0-9]*|0) ;; *) package_bytes=$indexed_bytes;; esac
+    fi
+    required_kib=$(( (package_bytes + 1023) / 1024 + 4096 ))
+    if [ "$free_kib" -lt "$required_kib" ]; then
+        phase=failed; error='Not enough free storage to install Tailscale'; exit 1
+    fi
+    state
     if command -v apk >/dev/null 2>&1; then
-        apk add tailscale >/dev/null 2>&1 || { phase=failed; error='Tailscale installation failed'; exit 1; }
+        apk add tailscale > "$dir/package.log" 2>&1 || { phase=failed; error='Tailscale installation failed'; exit 1; }
     else
-        opkg update >/dev/null 2>&1 && opkg install tailscale >/dev/null 2>&1 || { phase=failed; error='Tailscale installation failed'; exit 1; }
+        opkg update > "$dir/package.log" 2>&1 && opkg install tailscale >> "$dir/package.log" 2>&1 || { phase=failed; error='Tailscale installation failed'; exit 1; }
     fi
     # Package installation can automatically start its standard service.
     /etc/init.d/tailscale stop >/dev/null 2>&1 || true

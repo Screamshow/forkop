@@ -49,9 +49,19 @@ function status() {
         active,
         phase: active ? (state.phase || 'starting') : (state.phase == 'failed' ? 'failed' : 'stopped'),
         error: state.error || '',
+        free_kib: int(state.free_kib || 0),
+        required_kib: int(state.required_kib || 0),
+        error_detail: '',
         remaining_seconds: active ? max(0, int(state.deadline || 0) - uptime()) : 0,
         address: ''
     };
+    if (result.phase == 'failed' && state.error == 'Tailscale installation failed') {
+        let log = fs.open(DIR + '/package.log', 'r');
+        if (log) {
+            result.error_detail = log.read(4096) || '';
+            log.close();
+        }
+    }
     if (active && result.phase == 'connected') {
         let address = output('tailscale --socket=' + DIR + '/socket ip -4');
         if (match(address, /^100\.[0-9]+\.[0-9]+\.[0-9]+$/)) result.address = address;

@@ -3081,3 +3081,18 @@ msgstr ""
 
 msgid "Connection details"
 msgstr ""
+
+msgid "Not enough free storage to install Tailscale"
+msgstr ""
+
+msgid "Unable to check free storage"
+msgstr ""
+
+msgid "Free storage"
+msgstr ""
+
+msgid "Estimated storage required, including reserve"
+msgstr ""
+
+msgid "Package manager details"
+msgstr ""

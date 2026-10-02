@@ -2167,3 +2167,18 @@ msgstr "Доступ для поддержки открыт"
 
 msgid "Connection details"
 msgstr "Данные подключения"
+
+msgid "Not enough free storage to install Tailscale"
+msgstr "Недостаточно свободного места для установки Tailscale"
+
+msgid "Unable to check free storage"
+msgstr "Не удалось проверить свободное место"
+
+msgid "Free storage"
+msgstr "Свободное место"
+
+msgid "Estimated storage required, including reserve"
+msgstr "Оценка необходимого места с запасом"
+
+msgid "Package manager details"
+msgstr "Подробности пакетного менеджера"
