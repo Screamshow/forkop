@@ -13,7 +13,7 @@ required_kib=0
 uptime_seconds() { cut -d. -f1 /proc/uptime; }
 deadline=$(( $(uptime_seconds) + ${FORKOP_SUPPORT_TTL:-1800} ))
 state() {
-    printf '{"phase":"%s","deadline":%s,"error":"%s","free_kib":%s,"required_kib":%s}\n' "$phase" "$deadline" "$error" "$free_kib" "$required_kib" > "$dir/status.new"
+    printf '{"schema":2,"phase":"%s","deadline":%s,"error":"%s","free_kib":%s,"required_kib":%s}\n' "$phase" "$deadline" "$error" "$free_kib" "$required_kib" > "$dir/status.new"
     mv "$dir/status.new" "$dir/status.json"
 }
 cleanup() {

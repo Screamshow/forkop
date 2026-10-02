@@ -45,6 +45,9 @@ function status() {
         for (let name, instance in service?.instances || {})
             if (instance.running) active = true;
     } catch (e) {}
+    // A completed attempt from the old package installer is not current Lite state.
+    // Never discard the status of a running operation.
+    if (!active && state.schema != 2) state = {};
     let managed = packaged();
     let result = {
         installed: available(),

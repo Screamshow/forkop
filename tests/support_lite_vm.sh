@@ -22,14 +22,23 @@ install_lite
 "$FORKOP_SUPPORT_LITE_DIR/tailscale" version | grep -q '1.98.3'
 test -f "$FORKOP_SUPPORT_LITE_DIR/.forkop-lite"
 test ! -e "$dir/lite.download"
-sed "s|const LITE = '/usr/lib/forkop-support';|const LITE = '$FORKOP_SUPPORT_LITE_DIR';|" /usr/lib/forkop/support/session.uc > "$test_dir/session.uc"
+sed -e "s|const LITE = '/usr/lib/forkop-support';|const LITE = '$FORKOP_SUPPORT_LITE_DIR';|" -e "s|const DIR = '/var/run/forkop/support';|const DIR = '$dir';|" /usr/lib/forkop/support/session.uc > "$test_dir/session.uc"
 export TEST_SUPPORT_MODULE="$test_dir/session.uc"
 cat > "$test_dir/check.uc" <<'EOF'
 let m = loadfile(getenv('TEST_SUPPORT_MODULE'))();
 let status = m.status();
 if (!status.lite_installed || !status.installed || status.version != '1.98.3') die('Lite status detection failed');
+let fs = require('fs');
+let file = getenv('FORKOP_SUPPORT_DIR') + '/status.json';
+fs.writefile(file, '{"phase":"failed","error":"old package error","required_kib":32768}');
+status = m.status();
+if (status.phase != 'stopped' || status.error != '' || status.required_kib != 0) die('Legacy error was retained');
+fs.writefile(file, '{"schema":2,"phase":"failed","error":"current Lite error","required_kib":18000}');
+status = m.status();
+if (status.phase != 'failed' || status.error != 'current Lite error' || status.required_kib != 18000) die('Current error was lost');
+fs.unlink(file);
 EOF
-ucode "$test_dir/check.uc"
+FORKOP_SUPPORT_DIR="$dir" ucode "$test_dir/check.uc"
 if install_lite; then echo 'existing directory overwritten'; exit 1; fi
 [ "$error" = 'The Tailscale Lite directory already exists' ]
 # Tampered downloads must never create an executable installation.
