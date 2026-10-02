@@ -349,11 +349,23 @@ function run_logged(description, command) {
         output_file = "/tmp/forkop-updates-command." + owner_pid();
 
     updates_log(description);
-    let status = command_status(as_string(command) + " >" + shell_quote(output_file) + " 2>&1");
-    last_logged_output = read_file(output_file);
-    for (let line in split(last_logged_output, "\n"))
-        if (trim(as_string(line)) != "")
-            updates_log(line);
+    let status;
+    for (let attempt = 0; attempt <= 15; attempt++) {
+        status = command_status(as_string(command) + " >" + shell_quote(output_file) + " 2>&1");
+        last_logged_output = read_file(output_file);
+        for (let line in split(last_logged_output, "\n"))
+            if (trim(as_string(line)) != "")
+                updates_log(line);
+        // opkg fails before changing packages when its global lock is busy.
+        // Retry that specific failure only; package hook errors are not safe
+        // to repeat. Retrying the command also avoids a check/acquire race.
+        if (status == 0 ||
+            index(last_logged_output, "opkg_conf_load: Could not lock ") < 0 ||
+            index(last_logged_output, "Resource temporarily unavailable") < 0 || attempt == 15)
+            break;
+        updates_log("opkg is busy; waiting 2 seconds before retrying " + description, "warn");
+        command_success_from_args([ "sleep", "2" ]);
+    }
     remove_file(output_file);
     if (status != 0)
         updates_log(description + " failed with exit code " + status, "warn");

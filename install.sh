@@ -1821,11 +1821,34 @@ pkg_is_installed() {
     fi
 }
 
+opkg_with_lock_retry() (
+    # A lock acquisition failure happens before opkg changes any packages.
+    # Do not retry dependency, download or package lifecycle failures.
+    opkg_retry_output="$(mktemp /tmp/forkop-opkg-retry.XXXXXX)" || return 1
+    trap 'rm -f "$opkg_retry_output"' EXIT
+    trap 'exit 1' HUP INT TERM
+    opkg_retry_attempt=0
+    while :; do
+        opkg_retry_status=0
+        opkg "$@" </dev/null >"$opkg_retry_output" 2>&1 || opkg_retry_status=$?
+        cat "$opkg_retry_output"
+        [ "$opkg_retry_status" -ne 0 ] || return 0
+        if ! grep -Fq 'opkg_conf_load: Could not lock ' "$opkg_retry_output" ||
+            ! grep -Fq 'Resource temporarily unavailable' "$opkg_retry_output" ||
+            [ "$opkg_retry_attempt" -ge 15 ]; then
+            return "$opkg_retry_status"
+        fi
+        opkg_retry_attempt=$((opkg_retry_attempt + 1))
+        printf '%s\n' "opkg is busy; retrying in 2 seconds ($opkg_retry_attempt/15)" >&2
+        sleep 2 || return 1
+    done
+)
+
 pkg_list_update() {
     if [ "$PKG_IS_APK" -eq 1 ]; then
         apk update </dev/null
     else
-        opkg update </dev/null
+        opkg_with_lock_retry update
     fi
 }
 
@@ -2025,7 +2048,7 @@ pkg_install_name() {
     if [ "$PKG_IS_APK" -eq 1 ]; then
         apk add "$pkg_name" </dev/null
     else
-        opkg install "$pkg_name" </dev/null
+        opkg_with_lock_retry install "$pkg_name"
     fi
 }
 
@@ -2037,7 +2060,7 @@ pkg_install_files() {
             apk add --allow-untrusted --force-reinstall "$@" </dev/null
         fi
     else
-        opkg install --force-overwrite --force-downgrade "$@" </dev/null
+        opkg_with_lock_retry install --force-overwrite --force-downgrade "$@"
     fi
 }
 
@@ -2293,7 +2316,7 @@ download_sing_box_tiny_package() {
         apk fetch --output "$TMP_DIR" sing-box-tiny </dev/null || return 1
         SING_BOX_TINY_FILE="$(find "$TMP_DIR" -maxdepth 1 -type f -name 'sing-box-tiny-*.apk' | head -n 1)"
     else
-        (cd "$TMP_DIR" && opkg download sing-box-tiny </dev/null) || return 1
+        (cd "$TMP_DIR" && opkg_with_lock_retry download sing-box-tiny) || return 1
         SING_BOX_TINY_FILE="$(find "$TMP_DIR" -maxdepth 1 -type f -name 'sing-box-tiny_*.ipk' | head -n 1)"
     fi
     [ -n "$SING_BOX_TINY_FILE" ] && [ -s "$SING_BOX_TINY_FILE" ]
@@ -2303,7 +2326,7 @@ pkg_remove_name() {
     if [ "$PKG_IS_APK" -eq 1 ]; then
         apk del --force-broken-world "$1" </dev/null
     else
-        opkg remove --force-depends "$1" </dev/null
+        opkg_with_lock_retry remove --force-depends "$1"
     fi
 }
 
@@ -2469,7 +2492,7 @@ rollback_current_update() {
         if [ "$PKG_IS_APK" -eq 1 ]; then
             apk --preserve-env add --no-network --allow-untrusted --force-reinstall "$@" </dev/null || rollback_ok=0
         else
-            opkg install --force-overwrite --force-reinstall --force-downgrade "$@" </dev/null || rollback_ok=0
+            opkg_with_lock_retry install --force-overwrite --force-reinstall --force-downgrade "$@" || rollback_ok=0
         fi
         if [ "$UPDATE_HAD_I18N" -eq 0 ] && pkg_is_installed luci-i18n-forkop-ru; then
             pkg_remove_name luci-i18n-forkop-ru || rollback_ok=0

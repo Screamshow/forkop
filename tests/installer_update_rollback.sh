@@ -12,6 +12,7 @@ sed -n '/^rollback_current_update() {/,/^}/p; /^prepare_current_update_rollback(
 sed -n '/^install_json_helper_path() {/,/^install_json_ucode() {/ { /^install_json_ucode() {/d; p; }' \
   "$ROOT/install.sh" >> "$work/functions.sh"
 . "$work/functions.sh"
+eval "$(sed -n '/^opkg_with_lock_retry() (/,/^)/p' "$ROOT/install.sh")"
 TMP_DIR="$work"
 mkdir -p "$work/rollback" "$work/config"
 export FORKOP_INSTALLER_CONFIG_DIR="$work/config"

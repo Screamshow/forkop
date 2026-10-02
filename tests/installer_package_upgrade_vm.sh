@@ -12,6 +12,7 @@ fi
 TMP_DIR="$ROOT/adapter"
 mkdir -p "$TMP_DIR"
 sed -n '/^prepare_package_init_adapter() {/,/^}/p; /^pkg_install_files() {/,/^}/p' "$ROOT/install.sh" > "$ROOT/functions.sh"
+sed -n '/^opkg_with_lock_retry() (/,/^)/p' "$ROOT/install.sh" >> "$ROOT/functions.sh"
 . "$ROOT/functions.sh"
 prepare_package_init_adapter
 cp -p /etc/config/forkop "$ROOT/config.original"

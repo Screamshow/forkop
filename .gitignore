@@ -59,6 +59,8 @@ ops/deployed-nginx/
 !/tests/installer_update_rollback.sh
 !/tests/installer_package_upgrade_vm.sh
 !/tests/forkop_update_vm.sh
+!/tests/opkg_lock_retry.sh
+!/tests/installer_opkg_lock_retry.sh
 !/tests/reality_xhttp.uc
 !/tests/reality_xhttp_vm.sh
 !/tests/dns_apply.sh
