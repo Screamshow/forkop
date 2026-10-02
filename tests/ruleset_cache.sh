@@ -42,9 +42,9 @@ esac
 EOF
 cat >"$WORK_DIR/bin/sing-box" <<'EOF'
 #!/bin/sh
-[ "$1" = rule-set ] && [ "$2" = decompile ] || exit 1
-[ -f "$3" ] || exit 1
-cp "$RULESET_TEST_SOURCE_JSON" "$5"
+[ "$1" = rule-set ] && [ "$2" = match ] || exit 1
+[ "$3" = --format ] && [ "$4" = binary ] || exit 1
+[ -f "$5" ] && [ "$6" = forkop-validation.invalid ] || exit 1
 EOF
 chmod +x "$WORK_DIR/bin/curl" "$WORK_DIR/bin/sing-box"
 

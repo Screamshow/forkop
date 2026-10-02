@@ -515,12 +515,12 @@ function validate_staged_list_download(path, format) {
     if (format != "srs")
         return true;
 
-    let output = path + ".json";
-    remove_file(output);
-    let ok = command_success_from_args([ "sing-box", "rule-set", "decompile", path, "-o", output ]) &&
-        valid_list_ruleset_file(output);
-    remove_file(output);
-    return ok;
+    // Parse every compiled rule without expanding domain/IP structures into
+    // JSON alongside the running proxy (large lists can otherwise cause OOM).
+    return command_success_from_args([
+        "sing-box", "rule-set", "match", "--format", "binary", path,
+        "forkop-validation.invalid"
+    ]);
 }
 
 function owner_pid() {
@@ -554,7 +554,7 @@ function generation_file_valid(root, entry) {
         return { valid: false, reason: "rule-set file '" + name + "' is not valid JSON", key: "json-" + name };
     if (kind == "source" && as_string(entry.url) == "")
         return { valid: false, reason: "source file '" + name + "' has no identity", key: "source-identity-" + name };
-    // The manifest checksum was verified above. Decompiling the same SRS on
+    // The manifest checksum was verified above. Parsing the same SRS on
     // every cache check is expensive on routers, so remember a successful
     // schema check for this exact content in the boot-local runtime directory.
     // Fresh downloads still pass through full validation before publication.

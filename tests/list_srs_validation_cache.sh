@@ -10,16 +10,17 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
 cat > "$work/bin/sing-box" <<'EOF'
 #!/bin/sh
-if [ "${1:-}" = rule-set ] && [ "${2:-}" = decompile ]; then
-    printf '1\n' >> "$FORKOP_TEST_DECOMPILE_LOG"
+if [ "${1:-}" = rule-set ] && [ "${2:-}" = match ]; then
+    printf '1\n' >> "$FORKOP_TEST_VALIDATION_LOG"
 fi
 exec /usr/bin/sing-box "$@"
 EOF
 chmod +x "$work/bin/sing-box"
-export FORKOP_TEST_DECOMPILE_LOG="$work/decompile.log"
+export FORKOP_TEST_VALIDATION_LOG="$work/validation.log"
 export PATH="$work/bin:$PATH"
 
-cp -R /etc/forkop/list-cache "$work/cache"
+mkdir -p "$work/cache"
+printf '%s\n' '{"format":"2","generation":"gen-validation-test","signature":"","files":[]}' > "$work/cache/manifest.json"
 cp "$fixture" "$work/cache/source-99"
 size="$(wc -c < "$work/cache/source-99")"
 digest="$(md5sum "$work/cache/source-99" | cut -d ' ' -f 1)"
@@ -28,6 +29,7 @@ ucode -e 'let fs = require("fs"); let p = ARGV[0]; let m = json(fs.readfile(p));
 
 cache_valid() {
     FORKOP_LIB="$lib" \
+    FORKOP_RUNTIME_STATE_DIR="$work/state" \
     FORKOP_PERSISTENT_LIST_CACHE_DIR="$work/cache" \
     FORKOP_PERSISTENT_LIST_CACHE_MANIFEST="$work/cache/manifest.json" \
     FORKOP_LIST_SRS_VALIDATION_DIR="$work/validated" \
@@ -37,7 +39,7 @@ cache_valid() {
 cache_valid
 [ -f "$work/validated/$digest" ]
 cache_valid
-[ "$(wc -l < "$work/decompile.log")" -eq 1 ]
+[ "$(wc -l < "$work/validation.log")" -eq 1 ]
 printf 'corrupt' >> "$work/cache/source-99"
 if cache_valid; then
     echo 'corrupted SRS passed checksum validation' >&2

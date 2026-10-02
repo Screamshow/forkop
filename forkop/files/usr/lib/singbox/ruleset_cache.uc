@@ -246,10 +246,15 @@ function valid_binary(path) {
     if (trim(as_string(fs.readfile(validation_path))) == signature)
         return true;
 
-    let output = parent_dir(path) + "/.validate-" + cache_key(path) + ".json";
-    fs.unlink(output);
-    let ok = command_success([ "sing-box", "rule-set", "decompile", path, "-o", output ]) && valid_source(output);
-    fs.unlink(output);
+    // match reads the complete binary rule set and constructs every rule,
+    // even when the probe does not match. Unlike decompile it keeps compiled
+    // domain/IP structures instead of expanding them into source JSON. The
+    // expansion can OOM a 256 MiB router while its main sing-box is running.
+    // A non-match is successful; malformed or unsupported rules return error.
+    let ok = command_success([
+        "sing-box", "rule-set", "match", "--format", "binary", path,
+        "forkop-validation.invalid"
+    ]);
     if (ok)
         mark_binary_valid(path);
     else
