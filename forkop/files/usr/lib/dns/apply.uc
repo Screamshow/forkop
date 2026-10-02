@@ -79,6 +79,29 @@ function restart_dnsmasq() {
     return run("[ -x " + shell_quote(DNSMASQ_INIT) + " ] && " + shell_quote(DNSMASQ_INIT) + " restart");
 }
 
+function wait_dnsmasq_listener() {
+    let port = uci_get("dhcp.@dnsmasq[0].port") || "53";
+    if (port == "0")
+        return true;
+    for (let remaining = 15; remaining >= 0; remaining--) {
+        let pipe = fs.popen("netstat -lnup 2>/dev/null", "r");
+        let output = pipe ? as_string(pipe.read("all")) : "";
+        if (pipe)
+            pipe.close();
+        for (let line in split(output, "\n")) {
+            let fields = words(line);
+            if (length(fields) >= 6 && index(fields[0], "udp") == 0 &&
+                substr(fields[3], rindex(fields[3], ":") + 1) == port &&
+                index(fields[length(fields) - 1], "/dnsmasq") >= 0)
+                return true;
+        }
+        if (remaining > 0)
+            system("sleep 1");
+    }
+    log("dnsmasq did not open its DNS listener after restart", "warn");
+    return false;
+}
+
 function dnsmasq_legacy_instance_exists() {
     return uci_exists("dhcp.forkop");
 }
@@ -89,6 +112,19 @@ function dnsmasq_default_servers() {
 
 function dnsmasq_default_has_forkop_dns() {
     return list_has(dnsmasq_default_servers(), SB_DNS_INBOUND_ADDRESS);
+}
+
+function dnsmasq_independent_of_sing_box() {
+    if (dnsmasq_legacy_instance_exists())
+        return false;
+    for (let server in words(dnsmasq_default_servers())) {
+        // dnsmasq also accepts /domain/address#port and address@device.
+        let address = split(server, "/");
+        address = split(address[length(address) - 1], /[#@]/)[0];
+        if (address == SB_DNS_INBOUND_ADDRESS)
+            return false;
+    }
+    return true;
 }
 
 function dnsmasq_management_disabled() {
@@ -424,6 +460,10 @@ else if (mode == "has-managed-state")
     exit(dnsmasq_has_forkop_managed_state() ? 0 : 1);
 else if (mode == "default-config-complete")
     exit(dnsmasq_default_config_is_complete() ? 0 : 1);
+else if (mode == "independent-of-sing-box")
+    exit(dnsmasq_independent_of_sing_box() ? 0 : 1);
+else if (mode == "wait-listener")
+    exit(wait_dnsmasq_listener() ? 0 : 1);
 
-warn("Usage: dns/apply.uc <configure|restore|failsafe-restore|has-forkop-dns|has-managed-state|default-config-complete>\n");
+warn("Usage: dns/apply.uc <configure|restore|failsafe-restore|has-forkop-dns|has-managed-state|default-config-complete|independent-of-sing-box|wait-listener>\n");
 exit(1);

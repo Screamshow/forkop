@@ -142,4 +142,12 @@ absent 'dhcp.@dnsmasq[0].forkop_dns_version'
 ucode -L "$FORKOP_LIB" "$APPLY" failsafe-restore
 [ ! -s "$DNSMASQ_LOG" ] || fail 'rollback is not idempotent'
 
+for server in '127.0.0.42' '127.0.0.42#53' '/example.org/127.0.0.42#5353' '127.0.0.42@lo'; do
+  printf 'dhcp.@dnsmasq[0].server=%s\n' "$server" > "$STATE"
+  if ucode -L "$FORKOP_LIB" "$APPLY" independent-of-sing-box; then
+    fail "dependent DNS server $server allowed pausing sing-box"
+  fi
+done
+printf 'dhcp.@dnsmasq[0].server=127.0.0.1#5053\n' > "$STATE"
+ucode -L "$FORKOP_LIB" "$APPLY" independent-of-sing-box || fail 'independent custom DNS was rejected'
 printf 'DNS rollback transaction checks passed\n'

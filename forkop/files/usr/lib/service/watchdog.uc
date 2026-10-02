@@ -3,7 +3,6 @@
 // Keep this worker outside sing-box.  procd can respawn a crashed sing-box,
 // but an explicit stop or a permanently failing runtime otherwise leaves
 // dnsmasq forwarding to an unavailable local DNS listener indefinitely.
-let fs = require("fs");
 let uci = require("core.uci");
 
 const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
@@ -32,7 +31,7 @@ function active() {
 }
 
 function transitioning() {
-    return fs.stat(RELOAD_LOCK_DIR) != null ||
+    return status([ "runtime-dir-lock-active", RELOAD_LOCK_DIR ]) ||
         system("ucode -L " + quote(LIB_DIR) + " " + quote(UI_UC) +
             " package-upgrade-transition-active >/dev/null 2>&1") == 0;
 }

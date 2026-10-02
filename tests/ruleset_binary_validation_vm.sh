@@ -2,6 +2,7 @@
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 LIB="$ROOT/forkop/files/usr/lib"
+export FORKOP_LIB="$LIB"
 fixture=${1:?Supply a real large SRS fixture}
 work=$(mktemp -d /tmp/forkop-binary-validation.XXXXXX)
 trap 'rm -rf "$work"' EXIT
@@ -15,6 +16,7 @@ printf 'SRS\177' > "$work/unsupported.srs"
 {
 cat <<'UCODE'
 let fs = require("fs");
+const LIB_DIR = getenv("FORKOP_LIB");
 function as_string(v) { return v == null ? "" : "" + v; }
 function shell_quote(v) { return "'" + replace(as_string(v), /'/g, "'\\''") + "'"; }
 function trim(v) { return replace(v, /^\s+|\s+$/g, ""); }

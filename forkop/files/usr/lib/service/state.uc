@@ -15,6 +15,7 @@ const DEFAULT_PENDING_RELOAD_FILE = getenv("FORKOP_PENDING_RELOAD_FILE") || "/va
 const DEFAULT_SERVICE_INIT = getenv("FORKOP_SERVICE_INIT") || "/etc/init.d/forkop";
 const PACKAGE_UPGRADE_QUIESCE_FILE = getenv("FORKOP_PACKAGE_UPGRADE_QUIESCE_FILE") || "/var/run/forkop/package-upgrade.quiesce";
 const SING_BOX_INIT = getenv("FORKOP_SING_BOX_INIT") || "/etc/init.d/sing-box";
+const SING_BOX_CHECK_LOCK_DIR = getenv("FORKOP_SING_BOX_CHECK_LOCK_DIR") || "/var/run/forkop.sing-box-check.lock";
 const ZAPRET_DEFAULT_NFQWS_OPT = getenv("ZAPRET_DEFAULT_NFQWS_OPT") || "";
 const ZAPRET2_DEFAULT_NFQWS2_OPT = getenv("ZAPRET2_DEFAULT_NFQWS2_OPT") || "";
 const BYEDPI_DEFAULT_CMD_OPTS = getenv("BYEDPI_DEFAULT_CMD_OPTS") || "";
@@ -278,6 +279,21 @@ function pid_alive(pid) {
     return match(pid, /^[0-9]+$/) != null && command_success_from_args([ "kill", "-0", pid ]);
 }
 
+function runtime_dir_lock_owned_by_ancestor(lock_dir, pid) {
+    let owner = first_line_value(as_string(lock_dir) + "/pid");
+    if (!pid_alive(owner))
+        return false;
+    while (numeric_text(as_string(pid)) && int(pid) > 1) {
+        if (as_string(pid) == owner)
+            return true;
+        let parent = match(as_string(fs.readfile("/proc/" + pid + "/status")), /\nPPid:\s*([0-9]+)/);
+        if (!parent || parent[1] == as_string(pid))
+            return false;
+        pid = parent[1];
+    }
+    return false;
+}
+
 function package_upgrade_quiescing() {
     return command_success_from_args([ "ucode", "-L", LIB_DIR, LIB_DIR + "/service/ui.uc", "package-upgrade-transition-active" ]);
 }
@@ -368,7 +384,11 @@ function acquire_runtime_dir_lock_wait_until_package_upgrade(lock_dir, owner_pid
         command_success_from_args([ "sleep", "2" ]);
     }
 
-    return !package_upgrade_quiescing();
+    if (package_upgrade_quiescing()) {
+        release_runtime_dir_lock(lock_dir);
+        return false;
+    }
+    return true;
 }
 
 function release_runtime_dir_lock(lock_dir) {
@@ -834,6 +854,12 @@ function stop_all_sing_box_and_wait(timeout) {
 }
 
 function start_managed_sing_box_and_verify(timeout) {
+    // A checker owns the stopped runtime until its child has exited. Its
+    // cleanup may restart it; unrelated callers must wait for their turn.
+    if (pid_alive(first_line_value(SING_BOX_CHECK_LOCK_DIR + "/pid")) &&
+        !runtime_dir_lock_owned_by_ancestor(SING_BOX_CHECK_LOCK_DIR,
+            match(as_string(fs.readfile("/proc/self/status")), /\nPid:\s*([0-9]+)/)[1]))
+        return false;
     timeout = int(timeout || 15);
     let process_count = sing_box_process_count();
     let service_pid = sing_box_service_pid_runtime();
@@ -2131,6 +2157,10 @@ else if (mode == "run-pending-reload-if-requested")
     exit(run_pending_reload_if_requested(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "acquire-runtime-dir-lock")
     exit(acquire_runtime_dir_lock(ARGV[1], ARGV[2]) ? 0 : 1);
+else if (mode == "runtime-dir-lock-owned-by-ancestor")
+    exit(runtime_dir_lock_owned_by_ancestor(ARGV[1], ARGV[2]) ? 0 : 1);
+else if (mode == "runtime-dir-lock-active")
+    exit(pid_alive(first_line_value(as_string(ARGV[1]) + "/pid")) ? 0 : 1);
 else if (mode == "acquire-runtime-dir-lock-wait")
     exit(acquire_runtime_dir_lock_wait(ARGV[1], ARGV[2], ARGV[3]) ? 0 : 1);
 else if (mode == "acquire-runtime-dir-lock-wait-until-package-upgrade")

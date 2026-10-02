@@ -515,10 +515,10 @@ function validate_staged_list_download(path, format) {
     if (format != "srs")
         return true;
 
-    // Parse every compiled rule without expanding domain/IP structures into
-    // JSON alongside the running proxy (large lists can otherwise cause OOM).
+    // Parse every compiled rule without source JSON expansion. The shared
+    // wrapper lends the checker RAM by pausing the managed runtime.
     return command_success_from_args([
-        "sing-box", "rule-set", "match", "--format", "binary", path,
+        "sh", LIB_DIR + "/service/sing-box-check.sh", "rule-set", "match", "--format", "binary", path,
         "forkop-validation.invalid"
     ]);
 }
@@ -3373,7 +3373,7 @@ function import_custom_ruleset_subnets_from_local(path, format, section, label) 
 
     let ok = true;
     if (as_string(format) == "binary") {
-        if (!command_success_from_args([ "sing-box", "rule-set", "decompile", path, "-o", json_tmpfile ])) {
+        if (!command_success_from_args([ "sh", LIB_DIR + "/service/sing-box-check.sh", "rule-set", "decompile", path, "-o", json_tmpfile ])) {
             log_message("Failed to decompile rule set " + as_string(path), "error");
             ok = false;
         }
@@ -3406,7 +3406,7 @@ function import_custom_ruleset_subnets_from_remote(url, format, section, label, 
 
     let ok = true;
     if (as_string(format) == "binary") {
-        if (!command_success_from_args([ "sing-box", "rule-set", "decompile", remote_tmpfile, "-o", json_tmpfile ])) {
+        if (!command_success_from_args([ "sh", LIB_DIR + "/service/sing-box-check.sh", "rule-set", "decompile", remote_tmpfile, "-o", json_tmpfile ])) {
             log_message("Failed to decompile remote rule set " + safe_remote_source_identity(url, section_name(section)), "error");
             ok = false;
         }
@@ -3539,7 +3539,7 @@ function import_subnets_from_remote_srs_file(url, section, settings) {
         return false;
     }
 
-    let ok = command_success_from_args([ "sing-box", "rule-set", "decompile", binary_tmpfile, "-o", json_tmpfile ]);
+    let ok = command_success_from_args([ "sh", LIB_DIR + "/service/sing-box-check.sh", "rule-set", "decompile", binary_tmpfile, "-o", json_tmpfile ]);
     if (!ok)
         log_message("Failed to decompile binary rule set file", "error");
     if (ok && !add_json_ruleset_subnets_to_nft_for_section(section, json_tmpfile, "Remote SRS rule set " + as_string(url))) {

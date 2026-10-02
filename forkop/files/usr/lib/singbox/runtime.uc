@@ -668,7 +668,7 @@ function log_file_lines(path, level, prefix) {
 
 function sing_box_check(config_path, output_path) {
     let status = command_status(
-        command_from_args([ "sing-box", "-c", config_path, "check" ]) +
+        command_from_args([ "sh", LIB_DIR + "/service/sing-box-check.sh", "-c", config_path, "check" ]) +
         " >" + shell_quote(output_path) + " 2>&1"
     );
     let reason = status == 0 ? "" : trim(as_string(fs.readfile(output_path) || ""));
@@ -678,8 +678,8 @@ function sing_box_check(config_path, output_path) {
 }
 
 // A full sing-box check parses every outbound eagerly and can briefly use far
-// more memory than the long-running runtime. Call this only when no managed
-// sing-box process is alive (the lifecycle owns that serialization).
+// more memory than the long-running runtime. The shared command wrapper
+// serializes it with the managed runtime, including nested lifecycle checks.
 function validate_config_stage(stage_path) {
     let check_log = temp_path();
     if (as_string(stage_path) == "" || check_log == "") {

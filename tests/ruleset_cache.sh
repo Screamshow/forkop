@@ -4,6 +4,7 @@ set -o pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FORKOP_LIB="$ROOT_DIR/forkop/files/usr/lib"
+export FORKOP_LIB
 RULESET_CACHE_UC="$FORKOP_LIB/singbox/ruleset_cache.uc"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT

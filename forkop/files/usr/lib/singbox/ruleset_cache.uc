@@ -9,6 +9,7 @@ let core_ip = require("core.ip");
 let core_url = require("core.url");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
+const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
 const CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const MANIFEST_PATH = getenv("FORKOP_RULESET_CACHE_MANIFEST") || CACHE_DIR + "/manifest.json";
@@ -252,7 +253,7 @@ function valid_binary(path) {
     // expansion can OOM a 256 MiB router while its main sing-box is running.
     // A non-match is successful; malformed or unsupported rules return error.
     let ok = command_success([
-        "sing-box", "rule-set", "match", "--format", "binary", path,
+        "sh", LIB_DIR + "/service/sing-box-check.sh", "rule-set", "match", "--format", "binary", path,
         "forkop-validation.invalid"
     ]);
     if (ok)

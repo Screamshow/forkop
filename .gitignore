@@ -34,6 +34,8 @@ ops/deployed-nginx/
 !/tests/full_uninstall.sh
 !/tests/ruleset_cache.sh
 !/tests/ruleset_binary_validation_vm.sh
+!/tests/sing_box_check.sh
+!/tests/sing_box_check_vm.sh
 !/tests/singbox_single_process.sh
 !/tests/sing_box_runtime.sh
 !/tests/sing_box_manual_version.sh
