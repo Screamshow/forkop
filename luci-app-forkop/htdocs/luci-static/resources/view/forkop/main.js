@@ -11252,8 +11252,100 @@ function render3() {
   );
 }
 
+// src/forkop/tabs/monitoring/matchedConditions.ts
+function addressBytes(address) {
+  if (!address.includes(":")) {
+    const parts = address.split(".");
+    if (parts.length !== 4 || parts.some((p) => !/^\d{1,3}$/.test(p) || Number(p) > 255))
+      return;
+    return parts.map(Number);
+  }
+  if (address.includes(".")) {
+    const colon = address.lastIndexOf(":");
+    const tail = addressBytes(address.slice(colon + 1));
+    if (!tail) return;
+    address = `${address.slice(0, colon)}:${(tail[0] << 8 | tail[1]).toString(16)}:${(tail[2] << 8 | tail[3]).toString(16)}`;
+  }
+  const halves = address.split("::");
+  if (halves.length > 2) return;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return;
+  const words = [...left, ...Array(missing).fill("0"), ...right];
+  if (words.some((word) => !/^[\da-f]{1,4}$/i.test(word))) return;
+  return words.flatMap((word) => {
+    const value = parseInt(word, 16);
+    return [value >> 8, value & 255];
+  });
+}
+function inSubnet(address, subnet) {
+  const parts = subnet.split("/");
+  const ip = addressBytes(address);
+  const network = addressBytes(parts[0]);
+  if (!ip || !network || ip.length !== network.length || parts.length > 2)
+    return false;
+  const bits = parts.length === 1 ? ip.length * 8 : Number(parts[1]);
+  if (parts.length === 2 && !/^\d+$/.test(parts[1])) return false;
+  if (bits < 0 || bits > ip.length * 8) return false;
+  return ip.every((byte, index) => {
+    const remaining = Math.max(0, Math.min(8, bits - index * 8));
+    const mask = 255 << 8 - remaining & 255;
+    return (byte & mask) === (network[index] & mask);
+  });
+}
+function matchedConditions(rule, metadata) {
+  if (/\b(?:rule_set|invert)=|^\s*\(|\s(?:&&|\|\|)\s/.test(
+    rule.replace(/\s*=>.*$/, "")
+  ))
+    return;
+  const host = (metadata.sniffHost || metadata.host || "").toLowerCase().replace(/\.$/, "");
+  const matches = [];
+  const conditions = rule.replace(/\s*=>.*$/, "");
+  const fields = [...conditions.matchAll(/(?:^|\s)([a-z_]+)=/g)];
+  for (const [index, field] of fields.entries()) {
+    const kind = field[1];
+    if (![
+      "domain",
+      "domain_suffix",
+      "domain_keyword",
+      "domain_regex",
+      "ip_cidr"
+    ].includes(kind))
+      continue;
+    const raw = conditions.slice(
+      field.index + field[0].length,
+      fields[index + 1]?.index ?? conditions.length
+    ).trim();
+    const values = raw.startsWith("[") && raw.endsWith("]") ? raw.slice(1, -1).split(/\s+/) : [raw];
+    for (const value of values) {
+      if (!value || value.includes("...") || value.includes("\u2026")) continue;
+      const domain = value.toLowerCase().replace(/\.$/, "");
+      let matched = false;
+      if (kind === "ip_cidr")
+        matched = inSubnet(metadata.destinationIP || "", value);
+      else if (host) {
+        if (kind === "domain") matched = host === domain;
+        if (kind === "domain_suffix")
+          matched = host === domain || host.endsWith(domain.startsWith(".") ? domain : `.${domain}`);
+        if (kind === "domain_keyword") matched = host.includes(domain);
+        if (kind === "domain_regex" && value.length <= 2048 && host.length <= 253 && !/\(\?|\)[*+{?]|\\[1-9]|\\[pP]|\[[:]/.test(value)) {
+          try {
+            matched = new RegExp(value).test(
+              metadata.sniffHost || metadata.host || ""
+            );
+          } catch {
+          }
+        }
+      }
+      if (matched) matches.push(`${kind}=${value}`);
+    }
+  }
+  return matches.length ? [...new Set(matches)].join("; ") : void 0;
+}
+
 // src/forkop/tabs/monitoring/routeReason.ts
-function formatRouteReason(rule = "", payload = "", translate2 = (value) => value) {
+function formatRouteReason(rule = "", payload = "", translate2 = (value) => value, metadata) {
   const text = rule.trim();
   if (!text) return translate2("Not available");
   if (/^(?:final|match|default)$/i.test(text))
@@ -11305,10 +11397,67 @@ function formatRouteReason(rule = "", payload = "", translate2 = (value) => valu
     return labels.length === 1 ? labels[0] : `${translate2("One of")}: ${labels.join(", ")}`;
   }
   const conditions = text.replace(/\s*=>\s*.*$/, "").trim();
+  const matched = metadata && matchedConditions(text, metadata);
+  if (matched) return matched;
   return payload ? `${conditions}: ${payload}` : conditions;
 }
 
+// src/forkop/tabs/monitoring/routeConditions.ts
+function expandRouteConditions(reported, rules) {
+  if (!reported.includes("...") && !reported.includes("\u2026")) return reported;
+  const outbound = reported.match(/=>\s*route\(([^)]+)\)\s*$/)?.[1];
+  if (!outbound) return reported;
+  const conditions = reported.replace(/\s*=>.*$/, "");
+  if (/^\s*\(|\b(?:invert|rule_set)=/.test(conditions)) return reported;
+  const fields = [...conditions.matchAll(/(?:^|\s)([a-z_]+)=/g)];
+  if (!fields.length) return reported;
+  const candidates = rules.filter((rule2) => {
+    if (rule2.outbound !== outbound || rule2.type === "logical" || rule2.invert)
+      return false;
+    return fields.every((field, index) => {
+      const value = rule2[field[1]];
+      if (value === void 0 || value === null) return false;
+      const raw = conditions.slice(
+        field.index + field[0].length,
+        fields[index + 1]?.index ?? conditions.length
+      ).trim();
+      const preview = raw.startsWith("[") && raw.endsWith("]") ? raw.slice(1, -1) : raw;
+      const full = Array.isArray(value) ? value.join(" ") : String(value);
+      const truncated = /(?:\.\.\.|…)$/u.test(preview);
+      return truncated ? full.startsWith(preview.replace(/(?:\.\.\.|…)$/u, "")) : full === preview;
+    });
+  });
+  if (candidates.length !== 1) return reported;
+  const rule = candidates[0];
+  return fields.map((field) => {
+    const value = rule[field[1]];
+    return `${field[1]}=${Array.isArray(value) ? `[${value.join(" ")}]` : String(value)}`;
+  }).join(" ") + ` => route(${outbound})`;
+}
+
 // src/forkop/tabs/monitoring/initController.ts
+var runtimeRouteRules = [];
+var expandedRouteConditions = /* @__PURE__ */ new Map();
+function getFullRouteRule(connection) {
+  const rule = connection.rule || "";
+  if (!expandedRouteConditions.has(rule)) {
+    expandedRouteConditions.set(
+      rule,
+      expandRouteConditions(rule, runtimeRouteRules)
+    );
+  }
+  return expandedRouteConditions.get(rule);
+}
+async function loadRuntimeRouteRules(mountId) {
+  try {
+    const config = JSON.parse(await fs.read("/etc/sing-box/config.json"));
+    if (!monitoringMounted || mountId !== monitoringMountId) return;
+    runtimeRouteRules = Array.isArray(config.route?.rules) ? config.route.rules : [];
+    expandedRouteConditions.clear();
+    renderConnections();
+  } catch {
+  }
+}
 function normalizeConnectionsPayload(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -11523,9 +11672,10 @@ function getRouteReason(connection) {
     "One of": _("One of")
   };
   return formatRouteReason(
-    connection.rule,
+    getFullRouteRule(connection),
     connection.rulePayload,
-    (value) => labels[value] || value
+    (value) => labels[value] || value,
+    connection.metadata
   );
 }
 function sortConnections(connections, tab) {
@@ -11761,13 +11911,13 @@ function renderControls() {
     searchInput.disabled = serviceAvailability === "stopped";
   }
 }
-function renderValue(value, className = "") {
+function renderValue(value, className = "", tooltip) {
   const text = value || "-";
   const element = E(
     "span",
     {
       class: ["fkp_monitoring-page__value", className].filter(Boolean).join(" "),
-      title: text
+      title: tooltip || text
     },
     text
   );
@@ -11837,7 +11987,8 @@ function renderConnectionRow(connection) {
         renderValue(getRoute(connection), "fkp_monitoring-page__route"),
         renderValue(
           getRouteReason(connection),
-          "fkp_monitoring-page__reason"
+          "fkp_monitoring-page__reason",
+          getFullRouteRule(connection)
         )
       ]),
       renderTableCell(_("Time"), [
@@ -12411,6 +12562,9 @@ async function onPageMount3() {
   monitoringMounted = true;
   monitoringMountId += 1;
   const mountId = monitoringMountId;
+  runtimeRouteRules = [];
+  expandedRouteConditions.clear();
+  void loadRuntimeRouteRules(mountId);
   resetMonitoringState();
   bindControls();
   renderControls();

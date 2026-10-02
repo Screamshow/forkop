@@ -1,7 +1,10 @@
+import { matchedConditions, type MatchMetadata } from './matchedConditions';
+
 export function formatRouteReason(
   rule = '',
   payload = '',
   translate: (value: string) => string = (value) => value,
+  metadata?: MatchMetadata,
 ): string {
   const text = rule.trim();
   if (!text) return translate('Not available');
@@ -71,5 +74,7 @@ export function formatRouteReason(
   // Keep the actual conditions for inline, device and logical rules. Do not
   // infer a list from the destination hostname or selected outbound.
   const conditions = text.replace(/\s*=>\s*.*$/, '').trim();
+  const matched = metadata && matchedConditions(text, metadata);
+  if (matched) return matched;
   return payload ? `${conditions}: ${payload}` : conditions;
 }

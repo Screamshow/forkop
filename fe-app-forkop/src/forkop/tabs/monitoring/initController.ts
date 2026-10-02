@@ -14,6 +14,38 @@ import { logger, socket, store, StoreType } from '../../services';
 import { Forkop } from '../../types';
 import { formatRouteReason } from './routeReason';
 import {
+  expandRouteConditions,
+  type RuntimeRouteRule,
+} from './routeConditions';
+
+let runtimeRouteRules: RuntimeRouteRule[] = [];
+const expandedRouteConditions = new Map<string, string>();
+
+function getFullRouteRule(connection: MonitoredConnection): string {
+  const rule = connection.rule || '';
+  if (!expandedRouteConditions.has(rule)) {
+    expandedRouteConditions.set(
+      rule,
+      expandRouteConditions(rule, runtimeRouteRules),
+    );
+  }
+  return expandedRouteConditions.get(rule)!;
+}
+
+async function loadRuntimeRouteRules(mountId: number) {
+  try {
+    const config = JSON.parse(await fs.read('/etc/sing-box/config.json'));
+    if (!monitoringMounted || mountId !== monitoringMountId) return;
+    runtimeRouteRules = Array.isArray(config.route?.rules)
+      ? config.route.rules
+      : [];
+    expandedRouteConditions.clear();
+    renderConnections();
+  } catch {
+    // Keep the API's original rule when the runtime config is unavailable.
+  }
+}
+import {
   getCachedRuntimeUiState,
   refreshRuntimeUiState,
   subscribeRuntimeUiState,
@@ -35,6 +67,7 @@ interface ClashConnectionMetadata {
   destinationIP?: string;
   destinationPort?: string | number;
   host?: string;
+  sniffHost?: string;
   network?: string;
   processPath?: string;
   sourceIP?: string;
@@ -349,9 +382,10 @@ function getRouteReason(connection: MonitoredConnection): string {
     'One of': _('One of'),
   };
   return formatRouteReason(
-    connection.rule,
+    getFullRouteRule(connection),
     connection.rulePayload,
     (value) => labels[value] || value,
+    connection.metadata,
   );
 }
 
@@ -653,7 +687,7 @@ function renderControls() {
   }
 }
 
-function renderValue(value: string, className = '') {
+function renderValue(value: string, className = '', tooltip?: string) {
   const text = value || '-';
   const element = E(
     'span',
@@ -661,7 +695,7 @@ function renderValue(value: string, className = '') {
       class: ['fkp_monitoring-page__value', className]
         .filter(Boolean)
         .join(' '),
-      title: text,
+      title: tooltip || text,
     },
     text,
   );
@@ -748,6 +782,7 @@ function renderConnectionRow(connection: MonitoredConnection) {
         renderValue(
           getRouteReason(connection),
           'fkp_monitoring-page__reason',
+          getFullRouteRule(connection),
         ),
       ]),
       renderTableCell(_('Time'), [
@@ -1500,6 +1535,9 @@ async function onPageMount() {
   monitoringMountId += 1;
   const mountId = monitoringMountId;
 
+  runtimeRouteRules = [];
+  expandedRouteConditions.clear();
+  void loadRuntimeRouteRules(mountId);
   resetMonitoringState();
   bindControls();
   renderControls();
