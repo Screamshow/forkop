@@ -380,6 +380,7 @@ function getRouteReason(connection: MonitoredConnection): string {
     'Default route': _('Default route'),
     'Built-in subnets': _('Built-in subnets'),
     'One of': _('One of'),
+    'Exact match unavailable': _('Exact match unavailable'),
   };
   return formatRouteReason(
     getFullRouteRule(connection),

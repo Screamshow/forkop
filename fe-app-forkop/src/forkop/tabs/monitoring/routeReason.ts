@@ -76,5 +76,13 @@ export function formatRouteReason(
   const conditions = text.replace(/\s*=>\s*.*$/, '').trim();
   const matched = metadata && matchedConditions(text, metadata);
   if (matched) return matched;
+  if (
+    metadata &&
+    !payload &&
+    /\b(?:domain|domain_suffix|domain_keyword|domain_regex|ip_cidr)=/.test(
+      conditions,
+    )
+  )
+    return translate('Exact match unavailable');
   return payload ? `${conditions}: ${payload}` : conditions;
 }

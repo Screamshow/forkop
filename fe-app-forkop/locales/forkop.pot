@@ -2955,3 +2955,6 @@ msgstr ""
 
 msgid "Could not confirm the sing-box process state. Check the logs before trying again."
 msgstr ""
+
+msgid "Exact match unavailable"
+msgstr ""

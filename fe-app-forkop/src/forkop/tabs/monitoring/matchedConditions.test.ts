@@ -93,7 +93,7 @@ describe('connection matched conditions', () => {
     }
     expect(
       formatRouteReason('domain=example.org => route(VPN)', '', undefined, {}),
-    ).toBe('domain=example.org');
+    ).toBe('Exact match unavailable');
     expect(
       formatRouteReason(
         'domain=[other.org example.org] => route(VPN)',

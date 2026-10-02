@@ -2065,3 +2065,6 @@ msgstr "Перезапуск временно недоступен"
 
 msgid "Could not confirm the sing-box process state. Check the logs before trying again."
 msgstr "Не удалось подтвердить состояние процесса sing-box. Посмотрите журнал перед повторной попыткой."
+
+msgid "Exact match unavailable"
+msgstr "Точное совпадение недоступно"

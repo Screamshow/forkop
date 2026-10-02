@@ -2,6 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { formatRouteReason } from './routeReason';
 
 describe('route reason', () => {
+  it('shows a compact fallback for the reproduced domain connection with a missing destination IP', () => {
+    const rule =
+      'inbound=test-in domain_suffix=[bhvr.com bhvronline.com deadbydaylight.com] domain_regex=^gamelift-ping\\.[a-z0-9-]+\\.api\\.aws$ ip_cidr=[18.184.209.26 18.185.240.169 127.0.0.1] => route(DBD-out)';
+    const metadata = {
+      host: 'valorant.secure.dyn.riotcdn.net',
+      destinationIP: '',
+    };
+    expect(formatRouteReason(rule, '', undefined, metadata)).toBe(
+      'Exact match unavailable',
+    );
+    expect(
+      formatRouteReason(
+        rule,
+        '',
+        (text) =>
+          text === 'Exact match unavailable'
+            ? 'Точное совпадение недоступно'
+            : text,
+        metadata,
+      ),
+    ).toBe('Точное совпадение недоступно');
+    expect(
+      formatRouteReason(rule, '', undefined, {
+        ...metadata,
+        destinationIP: '127.0.0.1',
+      }),
+    ).toBe('ip_cidr=127.0.0.1');
+  });
   it('names the matching built-in list, including hyphenated sections', () => {
     expect(
       formatRouteReason(

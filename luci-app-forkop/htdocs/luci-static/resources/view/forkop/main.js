@@ -11399,6 +11399,10 @@ function formatRouteReason(rule = "", payload = "", translate2 = (value) => valu
   const conditions = text.replace(/\s*=>\s*.*$/, "").trim();
   const matched = metadata && matchedConditions(text, metadata);
   if (matched) return matched;
+  if (metadata && !payload && /\b(?:domain|domain_suffix|domain_keyword|domain_regex|ip_cidr)=/.test(
+    conditions
+  ))
+    return translate2("Exact match unavailable");
   return payload ? `${conditions}: ${payload}` : conditions;
 }
 
@@ -11669,7 +11673,8 @@ function getRouteReason(connection) {
     "Not available": _("Not available"),
     "Default route": _("Default route"),
     "Built-in subnets": _("Built-in subnets"),
-    "One of": _("One of")
+    "One of": _("One of"),
+    "Exact match unavailable": _("Exact match unavailable")
   };
   return formatRouteReason(
     getFullRouteRule(connection),
