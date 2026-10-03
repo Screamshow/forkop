@@ -13488,7 +13488,7 @@ function renderRemoteSupport() {
     if (status?.error_detail) {
       details.push(
         E("details", {}, [
-          E("summary", {}, _("Package manager details")),
+          E("summary", {}, _("Error details")),
           E(
             "pre",
             {

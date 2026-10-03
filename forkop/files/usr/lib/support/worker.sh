@@ -25,6 +25,10 @@ cleanup() {
     [ -z "$auth_pid" ] || kill "$auth_pid" 2>/dev/null || true
     [ -z "$daemon_pid" ] || kill "$daemon_pid" 2>/dev/null || true
     [ -z "$daemon_pid" ] || wait "$daemon_pid" 2>/dev/null || true
+    if [ "$phase" = failed ] && [ -n "$daemon_pid" ]; then
+        FORKOP_SUPPORT_DIR="$dir" ucode /usr/lib/forkop/support/auth-diagnostic.uc >/dev/null 2>&1 || true
+    fi
+    rm -f "$dir/daemon.log" "$dir/auth.log"
     rm -f "$dir/lite.download"
     if [ "${lite_installing:-0}" = 1 ]; then
         rm -f "$lite/tailscale" "$lite/tailscaled" "$lite/tailscale.combined" "$lite/.forkop-lite"
@@ -36,6 +40,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'phase=stopped; exit 0' TERM INT
+rm -f "$dir/auth-detail.txt"
 if [ "$(cat "$dir/operation")" = remove ]; then
     phase=removing; state
     if [ -x "$lite/tailscale" ] && [ -x "$lite/tailscaled" ] && [ -f "$lite/.forkop-lite" ] && [ ! -L "$lite" ]; then
@@ -74,7 +79,7 @@ if [ "$(cat "$dir/operation")" = install ]; then
 fi
 [ -s "$dir/auth.key" ] || { phase=failed; error='Missing temporary auth key'; exit 1; }
 phase=starting; state
-tailscaled --tun=userspace-networking --state=mem: --statedir="$dir" --socket="$dir/socket" --port=0 --no-logs-no-support >/dev/null 2>&1 &
+tailscaled --tun=userspace-networking --state=mem: --statedir="$dir" --socket="$dir/socket" --port=0 --no-logs-no-support >"$dir/daemon.log" 2>&1 &
 daemon_pid=$!
 count=0
 while [ ! -S "$dir/socket" ]; do
@@ -83,11 +88,12 @@ while [ ! -S "$dir/socket" ]; do
     sleep 1
 done
 # Credentials only enter tailscale via a root-readable file, never argv.
-tailscale --socket="$dir/socket" up --hostname="forkop-support-$(cat /proc/sys/kernel/hostname)" --accept-dns=false --accept-routes=false --netfilter-mode=off --auth-key="file:$dir/auth.key" --timeout=60s >/dev/null 2>&1 &
+tailscale --socket="$dir/socket" up --hostname="forkop-support-$(cat /proc/sys/kernel/hostname)" --accept-dns=false --accept-routes=false --netfilter-mode=off --auth-key="file:$dir/auth.key" --timeout=60s >"$dir/auth.log" 2>&1 &
 auth_pid=$!
 auth_deadline=$(( $(uptime_seconds) + 60 ))
 [ "$auth_deadline" -le "$deadline" ] || auth_deadline=$deadline
 while kill -0 "$auth_pid" 2>/dev/null; do
+    [ "$(wc -c < "$dir/daemon.log")" -le 262144 ] || : > "$dir/daemon.log"
     if [ "$(uptime_seconds)" -ge "$auth_deadline" ]; then
         phase=failed; error='Tailscale authorization failed or timed out'; exit 1
     fi
@@ -101,6 +107,7 @@ rm -f "$dir/auth.key"
 ucode /usr/lib/forkop/support/ssh-access.uc add >/dev/null 2>&1 || { phase=failed; error='Temporary SSH authorization failed'; exit 1; }
 phase=connected; state
 while [ "$(uptime_seconds)" -lt "$deadline" ]; do
+    [ "$(wc -c < "$dir/daemon.log")" -le 262144 ] || : > "$dir/daemon.log"
     kill -0 "$daemon_pid" 2>/dev/null || { phase=failed; error='Tailscale connection process exited'; exit 1; }
     sleep 1
 done

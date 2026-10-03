@@ -2218,3 +2218,6 @@ msgstr "Не удалось установить Tailscale Lite"
 
 msgid "Tailscale Lite removal failed"
 msgstr "Не удалось удалить Tailscale Lite"
+
+msgid "Error details"
+msgstr "Подробности ошибки"

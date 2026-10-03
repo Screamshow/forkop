@@ -65,6 +65,13 @@ function status() {
         remaining_seconds: active ? max(0, int(state.deadline || 0) - uptime()) : 0,
         address: ''
     };
+    if (result.phase == 'failed') {
+        let detail = fs.open(DIR + '/auth-detail.txt', 'r');
+        if (detail) {
+            result.error_detail = detail.read(4096) || '';
+            detail.close();
+        }
+    }
     if (result.phase == 'failed' && index(['Tailscale installation failed', 'Tailscale Lite installation failed', 'Tailscale Lite download failed', 'Tailscale Lite is unavailable for this architecture'], state.error) != -1) {
         let log = fs.open(DIR + '/package.log', 'r');
         if (log) {

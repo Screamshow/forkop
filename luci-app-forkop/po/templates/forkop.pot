@@ -3132,3 +3132,6 @@ msgstr ""
 
 msgid "Tailscale Lite removal failed"
 msgstr ""
+
+msgid "Error details"
+msgstr ""
