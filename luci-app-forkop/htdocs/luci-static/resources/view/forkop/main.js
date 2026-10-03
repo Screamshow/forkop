@@ -13556,7 +13556,7 @@ function renderRemoteSupport() {
                   "p",
                   {},
                   _(
-                    status?.lite_installed ? "Remove the separate Tailscale Lite support installation? The system Tailscale is preserved." : "Remove the Tailscale package from this router? It will no longer be available for other applications."
+                    status?.lite_installed ? "Remove the separate Tailscale Lite support installation?" : "Remove the Tailscale package from this router? It will no longer be available for other applications."
                   )
                 ),
                 E("div", { class: "right" }, [

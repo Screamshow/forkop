@@ -3091,7 +3091,7 @@ msgstr ""
 msgid "Remove Tailscale Lite"
 msgstr ""
 
-msgid "Remove the separate Tailscale Lite support installation? The system Tailscale is preserved."
+msgid "Remove the separate Tailscale Lite support installation?"
 msgstr ""
 
 msgid "Tailscale Lite is unavailable for this architecture"

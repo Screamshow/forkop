@@ -2189,8 +2189,8 @@ msgstr "Установить Tailscale Lite"
 msgid "Remove Tailscale Lite"
 msgstr "Удалить Tailscale Lite"
 
-msgid "Remove the separate Tailscale Lite support installation? The system Tailscale is preserved."
-msgstr "Удалить отдельную сборку Tailscale Lite для поддержки? Системный Tailscale сохранится."
+msgid "Remove the separate Tailscale Lite support installation?"
+msgstr "Удалить отдельную сборку Tailscale Lite для поддержки?"
 
 msgid "Tailscale Lite is unavailable for this architecture"
 msgstr "Tailscale Lite недоступен для этой архитектуры"
