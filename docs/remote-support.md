@@ -140,8 +140,8 @@ executable. Existing destination directories are never overwritten.
 
 The pinned upstream v1.98.3 source produces a stripped multicall binary with
 CLI, userspace netstack, local socket identity, routing/port detection and port
-mapping. Build tags remove optional features; no UPX is used. ARM64 is 15,990,946
-bytes (15.25 MiB); AMD64 is 17,133,730 bytes (16.34 MiB). Rebuild with
+mapping. Build tags remove optional features; no UPX is used. ARM64 is 16,711,842
+bytes (15.94 MiB); AMD64 is 17,997,986 bytes (17.16 MiB). Rebuild with
 `scripts/build-tailscale-lite.sh` from the pinned source revision.
 
 VM tests downloaded Lite from the public mirror, rejected insufficient storage
@@ -150,3 +150,5 @@ expired the session and removed Lite while another standard daemon stayed alive.
 The installed system package list, binaries and configuration hashes were unchanged.
 A real tailnet registration with Lite and real Filogic RAM measurements remain
 unverified and require a fresh auth key / device testing.
+
+The r2 Lite build restores tailnetlock, whose omission caused the CLI to fail after successful registration with 'tailnet lock is not supported by this binary'. Real authorization, connected worker state, direct ping and operator-key SSH through the support Tailscale IP passed on VM25. The VM required a temporary controlplane hosts override due to upstream FakeIP; the original hosts file was restored and the session/credentials revoked afterward.

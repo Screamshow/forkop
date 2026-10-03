@@ -1,14 +1,14 @@
 {
   "assets": {
     "aarch64": {
-      "url": "https://mirror.51343.ru/forkop/support/tailscale-lite/1.98.3-r1/tailscale-lite-linux-arm64",
-      "sha256": "493b94b1167bde2f2abddcc4349ef35f53004e04e9b7232f2232aad96fd4faa5",
-      "size": 15990946
+      "url": "https://mirror.51343.ru/forkop/support/tailscale-lite/1.98.3-r2/tailscale-lite-linux-arm64",
+      "sha256": "399c03f86d85e5a7cb5f0f766518f2f1e2d8395ecdb260947913db84dd2117cc",
+      "size": 16711842
     },
     "x86_64": {
-      "url": "https://mirror.51343.ru/forkop/support/tailscale-lite/1.98.3-r1/tailscale-lite-linux-amd64",
-      "sha256": "1940f49afde56822997eb757c59a4e30856980613040d2b3645fa586c45d7949",
-      "size": 17133730
+      "url": "https://mirror.51343.ru/forkop/support/tailscale-lite/1.98.3-r2/tailscale-lite-linux-amd64",
+      "sha256": "6fcae72080288bd1368f00690613e447d08e805ef64f8d7045544836494ca8ef",
+      "size": 17997986
     }
   },
   "version": "1.98.3"
