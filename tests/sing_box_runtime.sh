@@ -149,15 +149,7 @@ exit 42
 EOF_SING_BOX_CHECK
 chmod +x "$WORK_DIR/check-bin/sing-box"
 : >"$WORK_DIR/invalid-config.json"
-# This fixture checks error propagation only. Keep service ownership isolated
-# from a real runtime on the test host; transition behavior has its own tests.
-cat >"$WORK_DIR/check-state.uc" <<'EOF_CHECK_STATE'
-if (ARGV[0] == "sing-box-process-count")
-    print("0\n");
-exit(0);
-EOF_CHECK_STATE
 if PATH="$WORK_DIR/check-bin:$PATH" \
-  FORKOP_LIB="$FORKOP_LIB" FORKOP_STATE_UC="$WORK_DIR/check-state.uc" \
   ucode -L "$FORKOP_LIB" "$SINGBOX_RUNTIME_UC" check-config-fixture \
   "$WORK_DIR/invalid-config.json" "$WORK_DIR/sing-box-check.log" \
   >"$WORK_DIR/sing-box-check.reason"; then

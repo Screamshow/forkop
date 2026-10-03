@@ -644,7 +644,7 @@ function check_proxy() {
     }
 
     nolog("Checking sing-box configuration...");
-    if (!command_success_from_args([ "sh", LIB_DIR + "/service/sing-box-check.sh", "-c", sing_box_config_path, "check" ])) {
+    if (!command_success_from_args([ "sing-box", "-c", sing_box_config_path, "check" ])) {
         nolog("Invalid configuration");
         return 1;
     }
@@ -671,7 +671,7 @@ function check_proxy() {
 
     let response = "";
     for (let attempt = 1; attempt <= 5; attempt++) {
-        let args = [ "sh", LIB_DIR + "/service/sing-box-check.sh", "tools", "fetch", "ifconfig.me", "-c", check_proxy_config, "-D", check_proxy_dir, "--disable-color" ];
+        let args = [ "sing-box", "tools", "fetch", "ifconfig.me", "-c", check_proxy_config, "-D", check_proxy_dir, "--disable-color" ];
         if (outbound_tag != "") {
             push(args, "-o");
             push(args, outbound_tag);

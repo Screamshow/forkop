@@ -9,7 +9,6 @@ let core_ip = require("core.ip");
 let core_url = require("core.url");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
-const LIB_DIR = getenv("FORKOP_LIB") || "/usr/lib/forkop";
 const BIN_PATH = getenv("FORKOP_BIN") || "/usr/bin/forkop";
 const CACHE_DIR = getenv("FORKOP_RULESET_CACHE_DIR") || "/etc/forkop/ruleset-cache";
 const MANIFEST_PATH = getenv("FORKOP_RULESET_CACHE_MANIFEST") || CACHE_DIR + "/manifest.json";
@@ -253,7 +252,7 @@ function valid_binary(path) {
     // expansion can OOM a 256 MiB router while its main sing-box is running.
     // A non-match is successful; malformed or unsupported rules return error.
     let ok = command_success([
-        "sh", LIB_DIR + "/service/sing-box-check.sh", "rule-set", "match", "--format", "binary", path,
+        "sing-box", "rule-set", "match", "--format", "binary", path,
         "forkop-validation.invalid"
     ]);
     if (ok)
@@ -423,10 +422,7 @@ function commit_persistent_candidate(source, target, format) {
     let staged = target + ".download." + as_string(stamp[0]) + "." + as_string(stamp[1]);
     fs.unlink(staged);
     fs.unlink(binary_validation_path(staged));
-    // Validate once, then prove that the staged copy has exactly those bytes.
-    // A second sing-box parse of the copy would stop/restart the service again.
-    if (!valid_cache(source, format) || !command_success([ "cp", source, staged ]) ||
-        !command_success([ "cmp", "-s", source, staged ]) || !fs.rename(staged, target)) {
+    if (!command_success([ "cp", source, staged ]) || !valid_cache(staged, format) || !fs.rename(staged, target)) {
         fs.unlink(staged);
         fs.unlink(binary_validation_path(staged));
         return false;
@@ -455,20 +451,16 @@ function refresh_entry(entry, proxy_address, runtime_manifest) {
             fs.unlink(binary_validation_path(temporary));
             continue;
         }
-        let current = active_cache_path(runtime_manifest, url, format);
-        // Exact equality with a validated cache needs no second parser or
-        // service pause. cmp compares bytes, not a new checksum convention.
-        let unchanged = current != "" && valid_cache(current, format) &&
-            command_success([ "cmp", "-s", current, temporary ]);
-        if (unchanged && format == "binary")
-            mark_binary_valid(temporary);
-        if (!unchanged && !valid_cache(temporary, format)) {
+        if (!valid_cache(temporary, format)) {
             warn("rule-set download returned an invalid ", format, " payload for ", candidate, "\n");
             fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
             continue;
         }
-        if (unchanged) {
+        let current = active_cache_path(runtime_manifest, url, format);
+        let old_md5 = file_md5(current);
+        let new_md5 = file_md5(temporary);
+        if (old_md5 != "" && old_md5 == new_md5) {
             let new_bytes = allocated_bytes(temporary);
             if (current == runtime_target && new_bytes >= 0 && persistent_cache_can_store(persistent_target, new_bytes) &&
                 commit_persistent_candidate(temporary, persistent_target, format)) {
