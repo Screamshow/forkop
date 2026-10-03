@@ -136,7 +136,11 @@ run() {
 
     PHASE=files
     state running
-    if [ -f "$ROOT/usr/lib/forkop-support/.forkop-lite" ] && [ ! -L "$ROOT/usr/lib/forkop-support" ]; then
+    # Lite is a private standalone installation. Never remove system Tailscale.
+    if [ ! -L "$ROOT/usr/lib/forkop-support" ] && \
+        [ ! -L "$ROOT/usr/lib/forkop-support/.forkop-lite" ] && \
+        [ -f "$ROOT/usr/lib/forkop-support/.forkop-lite" ] && \
+        grep -qx 'forkop-tailscale-lite' "$ROOT/usr/lib/forkop-support/.forkop-lite"; then
         rm -f "$ROOT/usr/lib/forkop-support/tailscale" "$ROOT/usr/lib/forkop-support/tailscaled" \
             "$ROOT/usr/lib/forkop-support/tailscale.combined" "$ROOT/usr/lib/forkop-support/.forkop-lite"
         rmdir "$ROOT/usr/lib/forkop-support" 2>/dev/null || true

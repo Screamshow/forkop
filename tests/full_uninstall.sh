@@ -38,6 +38,15 @@ SH
 printf 'support %s\n' "$1" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
 SH
     printf 'user Tailscale installation\n' > "$ROOT/etc/init.d/tailscale"
+    mkdir -p "$ROOT/usr/lib/forkop-support" "$ROOT/usr/sbin" "$ROOT/etc/tailscale" "$ROOT/etc/rc.d"
+    printf 'forkop-tailscale-lite\n' > "$ROOT/usr/lib/forkop-support/.forkop-lite"
+    printf 'Lite binary\n' > "$ROOT/usr/lib/forkop-support/tailscale.combined"
+    ln -s tailscale.combined "$ROOT/usr/lib/forkop-support/tailscale"
+    ln -s tailscale.combined "$ROOT/usr/lib/forkop-support/tailscaled"
+    for file in usr/bin/tailscale usr/sbin/tailscaled etc/config/tailscale etc/tailscale/tailscaled.state packages/tailscale; do
+        printf 'customer Tailscale data\n' > "$ROOT/$file"
+    done
+    ln -s ../init.d/tailscale "$ROOT/etc/rc.d/S80tailscale"
     cat > "$ROOT/usr/bin/ucode" <<'SH'
 #!/bin/sh
 printf 'torrserver-direct-rule %s\n' "$*" >> "$FORKOP_UNINSTALL_ROOT/service-calls"
@@ -68,6 +77,11 @@ run_case() {
         sleep 1
     done
     printf '%s\n' "$status" | grep -q "\"state\":\"$1\""
+    for file in usr/bin/tailscale usr/sbin/tailscaled etc/config/tailscale etc/tailscale/tailscaled.state packages/tailscale; do
+        grep -qx 'customer Tailscale data' "$ROOT/$file"
+    done
+    [ -L "$ROOT/etc/rc.d/S80tailscale" ]
+    if [ "$1" = complete ]; then [ ! -e "$ROOT/usr/lib/forkop-support" ]; fi
 }
 
 fixture opkg
