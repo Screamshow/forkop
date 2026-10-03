@@ -7,6 +7,7 @@ mkdir "$work/bin"
 export TEST_WORK="$work"
 export FORKOP_LIB="$ROOT/forkop/files/usr/lib"
 export FORKOP_STATE_UC=state FORKOP_DNS_APPLY_UC=dns
+export FORKOP_NFT_APPLY_UC=nft
 export FORKOP_RELOAD_LOCK_DIR="$work/reload" FORKOP_SING_BOX_CHECK_LOCK_DIR="$work/check"
 export PATH="$work/bin:$PATH"
 cat > "$work/bin/ucode" <<'SH'
@@ -14,6 +15,7 @@ cat > "$work/bin/ucode" <<'SH'
 shift 2
 module=$1; shift
 printf '%s %s\n' "$module" "$*" >> "$TEST_WORK/log"
+if [ "$module" = nft ]; then exit 0; fi
 if [ "$module" = dns ]; then
     echo dns-init-noise
     case "$1" in
@@ -45,6 +47,7 @@ echo checker >> "$TEST_WORK/log"
 [ -z "${TEST_CHECK_OUTPUT:-}" ] || printf '%s\n' "$TEST_CHECK_OUTPUT"
 if [ "${TEST_SLEEP:-0}" = 1 ]; then
     echo $$ > "$TEST_WORK/child"
+    trap '' TERM
     exec sleep 60
 fi
 exit "$TEST_CHECK_STATUS"
@@ -56,6 +59,11 @@ SH
 cat > "$work/bin/logger" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> "$TEST_WORK/log"
+SH
+cat > "$work/bin/sleep" <<'SH'
+#!/bin/sh
+case "$1" in 60|2) echo $$ >> "$TEST_WORK/timers" ;; esac
+exec /bin/sleep "$@"
 SH
 chmod +x "$work/bin/"*
 export TEST_INHERITED=0 TEST_FOREIGN=0 TEST_DNS=managed
@@ -104,4 +112,11 @@ kill -TERM "$helper"
 if wait "$helper"; then exit 1; fi
 restored
 ! kill -0 "$(cat "$work/child")" 2>/dev/null
-echo 'Sequential checker: ordering, invalid candidate, stop/start failures, foreign runtime, unsafe DNS and inherited lock passed'
+reset; export FORKOP_SING_BOX_CHECK_TIMEOUT=2
+result=0
+run || result=$?
+[ "$result" = 124 ]
+restored
+! kill -0 "$(cat "$work/child")" 2>/dev/null
+while read -r pid; do ! kill -0 "$pid" 2>/dev/null; done < "$work/timers"
+echo 'Sequential checker: ordering, failures, inherited lock, interruption and timeout of a TERM-ignoring child passed; no timer processes leaked'

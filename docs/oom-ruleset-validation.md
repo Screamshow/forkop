@@ -125,3 +125,36 @@ Discord subnet ruleset fixture; the unchanged baseline also exits 2 there.
 Targeted transition and parser tests above pass independently. These x86 VM
 results do not establish a universal memory bound for arbitrary rule sets:
 one checker or one runtime can still exceed a device's available RAM.
+
+## Bounded checks and reduced repeated work
+
+The disposable checker now has a 60-second deadline (overridable with
+`FORKOP_SING_BOX_CHECK_TIMEOUT`). Timeout rejects the candidate, kills and
+waits for that exact child, and restores the managed service. No external
+`timeout` package is required. Tests also cover a TERM-ignoring child and
+verify that timer processes are reaped.
+
+Per-source DNS interception needs a separate native-DNS fallback while the
+core is stopped. Existing redirect matchers are cloned temporarily with the
+dnsmasq port, preserving source/interface selection and DNAT exemptions from
+TPROXY. These rules are removed after runtime readiness; failed restart
+leaves native DNS available. A LAN network-namespace test verifies fake-IP
+and transparent outbound routing before/after timeout, direct HTTPS and DNS
+during the pause, and exact restoration of config and firewall policy.
+
+Optimization keeps the same ownership checks but uses `fs.readlink()` rather
+than spawning readlink for every process. An unchanged downloaded SRS is
+compared byte-for-byte against its validated cache and needs no checker.
+Persistent publication compares the staged copy to its validated source,
+avoiding another service pause to parse the same bytes. Real-cache tests
+count parser invocations: one for initial publication, none for unchanged
+refresh, and rejection without replacing the old cache for a corrupt file.
+
+On the authorized GL-MT6000 (OpenWrt 25.12.5, tiny 1.13.21, 1 GiB RAM),
+isolated source tests restored the working core and DNS after both success
+and injected timeout. Config, routing rules/routes and normalized nftables
+policy were unchanged. A profiled large-SRS cycle measured 16.46 seconds
+before native readlink and 14.10 seconds after; single samples, not benchmark
+averages. Two DNS restarts/readiness waits still dominate the active-runtime
+cycle. This measurement is not full Forkop startup time. No packages or
+installed application sources were replaced on that router.

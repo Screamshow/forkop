@@ -16,6 +16,7 @@ const NFT_BATCH_FILE = getenv("FORKOP_NFT_BATCH_FILE") || "";
 // Test-only candidate failure injection. Empty in production.
 const NFT_CANDIDATE_FAIL_PHASE = getenv("FORKOP_NFT_CANDIDATE_FAIL_PHASE") || "";
 const NFT_TRANSITION_GUARD_CHAIN = "forkop_transition_guard";
+const NFT_CHECK_DNS_COMMENT = "forkop-check-native-dns";
 
 const IPV6_TPROXY_ENABLED = core_ip.ipv6_tproxy_enabled();
 
@@ -1602,6 +1603,54 @@ function nft_table_present(table) {
     return run_args_quiet([ "nft", "list", "table", "inet", table ]);
 }
 
+function nft_pause_source_dns_redirect(table, pause) {
+    if (!nft_table_present(table))
+        return true;
+    let output = command_output_quiet_from_args([ "nft", "-j", "list", "chain", "inet", table, "dns_redirect" ]);
+    if (output == "")
+        return !run_args_quiet([ "nft", "list", "chain", "inet", table, "dns_redirect" ]);
+    let data;
+    try { data = json(output); } catch (e) { return false; }
+    let handles = [];
+    let commands = [];
+    let native_port = int(uci_core.get("dhcp.@dnsmasq[0].port") || "53");
+    for (let item in data.nftables || []) {
+        let rule = item.rule;
+        if (type(rule) != "object")
+            continue;
+        if (rule.comment == NFT_CHECK_DNS_COMMENT)
+            push(handles, rule.handle);
+        for (let expr in rule.expr || [])
+            if (type(expr.redirect) == "object" && expr.redirect.port == runtime_constants.SOURCE_DNS_INBOUND_PORT) {
+                let native_rule = json(sprintf("%J", rule));
+                delete native_rule.handle;
+                native_rule.comment = NFT_CHECK_DNS_COMMENT;
+                for (let native_expr in native_rule.expr)
+                    if (type(native_expr.redirect) == "object")
+                        native_expr.redirect.port = native_port;
+                push(commands, { insert: { rule: native_rule } });
+            }
+    }
+    if (pause) {
+        if (length(handles) > 0 || length(commands) == 0)
+            return true;
+        if (native_port < 1 || native_port > 65535)
+            return false;
+        // Preserve source/interface matches and DNAT, which also exempts DNS
+        // from TPROXY. Only the destination changes to native dnsmasq while
+        // the managed DNS listener is stopped; no drop rule is introduced.
+        let pipe = fs.popen("nft -j -f - 2>/dev/null", "w");
+        if (!pipe)
+            return false;
+        pipe.write(sprintf("%J\n", { nftables: commands }));
+        return pipe.close() == 0;
+    }
+    for (let handle in handles)
+        if (!run_args([ "nft", "delete", "rule", "inet", table, "dns_redirect", "handle", handle ]))
+            return false;
+    return true;
+}
+
 function nft_delete_table(table) {
     return run_args([ "nft", "delete", "table", "inet", table ]);
 }
@@ -2103,6 +2152,10 @@ else if (mode == "nft-commit-candidate-batch")
     exit(nft_commit_candidate_batch(ARGV[1]) ? 0 : 1);
 else if (mode == "install-transition-guard")
     exit(nft_install_transition_guard(ARGV[1], ARGV[2]) ? 0 : 1);
+else if (mode == "pause-source-dns-redirect")
+    exit(nft_pause_source_dns_redirect(ARGV[1], true) ? 0 : 1);
+else if (mode == "resume-source-dns-redirect")
+    exit(nft_pause_source_dns_redirect(ARGV[1], false) ? 0 : 1);
 else if (mode == "remove-transition-guard")
     exit(nft_remove_transition_guard(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "ensure-bridge-netfilter-disabled")

@@ -55,6 +55,10 @@ mkdir -p "$work/bin"
 cat > "$work/bin/curl" <<'SH'
 #!/bin/sh
 output=
+# Readiness uses curl too. Mock only file downloads, not the local API probe.
+has_output=0
+for arg in "$@"; do [ "$arg" != --output ] || has_output=1; done
+[ "$has_output" = 1 ] || exec /usr/bin/curl "$@"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --output) output=$2; shift 2 ;;
@@ -64,6 +68,14 @@ done
 cp "$RULESET_REAL_DOWNLOAD" "$output"
 SH
 chmod +x "$work/bin/curl"
+export RULESET_REAL_SING_BOX=$(command -v sing-box)
+export RULESET_PARSE_LOG="$work/parser.log"
+cat > "$work/bin/sing-box" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$RULESET_PARSE_LOG"
+exec "$RULESET_REAL_SING_BOX" "$@"
+SH
+chmod +x "$work/bin/sing-box"
 export PATH="$work/bin:$PATH"
 export RULESET_REAL_DOWNLOAD="$fixture"
 export FORKOP_RULESET_CACHE_DIR="$work/cache"
@@ -77,10 +89,12 @@ JSON
 ucode -L "$LIB" "$LIB/singbox/ruleset_cache.uc" materialize-config "$work/config.json"
 cache_path=$(ucode -e 'let fs=require("fs"); print(json(fs.readfile(ARGV[0])).route.rule_set[0].path);' "$work/config.json")
 [ -f "$cache_path.validated" ]
+[ "$(wc -l < "$RULESET_PARSE_LOG")" = 1 ] || { echo 'new SRS was parsed more than once'; exit 1; }
 old_hash=$(md5sum "$cache_path")
 status=0
 ucode -L "$LIB" "$LIB/singbox/ruleset_cache.uc" refresh || status=$?
 [ "$status" = 1 ] || { echo 'unchanged large cache unexpectedly failed or changed'; exit 1; }
+[ "$(wc -l < "$RULESET_PARSE_LOG")" = 1 ] || { echo 'unchanged SRS started a checker'; exit 1; }
 RULESET_REAL_DOWNLOAD="$work/truncated.srs"
 export RULESET_REAL_DOWNLOAD
 if ucode -L "$LIB" "$LIB/singbox/ruleset_cache.uc" refresh 2> "$work/rejection.log"; then

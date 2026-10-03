@@ -8,6 +8,7 @@ reload_owned=0
 reload_lock=${FORKOP_RELOAD_LOCK_DIR:-/var/run/forkop.reload.lock}
 state() { ucode -L "$LIB" "$LIB/service/state.uc" "$@"; }
 dns() { ucode -L "$LIB" "$LIB/dns/apply.uc" "$@"; }
+nft_resume() { ucode -L "$LIB" "$LIB/nft/apply.uc" resume-source-dns-redirect "${NFT_TABLE_NAME:-ForkopTable}"; }
 cleanup() {
     [ "$reload_owned" = 0 ] || state release-runtime-dir-lock "$reload_lock"
     dns restore force || true
@@ -16,6 +17,7 @@ cleanup() {
     fi
     dns configure force || true
     dns wait-listener || true
+    nft_resume || true
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -46,6 +48,7 @@ ucode -L "$FORKOP_LIB" "$FORKOP_LIB/dns/apply.uc" independent-of-sing-box || exi
 nslookup example.com 127.0.0.1 >> "$TEST_CHECK_LOG" 2>&1 || exit 93
 if [ "${TEST_HOLD:-0}" = 1 ]; then
     touch "$TEST_HOLD_FILE"
+    trap '' TERM
     exec sleep 60
 fi
 exec "$TEST_REAL_SING_BOX" "$@"
@@ -85,6 +88,7 @@ nslookup example.com 127.0.0.1
 state start-managed-sing-box-runtime 15
 dns configure force
 dns wait-listener
+nft_resume
 state sing-box-current-owned-service-runtime
 [ "$(state sing-box-process-count)" = 1 ]
 # Hold a checker at its execution boundary. An unrelated start must refuse,
@@ -104,6 +108,14 @@ kill -TERM "$helper"
 if wait "$helper"; then echo 'interrupted check succeeded' >&2; exit 1; fi
 state sing-box-current-owned-service-runtime
 dns default-config-complete
+# Repeat with no external interruption: the deadline must kill a checker
+# which ignores TERM, reject its result and restore the previous dataplane.
+timeout_status=0
+TEST_HOLD=1 FORKOP_SING_BOX_CHECK_TIMEOUT=2 PATH="$work/bin:$PATH" sh "$LIB/service/sing-box-check.sh" rule-set match --format binary "$fixture" forkop-validation.invalid || timeout_status=$?
+[ "$timeout_status" = 124 ]
+state single-ready-sing-box-runtime
+dns default-config-complete
+nslookup example.com 127.0.0.1
 [ "$(policy)" = "$policy_before" ]
 [ "$(dmesg | grep -ic 'out of memory\|oom-kill\|killed process' || true)" = "$kernel_before" ]
-echo 'VM sequential check: no overlapping runtime, native DNS during check, invalid SRS rollback, failed restart fallback, unchanged nftables and no new OOM passed'
+echo 'VM sequential check: native DNS, invalid SRS rollback, failed restart fallback, interruption/timeout recovery, unchanged nftables and no new OOM passed'
