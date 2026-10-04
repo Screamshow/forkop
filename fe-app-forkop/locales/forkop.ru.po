@@ -1568,6 +1568,15 @@ msgstr "server_port должен быть числом от 1 до 65535"
 msgid "Service action failed"
 msgstr "Действие сервиса не выполнено"
 
+msgid "Service restart failed"
+msgstr "Не удалось перезапустить Forkop X"
+
+msgid "Another service action is already running"
+msgstr "Уже выполняется другое действие с сервисом. Дождитесь его завершения."
+
+msgid "Forkop X is busy updating data or applying settings. Wait for the operation to finish, then try restarting again."
+msgstr "Forkop X обновляет данные или применяет настройки. Дождитесь завершения операции и повторите перезапуск."
+
 msgid "Service list"
 msgstr "Список сервисов"
 

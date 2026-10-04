@@ -776,7 +776,11 @@ function commit_config_stage(stage_path, backup_path) {
 
     // The reload lifecycle creates this backup before the first live config
     // change. It is consumed only after nft and sing-box reach the same state.
-    if (!command_success_from_args([ "cp", "-p", config_path, backup_path ]))
+    if (file_exists(config_path)) {
+        if (!command_success_from_args([ "cp", "-p", config_path, backup_path ]))
+            return false;
+    }
+    else if (getenv("FORKOP_LIFECYCLE_LIST_BOOTSTRAP") != "1")
         return false;
     if (!save_config_file(stage_path, config_path))
         return false;
@@ -915,7 +919,10 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
     // Configuration generation must be deterministic and network-free. Missing
     // remote rule sets are represented by an empty local placeholder and are
     // refreshed only by the serialized post-start/update worker.
-    if (!module_success([ RULESET_CACHE_UC, "materialize-config", temp_config, "cache-only" ])) {
+    // The preparation config has no remote rulesets. Materializing its empty
+    // declaration would prune the existing last-known-good ruleset cache.
+    if (getenv("FORKOP_LIFECYCLE_LIST_BOOTSTRAP") != "1" &&
+        !module_success([ RULESET_CACHE_UC, "materialize-config", temp_config, "cache-only" ])) {
         log_message("Failed to materialize remote rule sets into the persistent local cache. Aborted.", "fatal");
         remove_files([ temp_config, runtime_log ]);
         exit(1);

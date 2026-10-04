@@ -2545,6 +2545,20 @@ function sleep(ms) {
 function translate(message) {
   return typeof _ === "function" ? _(message) : message;
 }
+function localizeServiceActionMessage(message) {
+  switch (message) {
+    case "Forkop X is busy updating data or applying settings. Wait for the operation to finish, then try restarting again.":
+      return _(
+        "Forkop X is busy updating data or applying settings. Wait for the operation to finish, then try restarting again."
+      );
+    case "Service restart failed":
+      return _("Service restart failed");
+    case "Another service action is already running":
+      return _("Another service action is already running");
+    default:
+      return message;
+  }
+}
 function parseJsonObjectOutput(output) {
   if (!output) {
     return null;
@@ -2776,6 +2790,11 @@ var ForkopShellMethods = {
       timeout: UI_ACTION_RPC_TIMEOUT_MS
     });
     const parsedResponse = parseUiActionStartResult(response);
+    if (parsedResponse) {
+      parsedResponse.message = localizeServiceActionMessage(
+        parsedResponse.message
+      );
+    }
     if ((response.code ?? 0) !== 0 || !parsedResponse?.success || !parsedResponse.job_id) {
       return uiActionFailure(
         response,
@@ -2814,6 +2833,11 @@ var ForkopShellMethods = {
       timeout: UI_ACTION_RPC_TIMEOUT_MS
     });
     const parsedResponse = parseServiceActionState(response);
+    if (parsedResponse) {
+      parsedResponse.message = localizeServiceActionMessage(
+        parsedResponse.message
+      );
+    }
     if ((response.code ?? 0) !== 0 || !parsedResponse) {
       return uiActionFailure(
         response,

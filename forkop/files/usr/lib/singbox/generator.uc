@@ -3402,7 +3402,8 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     if (length(sections) == 0 && trim(as_string(deferred_sections)) == "")
         runtime_generate_unsupported("no enabled sections");
 
-    let source_aware_dns = source_aware_dns_sources(sections);
+    let bootstrap_lists = getenv("FORKOP_LIFECYCLE_LIST_BOOTSTRAP") == "1";
+    let source_aware_dns = bootstrap_lists ? [] : source_aware_dns_sources(sections);
     let config = base_config(settings, service_address, {
         mwan3_active: cli_bool(mwan3_active),
         source_aware_dns: length(source_aware_dns) > 0
@@ -3418,14 +3419,33 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     reserve_section_outbound_tags(sections, taken);
     for (let section in sections)
         add_outbound_for_section(config, section, taken, sections);
-    add_direct_proxy(config, settings, service_address);
-    add_service_route_rules(config, sections);
-    for (let section in sections)
-        add_route_for_section(config, section);
-    add_source_aware_dns_fallback(config, source_aware_dns);
-    add_service_mixed_proxy(config, settings, sections);
-    for (let section in sections)
-        add_mixed_proxy_for_section(config, section, service_address);
+    if (bootstrap_lists) {
+        // Only the selected connection is exposed locally. No list-dependent
+        // routes, traffic interception, DNS listener or shared runtime cache.
+        config.inbounds = [];
+        config.route.rules = [];
+        delete config.route.rule_set;
+        config.dns.rules = [];
+        delete config.experimental;
+        let target = download_detour_tag(settings, "lists");
+        let found = false;
+        for (let outbound in config.outbounds)
+            if (outbound.tag == target)
+                found = true;
+        if (target == "" || !found)
+            runtime_generate_unsupported("list download section has no usable connection");
+        add_global_download_service_mixed_proxy(config, settings, "lists");
+    }
+    else {
+        add_direct_proxy(config, settings, service_address);
+        add_service_route_rules(config, sections);
+        for (let section in sections)
+            add_route_for_section(config, section);
+        add_source_aware_dns_fallback(config, source_aware_dns);
+        add_service_mixed_proxy(config, settings, sections);
+        for (let section in sections)
+            add_mixed_proxy_for_section(config, section, service_address);
+    }
 
     assert_unique_outbound_tags(config);
     apply_reality_key_share(config, sing_box_version);

@@ -1568,6 +1568,15 @@ msgstr "server_port должен быть числом от 1 до 65535"
 msgid "Service action failed"
 msgstr "Действие сервиса не выполнено"
 
+msgid "Service restart failed"
+msgstr "Не удалось перезапустить Forkop X"
+
+msgid "Another service action is already running"
+msgstr "Уже выполняется другое действие с сервисом. Дождитесь его завершения."
+
+msgid "Forkop X is busy updating data or applying settings. Wait for the operation to finish, then try restarting again."
+msgstr "Forkop X обновляет данные или применяет настройки. Дождитесь завершения операции и повторите перезапуск."
+
 msgid "Service list"
 msgstr "Список сервисов"
 
@@ -2044,18 +2053,6 @@ msgstr "Не удаётся перезапустить Forkop X"
 
 msgid "Multiple sing-box processes were found or their ownership is unclear. Restart is unavailable; traffic routing was not changed. To stop all sing-box processes, use Stop Forkop X, then start Forkop X again."
 msgstr "Обнаружено несколько процессов sing-box или их принадлежность неясна. Перезапуск недоступен. Маршрутизация не изменена. Чтобы завершить все процессы sing-box, нажмите «Остановить Forkop X», затем запустите Forkop X снова."
-
-msgid "Not available"
-msgstr "Нет данных"
-
-msgid "Default route"
-msgstr "Маршрут по умолчанию"
-
-msgid "Built-in subnets"
-msgstr "Встроенные подсети"
-
-msgid "One of"
-msgstr "Один из"
 
 msgid "Forkop X is applying changes. Please wait."
 msgstr "Forkop X применяет изменения. Пожалуйста, подождите."

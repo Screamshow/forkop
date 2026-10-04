@@ -81,6 +81,14 @@ ops/deployed-nginx/
 /.github/workflows/backend-ci.yml
 /.github/workflows/shellcheck.yml
 
+# VM integration regressions
+!/tests/discord_cold_start_vm.sh
+!/tests/watchdog_outage_vm.sh
+!/tests/list_download_update_vm.sh
+!/tests/list_download_subscription_vm.sh
+!/tests/list_download_cancel_vm.sh
+!/tests/list_bootstrap_validation_vm.sh
+!/tests/lifecycle_concurrency_vm.sh
 # Python release catalog test caches
 /scripts/__pycache__/
 /scripts/tests/__pycache__/

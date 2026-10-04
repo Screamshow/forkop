@@ -1436,7 +1436,9 @@ function finish_service_action_after_command(action, job_id_value, status, spawn
 
     if (status != 0) {
         let config_error = trim(as_string(fs.readfile(RUNTIME_CONFIG_ERROR_FILE)));
-        let message = config_error != "" ? config_error : "Service " + as_string(action) + " failed";
+        let message = action == "restart" && status == 75
+            ? "Forkop X is busy updating data or applying settings. Wait for the operation to finish, then try restarting again."
+            : (config_error != "" ? config_error : "Service " + as_string(action) + " failed");
         write_finished_service_action_state(path, action, false, message, status);
         return 0;
     }
@@ -1720,7 +1722,7 @@ else if (mode == "service-action-finish-after-command")
 else if (mode == "service-action-wait-worker")
     service_action_wait_worker(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "service-action-worker")
-    service_action_worker(ARGV[1], ARGV[2], ARGV[3]);
+    service_action_worker(ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
 else if (mode == "service-action-async")
     service_action_async(ARGV[1]);
 else if (mode == "service-action-status")

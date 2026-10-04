@@ -31,6 +31,7 @@ const LIST_UPDATE_RELOAD_FILE = getenv("FORKOP_LIST_UPDATE_RELOAD_FILE") || RUNT
 const RULESET_REFRESH_AFTER_LIST_FILE = getenv("FORKOP_RULESET_REFRESH_AFTER_LIST_FILE") || RUNTIME_STATE_DIR + "/ruleset-refresh-after-list";
 const POST_START_LATENCY_FILE = getenv("FORKOP_POST_START_LATENCY_FILE") || RUNTIME_STATE_DIR + "/post-start-latency.pending";
 const START_FAILURE_FILE = getenv("FORKOP_START_FAILURE_FILE") || RUNTIME_STATE_DIR + "/start.failure";
+const WATCHDOG_READY_FILE = getenv("FORKOP_WATCHDOG_READY_FILE") || RUNTIME_STATE_DIR + "/watchdog.ready";
 const RUNTIME_CONFIG_ERROR_FILE = getenv("FORKOP_RUNTIME_CONFIG_ERROR_FILE") || RUNTIME_STATE_DIR + "/config-error";
 const MANAGED_UPGRADE_SING_BOX_MARKER = getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_MARKER") || "/tmp/forkop-managed-upgrade-sing-box";
 const MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS = int(getenv("FORKOP_MANAGED_UPGRADE_SING_BOX_WAIT_SECONDS") || "15");
@@ -870,6 +871,57 @@ function start_phase_failed(phase, status) {
     return status;
 }
 
+// The reload lock owns this preparation runtime. It is the same procd service
+// as the final runtime, and cannot authorize a second or foreign process.
+function prepare_lists_for_cold_start() {
+    let proxy = trim(module_capture(SINGBOX_UC, [ "service-proxy-address", "lists" ]).output);
+    let stage = RUNTIME_STATE_DIR + "/list-bootstrap.config." + owner_pid();
+    let backup = stage + ".previous";
+    let config_path = config_get(CONFIG_NAME + ".settings.config_path", "");
+    let had_config = fs.stat(config_path) != null;
+    let managed = false;
+    let status = 0;
+    if (proxy != "") {
+        status = module_status(SINGBOX_UC, [ "configure-service" ]);
+        // Config checks also run sing-box briefly. Preserve the existing
+        // no-runtime-during-check rule, then publish only after proven exit.
+        // PID reuse, extra processes and ambiguous owners fail closed.
+        if (status == 0)
+            status = module_status(STATE_UC, [ "stop-managed-sing-box-runtime", "15" ]);
+        if (status == 0)
+            status = module_status_with_env(SINGBOX_UC, [
+                "prepare-config-stage", "0", subscription_caches_prepared,
+                subscription_runtime_no_refresh, subscription_deferred_sections, stage
+            ], { FORKOP_LIFECYCLE_LIST_BOOTSTRAP: "1" });
+        if (status == 0)
+            status = module_status(SINGBOX_UC, [ "validate-config-stage", stage ]);
+        if (status == 0)
+            status = module_status_with_env(SINGBOX_UC, [ "commit-config-stage", stage, backup ],
+                { FORKOP_LIFECYCLE_LIST_BOOTSTRAP: "1" });
+        if (status == 0) {
+            managed = true;
+            status = module_status(STATE_UC, [ "start-managed-sing-box-runtime", "15" ]);
+        }
+    }
+    if (status == 0)
+        status = module_status_with_env(UPDATES_UC, [ "list-update" ], {
+            FORKOP_LIST_UPDATE_PREPARE_ONLY: "1",
+            FORKOP_MANUAL_RESTART_LOCK_HELD: "1"
+        });
+    if (managed) {
+        let stopped = module_status(STATE_UC, [ "stop-managed-sing-box-runtime", "15" ]);
+        if (stopped != 0)
+            return stopped;
+    }
+    // Restore the previous file only after the managed preparation PID exits.
+    // It remains a rollback file, never a successful partial routing policy.
+    if (fs.stat(backup) != null && !module_success(SINGBOX_UC, [ "restore-config-stage", backup ]))
+        status = 1;
+    if (managed && !had_config && fs.stat(backup) == null)
+        remove_file(config_path);
+    discard_singbox_config_stage(stage);
+    return status;
+}
 function start_main() {
     let status;
 
@@ -905,14 +957,20 @@ function start_main() {
         return start_phase_failed("subscription-caches", status);
     }
 
-    // Materialized list data is an explicit generation.  Never restore an
-    // invalid cache, but let a missing generation proceed to the existing
-    // post-start recovery worker. It downloads, validates, and atomically
-    // publishes a replacement before reloading the runtime. This keeps the
-    // upgrade path from releases that predate the persistent cache working.
+    // The normal downloader must finish before a cold start references local
+    // lists. A post-start download cannot recover a generator rejection.
     let has_list_sources = module_success(STATE_UC, [ "has-list-update-sources" ]);
     if (has_list_sources && !module_success(UPDATES_UC, [ "restore-list-cache" ])) {
-        log_message("No valid active list generation is available; continuing with a one-time bootstrap update for legacy list cache migration", "warn");
+        log_message("No valid list cache is available; downloading the configured lists before starting", "info");
+        status = prepare_lists_for_cold_start();
+        if (status != 0 || !module_success(UPDATES_UC, [ "runtime-list-cache-active" ])) {
+            // Missing downloaded data is retryable once the connection or
+            // list source becomes available. Discard stale config failures.
+            permanent_start_failure = false;
+            clear_start_failure();
+            log_message("Configured lists could not be downloaded; Forkop was not started. Check the list source and download connection", "fatal");
+            return start_phase_failed("list-download", status == 0 ? 1 : status);
+        }
     }
 
     if (!nft_candidate_begin())
@@ -1070,6 +1128,7 @@ function stop_main(allow_process_conflict) {
     if (process_conflict)
         log_message("Additional sing-box process detected; explicit Stop will terminate all sing-box runtimes", "warn");
 
+    remove_file(WATCHDOG_READY_FILE);
     log_message("Stopping Forkop", "info");
     module_success(DNS_FAILOVER_UC, [ "stop-runtime" ]);
     module_success(PRIORITY_UC, [ "stop-runtime" ]);
@@ -1219,10 +1278,12 @@ function start() {
         as_string(RUNTIME_STABLE_MIN_AGE)
     ])) {
         log_message("Forkop is already stably running; treating duplicate start as successful", "info");
+        write_file(WATCHDOG_READY_FILE, "1\n");
         release_start_subscription_update_lock();
         return 0;
     }
 
+    remove_file(WATCHDOG_READY_FILE);
     let status = start_impl();
     release_start_subscription_update_lock();
 
@@ -1254,6 +1315,7 @@ function start() {
     // before validation lets a detached package/boot start re-enable an
     // endless retry loop for the same invalid configuration.
     clear_start_failure();
+    write_file(WATCHDOG_READY_FILE, "1\n");
 
     // A queued reload owns the next runtime transition. initd starts it only
     // after this start action has released reload.lock; calling it here would
@@ -1346,6 +1408,7 @@ function restart_runtime_for_reload() {
         return status;
     }
 
+    write_file(WATCHDOG_READY_FILE, "1\n");
     restore_selector_state(selector_state);
     remove_file(RELOAD_STATE_SNAPSHOT_FILE);
     return 0;
@@ -1901,6 +1964,7 @@ function restart() {
         NFT_FAKEIP_MARK,
         as_string(RUNTIME_STABLE_MIN_AGE)
     ])) {
+        write_file(WATCHDOG_READY_FILE, "1\n");
         restore_selector_state(selector_state);
         return 0;
     }
@@ -1930,7 +1994,7 @@ function manual_restart() {
     // ownership and therefore do not release or reacquire the same lock.
     if (!module_success(STATE_UC, [ "acquire-runtime-dir-lock", RELOAD_LOCK_DIR, owner_pid() ])) {
         log_message("Manual restart deferred because another runtime transition is active", "warn");
-        return 1;
+        return 75;
     }
     let prepare_env = { FORKOP_MANUAL_RESTART_LOCK_HELD: "1" };
 

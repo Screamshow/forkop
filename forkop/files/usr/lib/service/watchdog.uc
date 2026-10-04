@@ -15,6 +15,8 @@ const RELOAD_LOCK_DIR = getenv("FORKOP_RELOAD_LOCK_DIR") || "/var/run/forkop.rel
 const INTERVAL_SECONDS = int(getenv("FORKOP_WATCHDOG_INTERVAL_SECONDS") || "5");
 const GRACE_SECONDS = int(getenv("FORKOP_WATCHDOG_GRACE_SECONDS") || "90");
 const FAILURE_SECONDS = int(getenv("FORKOP_WATCHDOG_FAILURE_SECONDS") || "60");
+const WATCHDOG_READY_FILE = getenv("FORKOP_WATCHDOG_READY_FILE") ||
+    (getenv("FORKOP_RUNTIME_STATE_DIR") || "/var/run/forkop") + "/watchdog.ready";
 
 function quote(value) {
     return "'" + replace(value == null ? "" : "" + value, /'/g, "'\\''") + "'";
@@ -28,7 +30,8 @@ function status(args) {
 }
 
 function active() {
-    return uci.get(CONFIG_NAME + ".settings.shutdown_correctly") == "0";
+    return fs.stat(WATCHDOG_READY_FILE) != null &&
+        uci.get(CONFIG_NAME + ".settings.shutdown_correctly") == "0";
 }
 
 function transitioning() {

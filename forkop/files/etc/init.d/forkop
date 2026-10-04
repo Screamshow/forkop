@@ -55,7 +55,7 @@ start_service() {
     initd_ucode start-service "$1" "$$"
     FORKOP_LAST_START_STATUS="$?"
 
-    start_dns_watchdog
+    [ "$FORKOP_LAST_START_STATUS" -ne 0 ] || start_dns_watchdog
 
     return "$FORKOP_LAST_START_STATUS"
 }

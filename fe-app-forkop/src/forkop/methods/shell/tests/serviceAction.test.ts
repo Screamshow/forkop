@@ -14,10 +14,12 @@ describe('ForkopShellMethods.serviceAction', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.executeShellCommand.mockReset();
+    vi.stubGlobal('_', (message: string) => message);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('keeps failed finished service state available to low-level waiters', async () => {
@@ -78,4 +80,38 @@ describe('ForkopShellMethods.serviceAction', () => {
       error: 'Another service action is already running',
     });
   });
+
+  it.each(['en', 'ru'])(
+    'localizes the busy restart reason in %s',
+    async (language) => {
+      const message =
+        'Forkop X is busy updating data or applying settings. Wait for the operation to finish, then try restarting again.';
+      const russian =
+        'Forkop X обновляет данные или применяет настройки. Дождитесь завершения операции и повторите перезапуск.';
+      vi.stubGlobal('_', (text: string) =>
+        language === 'ru' && text === message ? russian : text,
+      );
+      mocks.executeShellCommand.mockResolvedValue({
+        stdout: JSON.stringify({
+          success: false,
+          running: false,
+          kind: 'service',
+          action: 'restart',
+          message,
+          exit_code: 75,
+        }),
+        stderr: '',
+        code: 0,
+      });
+      const response = await ForkopShellMethods.serviceActionStatus('busy-job');
+      expect(response.success).toBe(true);
+      if (response.success) {
+        expect(response.data.message).toBe(
+          language === 'ru' ? russian : message,
+        );
+        expect(response.data.success).toBe(false);
+        expect(response.data.exit_code).toBe(75);
+      }
+    },
+  );
 });

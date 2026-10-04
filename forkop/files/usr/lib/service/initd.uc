@@ -611,7 +611,9 @@ function start_plan(reason, owner_pid, settings, bin_ok) {
 
 function start_service(reason, owner_pid) {
     print("Start Forkop\n");
-    let runtime_lock_owner = owner_pid || owner_pid_value();
+    // The worker can outlive the rc.common shell at boot. The lock must
+    // belong to this live worker, not to its already-exited launcher.
+    let runtime_lock_owner = owner_pid_value();
     if (!acquire_runtime_dir_lock_wait(RELOAD_LOCK_DIR, runtime_lock_owner, START_RUNTIME_LOCK_WAIT_SECONDS)) {
         command_success_from_args([ "logger", "-t", SERVICE_NAME, "[warn] Forkop start deferred because a runtime reload did not finish in time" ]);
         return 1;
@@ -766,6 +768,12 @@ function reload_finish(reason, job_id, status) {
 }
 
 function reload_service(reason, owner_pid) {
+    // Queueing must never report success for ambiguous process ownership.
+    // Preserve the active policy and the lifecycle's public rejection contract.
+    if (module_status(LIB_DIR + "/service/state.uc", [ "sing-box-process-conflict" ]) == 0) {
+        command_success_from_args([ "logger", "-t", SERVICE_NAME, "[fatal] Refusing Forkop reload: sing-box process ownership is ambiguous; preserving the existing runtime" ]);
+        return 1;
+    }
     let plan = reload_begin_value(reason, owner_pid, null, null);
     if (plan.action != "run") {
         // A list worker must distinguish an accepted queued request from a
@@ -777,7 +785,9 @@ function reload_service(reason, owner_pid) {
         return 0;
     }
 
-    let status = command_status(command_from_args([ "env", "FORKOP_UI_ACTION_TRACKED=1", BIN_PATH, "reload", reason ]) + " >/dev/null 2>&1");
+    // Public CLI reload enters this same lock/queue path. Invoke lifecycle
+    // directly here, after acquiring the lock, to avoid re-entering initd.
+    let status = command_status(command_from_args([ "env", "FORKOP_UI_ACTION_TRACKED=1", "ucode", "-L", LIB_DIR, LIB_DIR + "/service/lifecycle.uc", "reload", reason ]) + " >/dev/null 2>&1");
     let finish = reload_finish_value(reason, plan.job_id, status);
     if (finish.sync)
         print("sync\n");
