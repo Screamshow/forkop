@@ -217,7 +217,12 @@ function update_due_status(now_value, last_run_value, interval_value) {
     if (last_run == null)
         last_run = 0;
 
-    if (last_run > 0 && now - last_run < interval)
+    // Hourly cron checks can precede the previous successful download's
+    // completion by a few seconds. Do not turn that jitter into a whole
+    // extra scheduling period. Keep short intervals exact and never use
+    // the allowance to hide a backwards wall-clock jump.
+    let allowance = interval >= 3600 ? 60 : 0;
+    if (last_run > 0 && (now < last_run || now - last_run < interval - allowance))
         return 1;
 
     return 0;
@@ -2639,6 +2644,9 @@ else if (mode == "outbound-metadata-path") {
 }
 else if (mode == "section-is-subscription-proxy") {
     exit(section_is_subscription_proxy(uci_section(ARGV[1])) ? 0 : 1);
+}
+else if (mode == "update-due-status-fixture") {
+    exit(update_due_status(ARGV[1], ARGV[2], ARGV[3]));
 }
 else if (mode == "update-source") {
     exit(update_subscription_source(ARGV[1], ARGV[2], ARGV[3], ARGV[4] || "runtime", ARGV[5] || ""));
