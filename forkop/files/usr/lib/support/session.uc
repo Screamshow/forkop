@@ -15,6 +15,10 @@ function output(command) {
     let value = p.read('all');
     return p.close() == 0 ? trim(value || '') : '';
 }
+function version(command) {
+    // Keep the command's exit code: a pipeline through head hides CLI failures.
+    return trim(split(output(command + ' version'), '\n')[0] || '');
+}
 function read_json(path) {
     try { return json(fs.readfile(path) || '{}'); } catch (e) { return {}; }
 }
@@ -30,8 +34,9 @@ function primary_enabled() {
 }
 function primary_running() {
     for (let path in fs.glob('/proc/[0-9]*/cmdline')) {
-        let args = replace(fs.readfile(path) || '', /\x00/g, ' ');
-        if (match(args, /(^|\/)tailscaled /) && index(args, DIR + '/socket') == -1)
+        // procfs argv is NUL-separated; regexp replacement truncates at NUL.
+        let args = split(fs.readfile(path) || '', chr(0));
+        if (match(args[0] || '', /(^|\/)tailscaled$/) && index(join(' ', args), DIR + '/socket') == -1)
             return true;
     }
     return false;
@@ -49,12 +54,19 @@ function status() {
     // Never discard the status of a running operation.
     if (!active && state.schema != 2) state = {};
     let managed = packaged();
+    let lite = lite_installed();
+    let system_installed = output('command -v tailscale') != '';
+    let lite_version = lite ? version(LITE + '/tailscale') : '';
+    let system_version = system_installed ? version('tailscale') : '';
     let result = {
         installed: available(),
         package_installed: managed,
-        lite_installed: lite_installed(),
+        lite_installed: lite,
+        system_installed,
+        lite_version,
+        system_version,
         removable: !active && (lite_installed() || (managed && !primary_running() && !primary_enabled())),
-        version: output(cli() + ' version | head -n 1'),
+        version: lite ? lite_version : system_version,
         primary_running: primary_running(),
         active,
         phase: active ? (state.phase || 'starting') : (state.phase == 'failed' ? 'failed' : 'stopped'),

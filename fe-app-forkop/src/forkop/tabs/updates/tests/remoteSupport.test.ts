@@ -134,6 +134,67 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function texts(root: Element): string[] {
+  return [root.textContent, ...root.children.flatMap(texts)];
+}
+
+it.each([
+  [true, false, '1.82.5', '', 'Tailscale 1.82.5'],
+  [false, true, '', '1.98.3', 'Tailscale Lite 1.98.3'],
+  [true, true, '1.82.5', '1.98.3', 'Tailscale 1.82.5; Tailscale Lite 1.98.3'],
+])(
+  'shows independent system/Lite versions (%s, %s)',
+  async (system, lite, systemVersion, liteVersion, expected) => {
+    response = {
+      ...response,
+      active: false,
+      phase: 'stopped',
+      system_installed: system,
+      package_installed: system,
+      lite_installed: lite,
+      removable: true,
+      system_version: systemVersion,
+      lite_version: liteVersion,
+      version: lite ? liteVersion : systemVersion,
+    };
+    const module = await import('../remoteSupport');
+    const card = module.renderRemoteSupport() as unknown as Element;
+    card.attached = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(texts(card)).toContain(expected);
+    expect(texts(card).includes('Used for support: Tailscale Lite')).toBe(
+      system && lite,
+    );
+    expect(texts(card)).not.toContain('Tailscale is not installed');
+    expect(
+      button(card, lite ? 'Remove Tailscale Lite' : 'Remove Tailscale')
+        .disabled,
+    ).toBe(false);
+    expect(texts(card)).not.toContain(
+      lite ? 'Remove Tailscale' : 'Remove Tailscale Lite',
+    );
+  },
+);
+
+it('blocks removal of a running primary Tailscale service', async () => {
+  response = {
+    ...response,
+    active: false,
+    phase: 'stopped',
+    package_installed: true,
+    system_installed: true,
+    system_version: '1.98.3',
+    lite_installed: false,
+    removable: false,
+    primary_running: true,
+  };
+  const module = await import('../remoteSupport');
+  const card = module.renderRemoteSupport() as unknown as Element;
+  card.attached = true;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(button(card, 'Remove Tailscale').disabled).toBe(true);
+});
+
 it('auto opens once; Close, polling, tab renders and reload preserve the session; manual open and new session work', async () => {
   let module = await import('../remoteSupport');
   let card = module.renderRemoteSupport() as unknown as Element;

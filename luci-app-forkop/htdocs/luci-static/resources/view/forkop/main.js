@@ -13490,14 +13490,25 @@ ${_("Remaining time")}: ${Math.ceil(status.remaining_seconds / 60)} ${_("minutes
     if (card.isConnected && status?.active && status.phase === "connected" && status.address) {
       void announceSession(status.session_id);
     }
+    const versions = [];
+    if (status?.system_installed)
+      versions.push(`Tailscale ${status.system_version || ""}`.trim());
+    if (status?.lite_installed)
+      versions.push(
+        `Tailscale Lite ${status.lite_version ?? status.version}`.trim()
+      );
+    if (status?.installed && !versions.length)
+      versions.push(`Tailscale ${status.version}`.trim());
     const details = [
       E(
         "div",
         {},
-        status?.installed ? `${status.lite_installed ? "Tailscale Lite" : "Tailscale"} ${status.version}` : _("Tailscale is not installed")
+        versions.length ? versions.join("; ") : _("Tailscale is not installed")
       ),
       E("div", {}, status ? phaseLabel(status.phase) : _("Loading"))
     ];
+    if (status?.system_installed && status.lite_installed)
+      details.push(E("div", {}, `${_("Used for support")}: Tailscale Lite`));
     if (status?.primary_running)
       details.push(
         E(

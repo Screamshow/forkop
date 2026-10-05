@@ -53,6 +53,8 @@ ops/deployed-nginx/
 !/tests/support_http_vm.sh
 !/tests/support_package_vm.sh
 !/tests/support_lite_vm.sh
+!/tests/support_installation_vm.sh
+!/tests/support_installation_vm.uc
 !/tests/support_remove_http_vm.sh
 !/tests/support_ssh_vm.sh
 !/tests/vm_support_report_http.sh

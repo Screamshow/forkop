@@ -2231,6 +2231,9 @@ msgstr "Не удалось удалить Tailscale Lite"
 msgid "Error details"
 msgstr "Подробности ошибки"
 
+msgid "Used for support"
+msgstr "Для поддержки используется"
+
 msgid "Control connection lost"
 msgstr "Потеряна связь с сервером управления"
 

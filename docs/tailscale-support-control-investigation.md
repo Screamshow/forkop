@@ -208,3 +208,28 @@ service PIDs/running states were unchanged. A stopped procd support instance
 left after expiry was removed with the support service stop command. Both VMs
 ended with no support socket or temporary authorized key. Candidate code and
 translation updates remain on the disposable VMs; no release was published.
+
+## Ordinary OpenWrt package verification (2026-10-05)
+
+VM25 was restored to the ordinary APK `tailscale` 1.98.3-r1 with no Lite
+installation. Its primary daemon remained running while a support session
+authenticated using the supplied reusable test auth key and started a separate
+userspace daemon. The session reached `connected`; the credential file was
+removed after authentication. SSH over the support Tailscale IP succeeded.
+
+Because this VM permits passwordless SSH, key authentication was also checked
+with a temporary Dropbear listener on port 2222, password login disabled, and
+the operator client restricted to its support identity and public-key auth.
+The server recorded successful public-key authentication and the command
+executed. A client offering no key was rejected with `Permission denied
+(publickey)`. This listener used the real temporary authorized_keys entry and
+forced-command gate, without changing the normal SSH service.
+
+Cancellation removed the temporary SSH authorization, auth file, socket and
+support daemon. A subsequent connection to the support IP timed out. The test
+listener and its RAM files were removed. The primary daemon PID (12544) and
+SHA-256 of its state file stayed unchanged. This establishes working ordinary
+package authentication and access for this short test, not long-term stability
+or the cause of the earlier control-connection stalls. No recurring pings were
+used. VM fixtures additionally exposed and fixed NUL-separated procfs argument
+handling in primary-daemon detection; both VM24 and VM25 passed those cases.

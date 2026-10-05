@@ -5,6 +5,9 @@ interface SupportStatus {
   installed: boolean;
   package_installed: boolean;
   lite_installed: boolean;
+  system_installed?: boolean;
+  system_version?: string;
+  lite_version?: string;
   removable: boolean;
   version: string;
   primary_running: boolean;
@@ -226,16 +229,25 @@ export function renderRemoteSupport() {
     ) {
       void announceSession(status.session_id);
     }
+    const versions: string[] = [];
+    if (status?.system_installed)
+      versions.push(`Tailscale ${status.system_version || ''}`.trim());
+    if (status?.lite_installed)
+      versions.push(
+        `Tailscale Lite ${status.lite_version ?? status.version}`.trim(),
+      );
+    if (status?.installed && !versions.length)
+      versions.push(`Tailscale ${status.version}`.trim());
     const details: Node[] = [
       E(
         'div',
         {},
-        status?.installed
-          ? `${status.lite_installed ? 'Tailscale Lite' : 'Tailscale'} ${status.version}`
-          : _('Tailscale is not installed'),
+        versions.length ? versions.join('; ') : _('Tailscale is not installed'),
       ),
       E('div', {}, status ? phaseLabel(status.phase) : _('Loading')),
     ];
+    if (status?.system_installed && status.lite_installed)
+      details.push(E('div', {}, `${_('Used for support')}: Tailscale Lite`));
     if (status?.primary_running)
       details.push(
         E(
