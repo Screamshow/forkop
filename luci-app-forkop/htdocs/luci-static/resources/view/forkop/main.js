@@ -5273,7 +5273,7 @@ var LOG_WATCHER_INTERVAL_MS = 1e4;
 var LOG_WATCHER_START_DELAY_MS = 5e3;
 function componentDisplayName(component) {
   const names = {
-    forkop: "Forkop",
+    forkop: "Forkop X",
     sing_box: "sing-box",
     zapret: "Zapret",
     zapret2: "Zapret2",
