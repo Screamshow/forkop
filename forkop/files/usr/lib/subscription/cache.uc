@@ -1,6 +1,7 @@
 #!/usr/bin/env ucode
 
 let fs = require("fs");
+let common = require("core.common");
 let constants = require("core.constants");
 let uci_core = require("core.uci");
 let connections = require("config.connections");
@@ -63,7 +64,7 @@ function read_json(path) {
 }
 
 function write_file(path, value) {
-    return fs.writefile(path, value) != null;
+    return common.write_private_file(path, value) != null;
 }
 
 function write_json(path, value) {
@@ -502,7 +503,7 @@ function read_text(path) {
 }
 
 function write_text(path, value) {
-    return fs.writefile(as_string(path), as_string(value)) != null;
+    return common.write_private_file(as_string(path), as_string(value)) != null;
 }
 
 function copy_file(source, target) {
@@ -625,6 +626,15 @@ function ensure_runtime_dirs() {
     ensure_dir(FORKOP_SUBSCRIPTION_METADATA_DIR);
     ensure_dir(FORKOP_OUTBOUND_METADATA_DIR);
     ensure_dir(FORKOP_SECTION_CACHE_DIR);
+    for (let dir in [ TMP_SUBSCRIPTION_FOLDER, FORKOP_SUBSCRIPTION_LINKS_DIR,
+                     FORKOP_SUBSCRIPTION_METADATA_DIR, FORKOP_OUTBOUND_METADATA_DIR,
+                     FORKOP_SECTION_CACHE_DIR, FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR ]) {
+        ensure_dir(dir);
+        if (!common.secure_private_dir(dir)) {
+            log_message("Cannot secure subscription cache directory " + dir, "error");
+            exit(1);
+        }
+    }
 }
 
 function clear_subscription_runtime_cache() {
@@ -637,7 +647,7 @@ function clear_subscription_runtime_cache() {
 }
 
 function ensure_runtime_cache_format() {
-    ensure_dir(FORKOP_RUNTIME_STATE_DIR);
+    ensure_runtime_dirs();
 
     if (file_first_line_value(FORKOP_RUNTIME_CACHE_FORMAT_FILE) != FORKOP_RUNTIME_CACHE_FORMAT) {
         log_message("Runtime subscription cache format changed; clearing old subscription cache", "info");
@@ -1118,6 +1128,9 @@ function normalize_cache(cache, section, format_version) {
 }
 
 function save_cache(cache_dir, section, format_version, cache) {
+    ensure_dir(cache_dir);
+    if (!common.secure_private_dir(cache_dir))
+        exit(1);
     cache = normalize_cache(cache, section, format_version);
     let path = cache_path(cache_dir, section);
     let stamp = clock();

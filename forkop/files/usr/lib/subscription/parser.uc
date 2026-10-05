@@ -1,6 +1,7 @@
 #!/usr/bin/env ucode
 
 let fs = require("fs");
+let common = require("core.common");
 let core_url = require("core.url");
 
 function as_string(value) {
@@ -385,7 +386,7 @@ function validate_subscription(path) {
 }
 
 function write_json_file(path, value) {
-    return fs.writefile(path, sprintf("%J", value) + "\n");
+    return common.write_private_json_file(path, value);
 }
 
 function write_json(value) {
@@ -1614,7 +1615,7 @@ function normalize_uri_list_data(data, output_file) {
     if (index(data, "\r") >= 0)
         data = replace(data, /\r/g, "");
 
-    let output = fs.open(output_file, "w");
+    let output = common.open_private_file(output_file);
     if (!output)
         return false;
 
@@ -1996,7 +1997,7 @@ function is_metadata_preamble_line(line) {
 }
 
 function normalize_uri_list_stream(input, output_file, strip_metadata) {
-    let output = fs.open(output_file, "w");
+    let output = common.open_private_file(output_file);
     if (!output)
         return false;
 
@@ -2808,13 +2809,12 @@ function repair_cached_subscription_file(path) {
     repair_cached_outbounds(subscription.outbounds);
     let after = sprintf("%J", subscription);
     if (before == after)
-        return true;
+        return !!fs.chmod(path, 0600);
     let stamp = clock();
     let temporary = sprintf("%s.%d.%d.repair", path, stamp[0], stamp[1]);
-    if (fs.writefile(temporary, after + "\n") == null)
+    if (common.write_private_file(temporary, after + "\n") == null)
         return false;
-    let quoted = "'" + replace(temporary, /'/g, "'\\''") + "'";
-    if (system("chmod 600 " + quoted) != 0 || !fs.rename(temporary, path)) {
+    if (!fs.rename(temporary, path)) {
         fs.unlink(temporary);
         return false;
     }
@@ -2939,7 +2939,7 @@ function gzip_decode_file(input_file, output_file) {
         let data = pipe.read("all");
         let status = pipe.close();
         if (status == 0 && data != null && data != "") {
-            if (fs.writefile(output_file, data))
+            if (common.write_private_file(output_file, data))
                 return true;
             fs.unlink(output_file);
             return false;
@@ -2996,7 +2996,7 @@ function extract_ui_metadata_file(headers_file, body_file, output_file) {
         return false;
     }
 
-    if (!fs.writefile(tmp, sprintf("%J\n", result))) {
+    if (!common.write_private_json_file(tmp, result)) {
         fs.unlink(tmp);
         return false;
     }
@@ -3022,7 +3022,7 @@ function normalize_content_data(data, output_file, depth) {
 
     if (index(data, "proxies:") >= 0 && content_is_clash_yaml(data)) {
         let tmp = temp_path("forkop-subscription-clash");
-        if (!fs.writefile(tmp, data))
+        if (!common.write_private_file(tmp, data))
             return false;
         let ok = normalize_clash_yaml(tmp, output_file);
         fs.unlink(tmp);

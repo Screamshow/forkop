@@ -32,7 +32,7 @@ let read_stdin = common.read_stdin;
 let read_stdin_json = common.read_stdin_json;
 let write_json = common.write_json;
 let csv_to_json_array = common.csv_to_json_array;
-let write_json_file = common.write_json_file;
+let write_json_file = common.write_private_json_file;
 let strip_internal_fields = common.strip_internal_fields;
 let array_or_empty = common.array_or_empty;
 let object_or_empty = common.object_or_empty;
@@ -80,7 +80,7 @@ function atomic_write_json_file(path, value) {
     let stamp = clock();
     let tmp_path = sprintf("%s.%d.%d.tmp", path, stamp[0], stamp[1]);
 
-    if (!ensure_parent_dir(path))
+    if (!ensure_parent_dir(path) || !common.secure_private_dir(parent_dir(path)))
         return false;
     if (!write_json_file(tmp_path, value))
         return false;
@@ -3371,24 +3371,6 @@ function section_by_name(sections, name) {
     return null;
 }
 
-function apply_reality_key_share(config, version) {
-    // Match the Extended suffix, not the upstream sing-box core version.
-    let parts = match(as_string(version), /^v?[0-9]+[.][0-9]+[.][0-9]+-extended-([0-9]+)[.]([0-9]+)[.]([0-9]+)([+][A-Za-z0-9.-]+)?$/);
-    if (parts == null)
-        return;
-    let supported = int(parts[1]) > 2 || (int(parts[1]) == 2 &&
-        (int(parts[2]) > 7 || (int(parts[2]) == 7 && int(parts[3]) >= 2)));
-    if (!supported)
-        return;
-    for (let outbound in array_or_empty(config.outbounds)) {
-        let tls = type(outbound) == "object" ? outbound.tls : null;
-        let reality = type(tls) == "object" ? tls.reality : null;
-        if (type(reality) == "object" && reality.enabled === true && tls.enabled !== false &&
-            !exists(reality, "support_x25519mlkem768"))
-            reality.support_x25519mlkem768 = true;
-    }
-}
-
 function generate_config(output_path, service_address, mwan3_active, supports_xhttp, deferred_sections, sing_box_version) {
     runtime_supports_xhttp = supports_xhttp == null || as_string(supports_xhttp) == ""
         ? true
@@ -3448,7 +3430,6 @@ function generate_config(output_path, service_address, mwan3_active, supports_xh
     }
 
     assert_unique_outbound_tags(config);
-    apply_reality_key_share(config, sing_box_version);
     strip_internal_fields(config);
     if (!write_json_file(output_path, config)) {
         warn("failed to write ", output_path, "\n");

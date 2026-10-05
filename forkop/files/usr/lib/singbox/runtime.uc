@@ -707,6 +707,9 @@ function prepare_subscription_caches(prepared, no_refresh) {
 }
 
 function save_config_file(temp_file_path, config_path) {
+    if (!fs.chmod(temp_file_path, 0600) ||
+        (file_exists(config_path) && !fs.chmod(config_path, 0600)))
+        return false;
     let current_hash = md5_file(config_path);
     let temp_hash = md5_file(temp_file_path);
 
@@ -732,7 +735,7 @@ function discard_config_stage(stage_path) {
 function restore_config_stage(backup_path) {
     let config_path = option(uci_settings(), "config_path", "");
     backup_path = as_string(backup_path);
-    return config_path != "" && file_exists(backup_path) &&
+    return config_path != "" && file_exists(backup_path) && fs.chmod(backup_path, 0600) &&
         command_success_from_args([ "mv", "-f", backup_path, config_path ]);
 }
 
@@ -740,30 +743,53 @@ function publish_section_cache(temp_config_path) {
     let source_dir = as_string(temp_config_path) + ".section-cache";
     let entries = fs.lsdir(source_dir);
     if (type(entries) != "array")
-        return true;
-    if (!ensure_dir(SECTION_CACHE_DIR))
+        return fs.stat(source_dir) == null;
+    if (!ensure_parent_dir(SECTION_CACHE_DIR))
         return false;
 
+    // Build the complete replacement beside the live cache, on the same
+    // filesystem. Never consume generated files before publication succeeds.
+    let transaction = trim(command_output_from_args([
+        "mktemp", "-d", parent_dir(SECTION_CACHE_DIR) + "/.section-cache.XXXXXX"
+    ]));
+    if (transaction == "")
+        return false;
+    let candidate = transaction + "/candidate";
+    let previous = transaction + "/previous";
+    let prepared = fs.chmod(transaction, 0700) && fs.mkdir(candidate, 0700);
     for (let entry in entries) {
+        if (!prepared)
+            break;
         entry = as_string(entry);
         if (match(entry, /^[A-Za-z0-9_-]+\.json$/) == null)
             continue;
 
         let source = source_dir + "/" + entry;
         let data = fs.readfile(source);
-        if (data == null)
-            return false;
-
-        let target = SECTION_CACHE_DIR + "/" + entry;
-        let temporary = target + ".tmp";
-        if (fs.writefile(temporary, data) == null || !fs.rename(temporary, target)) {
-            remove_file(temporary);
+        prepared = data != null && common.write_private_file(candidate + "/" + entry, data) != null;
+    }
+    let had_previous = fs.stat(SECTION_CACHE_DIR) != null;
+    if (!prepared || (had_previous &&
+        (!common.secure_private_dir(SECTION_CACHE_DIR) || !fs.rename(SECTION_CACHE_DIR, previous)))) {
+        command_success_from_args([ "rm", "-rf", transaction ]);
+        return false;
+    }
+    let published = SINGBOX_CONFIG_FAIL_PHASE != "cache-publish" && fs.rename(candidate, SECTION_CACHE_DIR);
+    if (!published || SINGBOX_CONFIG_FAIL_PHASE == "cache-after-publish") {
+        // Keep recovery files if withdrawing the candidate or restoring the
+        // previous directory fails; do not delete the only surviving old set.
+        if ((published && !fs.rename(SECTION_CACHE_DIR, candidate)) ||
+            (had_previous && !fs.rename(previous, SECTION_CACHE_DIR))) {
+            log_message("Failed to restore section cache; recovery files retained at " + transaction, "fatal");
             return false;
         }
-        remove_file(source);
+        command_success_from_args([ "rm", "-rf", transaction ]);
+        return false;
     }
-
-    command_success_from_args([ "rmdir", source_dir ]);
+    // Cleanup failure is not a failed publication: the complete new set is
+    // already live. Leave private leftovers rather than report a false rollback.
+    if (!command_success_from_args([ "rm", "-rf", source_dir, transaction ]))
+        log_message("Section cache published; failed to remove private temporary files", "warn");
     return true;
 }
 
@@ -777,7 +803,10 @@ function commit_config_stage(stage_path, backup_path) {
     // The reload lifecycle creates this backup before the first live config
     // change. It is consumed only after nft and sing-box reach the same state.
     if (file_exists(config_path)) {
-        if (!command_success_from_args([ "cp", "-p", config_path, backup_path ]))
+        if (!fs.chmod(config_path, 0600) ||
+            (file_exists(backup_path) && !fs.chmod(backup_path, 0600)) ||
+            !command_success_from_args([ "cp", "-p", config_path, backup_path ]) ||
+            !fs.chmod(backup_path, 0600))
             return false;
     }
     else if (getenv("FORKOP_LIFECYCLE_LIST_BOOTSTRAP") != "1")
@@ -826,8 +855,8 @@ function patch_dns_config(state_path) {
     let backup_path = temp_path();
     let temp_config = temp_path();
     if (backup_path == "" || temp_config == "" ||
-        fs.writefile(backup_path, fs.readfile(config_path)) == null ||
-        !common.write_json_file(temp_config, config)) {
+        common.write_private_file(backup_path, fs.readfile(config_path)) == null ||
+        !common.write_private_json_file(temp_config, config)) {
         remove_files([ backup_path, temp_config ]);
         exit(1);
     }
@@ -862,7 +891,7 @@ function restore_dns_config(backup_path) {
     let config_path = option(uci_settings(), "config_path", "");
     if (config_path == "" || !file_exists(backup_path))
         return false;
-    return command_success_from_args([ "mv", "-f", backup_path, config_path ]);
+    return !!fs.chmod(backup_path, 0600) && command_success_from_args([ "mv", "-f", backup_path, config_path ]);
 }
 
 function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferred_sections, stage_path, validate_now) {

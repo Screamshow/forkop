@@ -14,7 +14,13 @@ function expect(value, message) {
 function quote(value) { return "'" + replace("" + value, /'/g, "'\\''") + "'"; }
 function run(args) {
     let command = [];
-    for (let value in args) push(command, quote(value));
+    let isolated = ["env", "FORKOP_LIB=" + lib,
+        "FORKOP_RUNTIME_STATE_DIR=" + work + "/runtime-isolated",
+        "TMP_SING_BOX_FOLDER=" + work + "/sing-box",
+        "TMP_RULESET_FOLDER=" + work + "/rulesets",
+        "TMP_SUBSCRIPTION_FOLDER=" + work + "/subscriptions",
+        "FORKOP_PERSISTENT_SUBSCRIPTION_CACHE_DIR=" + work + "/persistent-isolated"];
+    for (let value in [...isolated, ...args]) push(command, quote(value));
     expect(system(join(" ", command)) == 0, "command " + args[0] + " " + args[1]);
 }
 function write(path, value) { expect(fs.writefile(path, sprintf("%J", value)) != null, "write fixture"); }
@@ -86,7 +92,7 @@ for (let aliases in [
     fields(normalize(links.serialize_outbound_link(last)), "X & session=key", 17);
     let generated = vless_outbound(generate([base + "&extra=" + encode(sprintf("%J", extra))], [], "1.14.1-extended-2.7.2"));
     fields(generated, "X & session=key", 17);
-    expect(generated.tls.reality.support_x25519mlkem768 === true, "manual Reality default");
+    expect(!exists(generated.tls.reality, "support_x25519mlkem768"), "manual Reality preference stays unspecified");
 }
 let priority = normalize(base + "&uplinkHTTPMethod=POST&sessionIDPlacement=cookie&scMaxBufferedPosts=0&extra=" +
     encode('{"uplinkHTTPMethod":"GET","SessionIDPlacement":"header","scMaxBufferedPosts":17}'));
@@ -169,17 +175,26 @@ expect(cached_generated.tls.reality.support_x25519mlkem768 === false,
 for (let version in ["1.13.21", "1.14.1", "1.14.1-extended-2.7.1", "unknown", "1.14.1-extended-2.7.2-rc1",
     "1.14.1-extended-2.7.2", "1.14.1-extended-2.7.20", "1.14.1-extended-2.8.0", "1.14.1-extended-3.0.0"]) {
     let o = vless_outbound(generate([base], [], version));
-    let supported = version == "1.14.1-extended-2.7.2" || version == "1.14.1-extended-2.7.20" ||
-        version == "1.14.1-extended-2.8.0" || version == "1.14.1-extended-3.0.0";
-    expect(exists(o.tls.reality,"support_x25519mlkem768") == supported, "version gate " + version);
+    expect(!exists(o.tls.reality, "support_x25519mlkem768"), "Reality stays unspecified for " + version);
 }
 for (let value in [false,true]) {
+    for (let parameter in ["support_x25519mlkem768", "supportX25519MLKEM768"]) {
+        let uri = base + "&" + parameter + "=" + (value ? "true" : "false");
+        expect(normalize(uri).tls.reality.support_x25519mlkem768 === value, "explicit subscription URI Reality preference " + parameter);
+        let manual = vless_outbound(generate([uri], [], "1.14.1-extended-2.7.2"));
+        expect(manual.tls.reality.support_x25519mlkem768 === value, "explicit manual URI Reality preference " + parameter);
+    }
     let o = normalize(base + "&support_x25519mlkem768=" + (value ? "true" : "false"));
     delete o.share_link;
     let result = vless_outbound(generate([], [sprintf("%J",o)], "1.14.1-extended-2.7.2"));
     expect(result.tls.reality.support_x25519mlkem768 === value, "explicit JSON Reality preference");
     expect(normalize(links.serialize_outbound_link(o)).tls.reality.support_x25519mlkem768 === value, "Reality preference round trip");
 }
+let unspecified = normalize(base);
+delete unspecified.share_link;
+let unspecified_json = vless_outbound(generate([], [sprintf("%J", unspecified)], "1.14.1-extended-2.7.2"));
+expect(!exists(unspecified_json.tls.reality, "support_x25519mlkem768"), "JSON Reality preference stays unspecified");
+expect(index(links.serialize_outbound_link(unspecified_json), "support_x25519mlkem768") < 0, "unspecified Reality preference is not exported");
 let off = normalize(base);
 off.tls.reality.enabled = false;
 let off_result = vless_outbound(generate([], [sprintf("%J",off)], "1.14.1-extended-2.7.2"));

@@ -1187,6 +1187,10 @@ grep -Fxq 'manual proxy link scheme is not supported by sing-box config generati
 generate_config "$WORK_DIR/provider-actions-fixture.json" "$WORK_DIR/providers.json"
 generate_config "$WORK_DIR/manual-transport-fixture.json" "$WORK_DIR/manual.json"
 generate_config "$WORK_DIR/vpn-interface-fixture.json" "$WORK_DIR/vpn.json"
+mkdir -p "$WORK_DIR/download.json.rulesets"
+cat >"$WORK_DIR/download.json.rulesets/proxy-community-subnets-lists-ruleset.json" <<'JSON'
+{"version":1,"rules":[{"ip_cidr":["192.0.2.0/24"]}]}
+JSON
 generate_config "$WORK_DIR/download-via-proxy-fixture.json" "$WORK_DIR/download.json"
 generate_config "$WORK_DIR/fully-routed-fixture.json" "$WORK_DIR/fully-routed.json"
 generate_config "$WORK_DIR/mwan3-auto-fixture.json" "$WORK_DIR/mwan3-auto.json" 1
@@ -1547,6 +1551,7 @@ assert(route_rule(download, r => r.inbound == "service-mixed-in" && r.outbound =
 assert(inbound(download, "service-components-in") != null, "components service mixed inbound");
 assert(route_rule(download, r => r.inbound == "service-components-in" && r.outbound == "components_proxy-out") != null, "components service mixed route");
 assert(ruleset(download, "proxy-discord-community-ruleset").download_detour == "proxy-out", "download_detour on community ruleset");
+assert(ruleset(download, "proxy-community-subnets-lists-ruleset").type == "local", "Discord subnet ruleset must be included");
 assert(ruleset_url(download, "https://example.com/rules.srs").download_detour == "proxy-out", "download_detour on custom remote ruleset");
 
 let fully = cfg("fully-routed");

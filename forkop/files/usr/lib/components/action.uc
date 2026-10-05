@@ -27,6 +27,7 @@ const TORRSERVER_DIRECT_INIT = getenv("FORKOP_TORRSERVER_DIRECT_INIT") || "/etc/
 const TORRSERVER_DIRECT_UC = LIB_DIR + "/torrserver/direct.uc";
 
 let tmp_dir = "";
+let repository_indexes_ready = false;
 let lock_held = false;
 let forkop_was_running = false;
 let forkop_was_enabled = false;
@@ -408,6 +409,13 @@ function pkg_list_update_command() {
     return is_apk() ? "apk update </dev/null" : "opkg update </dev/null";
 }
 
+function ensure_repository_indexes() {
+    if (repository_indexes_ready)
+        return true;
+    repository_indexes_ready = run_logged("Updating package lists before sing-box package change", pkg_list_update_command());
+    return repository_indexes_ready;
+}
+
 function pkg_install_name_command(package_name) {
     return is_apk() ? command_from_args([ "apk", "add", package_name ]) + " </dev/null" :
         command_from_args([ "opkg", "install", package_name ]) + " </dev/null";
@@ -518,6 +526,10 @@ function staged_package_info(path, expected_name, expected_version) {
 }
 
 function stage_repository_package(package_name, expected_version) {
+    // Both apk fetch and opkg download need repository indexes, including
+    // when the current package is being saved for rollback.
+    if (!ensure_repository_indexes())
+        return null;
     let ext = is_apk() ? "apk" : "ipk";
     let command = is_apk() ?
         command_from_args([ "apk", "fetch", "-o", tmp_dir, package_name ]) :
@@ -2037,7 +2049,7 @@ function install_sing_box_extended_package(action) {
     if (target == null)
         action_fail("sing_box", action, "Downloaded sing-box-extended package has invalid metadata or architecture", current_version, latest_version);
 
-    if (!run_logged("Updating package lists before sing-box-extended package installation", pkg_list_update_command()))
+    if (!ensure_repository_indexes())
         action_fail("sing_box", action, "Failed to update package lists", current_version, latest_version);
 
     if (!install_opkg_sing_box_dependencies(target))
@@ -2150,6 +2162,8 @@ function install_sing_box_extended(action, compressed) {
     }
 
     let archive_file = tmp_dir + "/" + release.asset_name;
+    if (!ensure_repository_indexes())
+        action_fail("sing_box", action, "Failed to update package lists", current_version, latest_version);
     if (!download_with_retry(release.asset_url, archive_file, release.asset_name))
         action_fail("sing_box", action, "Failed to download " + label, current_version, latest_version);
 
@@ -2344,7 +2358,7 @@ function install_package_sing_box(action, tiny) {
         check_success("sing_box", current_version, latest_version, "");
     }
 
-    if (!run_logged("Updating package lists before " + package_name + " installation", pkg_list_update_command()))
+    if (!ensure_repository_indexes())
         action_fail("sing_box", action, "Failed to update package lists", current_version, latest_version);
     latest_version = available_package_version(package_name);
     if (latest_version == "")
@@ -3048,14 +3062,16 @@ function set_direct_proxy(action) {
         !uci_core.commit(CONFIG_NAME))
         action_fail("direct_proxy", action, "Failed to save Direct Proxy settings", current_enabled, target_enabled);
 
-    if (!command_success_from_args([ SERVICE_INIT, "restart" ])) {
+    // Direct Proxy changes only the sing-box configuration. Use the normal
+    // serialized reload instead of stopping every Forkop component.
+    if (!command_success_from_args([ SERVICE_INIT, "reload" ])) {
         uci_core.set(enabled_path, current_enabled);
         if (current_port != "")
             uci_core.set(port_path, current_port);
         else
             uci_core.delete(port_path);
         uci_core.commit(CONFIG_NAME);
-        command_success_from_args([ SERVICE_INIT, "restart" ]);
+        command_success_from_args([ SERVICE_INIT, "reload" ]);
         action_fail("direct_proxy", action, "Failed to apply Direct Proxy settings", current_enabled, target_enabled);
     }
 

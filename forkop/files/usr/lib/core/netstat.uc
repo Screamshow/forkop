@@ -61,4 +61,25 @@ function listen_port_in_use(netstat, listen, port) {
     return false;
 }
 
-return { sing_box_standard_ports_listening, listen_port_in_use };
+function tcp_listen_port_owned(netstat, listen, port, pid) {
+    netstat = netstat == null ? "" : "" + netstat;
+    pid = int(pid || 0);
+    if (pid <= 0)
+        return false;
+
+    let expected_owner = "" + pid;
+    for (let line in split(netstat, "\n")) {
+        let fields = netstat_fields(line);
+        if (length(fields) < 7 || index(fields[0], "tcp") != 0 || fields[5] != "LISTEN")
+            continue;
+        if (!netstat_addr_matches(fields[3], listen, port))
+            continue;
+
+        let slash = index(fields[6], "/");
+        if (slash > 0 && substr(fields[6], 0, slash) == expected_owner)
+            return true;
+    }
+    return false;
+}
+
+return { sing_box_standard_ports_listening, listen_port_in_use, tcp_listen_port_owned };

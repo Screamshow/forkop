@@ -902,6 +902,10 @@ function prepare_lists_for_cold_start() {
             managed = true;
             status = module_status(STATE_UC, [ "start-managed-sing-box-runtime", "15" ]);
         }
+        if (status == 0)
+            status = module_status(STATE_UC, [
+                "wait-managed-sing-box-config-listeners", config_path, "15"
+            ]);
     }
     if (status == 0)
         status = module_status_with_env(UPDATES_UC, [ "list-update" ], {

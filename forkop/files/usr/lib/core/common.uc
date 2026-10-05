@@ -61,6 +61,53 @@ function write_json_file(path, value) {
     return fs.writefile(path, sprintf("%J\n", value));
 }
 
+function open_private_file(path) {
+    let handle = fs.open(path, "w", 0600);
+    if (handle == null)
+        return null;
+    if (!fs.chmod(path, 0600)) {
+        handle.close();
+        return null;
+    }
+    return handle;
+}
+
+function write_private_file(path, value) {
+    if (value == null)
+        return null;
+    value = as_string(value);
+    let handle = open_private_file(path);
+    if (handle == null)
+        return null;
+    let written = handle.write(value);
+    handle.close();
+    return written == length(value) ? written : null;
+}
+
+function write_private_json_file(path, value) {
+    return write_private_file(path, sprintf("%J\n", value));
+}
+
+// Callers create parents separately: never narrow a shared parent such as /tmp.
+function secure_private_dir(path) {
+    if (path == null || path == "" || path == "/")
+        return false;
+    if (fs.stat(path) == null && !fs.mkdir(path, 0700))
+        return false;
+    if (!fs.chmod(path, 0700))
+        return false;
+    let entries = fs.lsdir(path);
+    if (type(entries) != "array")
+        return false;
+    for (let entry in entries) {
+        let file = path + "/" + entry;
+        let stat = fs.stat(file);
+        if (stat != null && stat.type == "file" && !fs.chmod(file, 0600))
+            return false;
+    }
+    return true;
+}
+
 function strip_internal_fields(value) {
     if (type(value) == "array") {
         for (let i = 0; i < length(value); i++)
@@ -137,6 +184,10 @@ return {
     write_compact_string_array,
     csv_to_json_array,
     write_json_file,
+    open_private_file,
+    write_private_file,
+    write_private_json_file,
+    secure_private_dir,
     strip_internal_fields,
     array_or_empty,
     object_or_empty,

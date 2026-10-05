@@ -650,6 +650,59 @@ function sing_box_current_owned_service_runtime() {
         process_start_ticks_for_pid(provenance.pid) == provenance.start_ticks;
 }
 
+// Readiness requires every bootstrap TCP socket to belong to the same
+// verified procd-owned process before and after the netstat snapshot.
+function wait_managed_sing_box_config_listeners(config_path, timeout) {
+    let config = object_or_empty(read_json_file(config_path));
+    let inbounds = type(config.inbounds) == "array" ? config.inbounds : [];
+    let listeners = [];
+    for (let inbound in inbounds) {
+        inbound = object_or_empty(inbound);
+        if (as_string(inbound.type) != "mixed" || int(inbound.listen_port || 0) <= 0)
+            continue;
+        push(listeners, {
+            listen: as_string(inbound.listen || "127.0.0.1"),
+            port: as_string(inbound.listen_port)
+        });
+    }
+    if (length(listeners) == 0)
+        return false;
+
+    timeout = timeout == null || timeout == "" ? 15 : int(timeout);
+    let expected = sing_box_runtime_provenance();
+    if (expected == null || !pid_has_current_sing_box_exe(expected.pid))
+        return false;
+    while (timeout >= 0) {
+        let current = sing_box_runtime_provenance();
+        if (current == null || current.pid != expected.pid ||
+            current.start_ticks != expected.start_ticks ||
+            !pid_has_current_sing_box_exe(current.pid))
+            return false;
+        let snapshot = command_output_from_args([ "netstat", "-lntp" ]);
+        let ready = true;
+        for (let listener in listeners)
+            if (!netstat.tcp_listen_port_owned(snapshot, listener.listen, listener.port, expected.pid)) {
+                ready = false;
+                break;
+            }
+        if (ready) {
+            // Close the snapshot race: prove that the socket owner is still
+            // the same sole managed executable after inspecting netstat.
+            current = sing_box_runtime_provenance();
+            if (current != null && current.pid == expected.pid &&
+                current.start_ticks == expected.start_ticks &&
+                pid_has_current_sing_box_exe(current.pid))
+                return true;
+            return false;
+        }
+        if (timeout <= 0)
+            break;
+        command_success_from_args([ "sleep", "1" ]);
+        timeout--;
+    }
+    return false;
+}
+
 function sing_box_deleted_owned_service_runtime() {
     let provenance = sing_box_runtime_provenance();
     return provenance != null && pid_has_deleted_sing_box_exe(provenance.pid) &&
@@ -2189,6 +2242,8 @@ else if (mode == "sing-box-single-owned-service-runtime")
     exit(sing_box_single_owned_service_runtime() ? 0 : 1);
 else if (mode == "sing-box-current-owned-service-runtime")
     exit(sing_box_current_owned_service_runtime() ? 0 : 1);
+else if (mode == "wait-managed-sing-box-config-listeners")
+    exit(wait_managed_sing_box_config_listeners(ARGV[1], ARGV[2]) ? 0 : 1);
 else if (mode == "sing-box-deleted-owned-service-runtime")
     exit(sing_box_deleted_owned_service_runtime() ? 0 : 1);
 else if (mode == "sing-box-process-conflict")

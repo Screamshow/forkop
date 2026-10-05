@@ -204,7 +204,7 @@ function write_runtime_manifest(manifest) {
     let stamp = clock();
     let temporary = RUNTIME_MANIFEST_PATH + "." + as_string(stamp[0]) + "." + as_string(stamp[1]) + ".tmp";
     fs.unlink(temporary);
-    if (common.write_json_file(temporary, manifest) == null || !command_success([ "chmod", "0600", temporary ])) {
+    if (common.write_private_json_file(temporary, manifest) == null) {
         fs.unlink(temporary);
         return false;
     }
@@ -319,8 +319,7 @@ function write_manifest(manifest) {
     fs.unlink(temporary);
     let text = sprintf("%J\n", manifest);
     let bytes = length(text) + 4095;
-    if (!persistent_cache_can_store(MANIFEST_PATH, bytes) || fs.writefile(temporary, text) == null ||
-        !command_success([ "chmod", "0600", temporary ])) {
+    if (!persistent_cache_can_store(MANIFEST_PATH, bytes) || common.write_private_file(temporary, text) == null) {
         fs.unlink(temporary);
         return false;
     }
@@ -617,7 +616,7 @@ function materialize_config(config_path, allow_download) {
             values[i] = local_rule_set(values[i], manifest, previous_manifest, runtime_manifest, allow_download);
     route.rule_set = values;
     config.route = route;
-    if (!common.write_json_file(config_path, config))
+    if (!common.write_private_json_file(config_path, config))
         return false;
     let persistent_manifest_written = write_manifest(manifest);
     for (let key, entry in runtime_manifest)

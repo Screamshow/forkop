@@ -36,6 +36,7 @@ ops/deployed-nginx/
 !/tests/ruleset_binary_validation_vm.sh
 !/tests/singbox_single_process.sh
 !/tests/sing_box_runtime.sh
+!/tests/zapret_manager_detection.sh
 !/tests/sing_box_manual_version.sh
 !/tests/release_queue_vm.sh
 !/tests/release_update_vm.sh
@@ -64,6 +65,8 @@ ops/deployed-nginx/
 !/tests/opkg_lock_retry.sh
 !/tests/installer_opkg_lock_retry.sh
 !/tests/reality_xhttp.uc
+!/tests/private_files.uc
+!/tests/private_files_vm.sh
 !/tests/reality_xhttp_vm.sh
 !/tests/dns_apply.sh
 !/tests/dns_rollback_transaction.sh
@@ -82,6 +85,8 @@ ops/deployed-nginx/
 /.github/workflows/shellcheck.yml
 
 # VM integration regressions
+!/tests/netstat_listener_owner.sh
+!/tests/section_cache_rollback.sh
 !/tests/discord_cold_start_vm.sh
 !/tests/watchdog_outage_vm.sh
 !/tests/list_download_update_vm.sh
