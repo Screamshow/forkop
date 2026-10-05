@@ -16,13 +16,17 @@ interface SupportStatus {
   required_kib: number;
   remaining_seconds: number;
   address: string;
+  session_id: string;
+  announcement_granted?: boolean;
 }
 
 export function renderRemoteSupport() {
   let status: SupportStatus | null = null;
   let busy = false;
+  let requestEpoch = 0;
+  let announcedSession = '';
+  let announcementPending = false;
   let timer: ReturnType<typeof setTimeout>;
-  let announcedAddress = '';
   let connectionDialog: HTMLElement | null = null;
   const key = E('input', {
     type: 'password',
@@ -68,8 +72,9 @@ export function renderRemoteSupport() {
     ],
   );
 
-  async function request(operation: string, authKey = '') {
+  async function request(operation: string, authKey = '', sessionId = '') {
     const body = new URLSearchParams({ operation, token: L.env.token });
+    if (sessionId) body.set('session_id', sessionId);
     if (operation === 'remove') body.set('consent', 'remove-tailscale-package');
     if (authKey) {
       body.set('auth_key', authKey);
@@ -94,6 +99,20 @@ export function renderRemoteSupport() {
     return result.data as SupportStatus;
   }
 
+  function phaseLabel(phase: string) {
+    const labels: Record<string, string> = {
+      stopped: _('Disconnected'),
+      starting: _('Connecting'),
+      installing: _('Installing'),
+      removing: _('Removing'),
+      connected: _('Connected'),
+      degraded: _('Control connection lost'),
+      recovering: _('Restoring control connection'),
+      failed: _('Failed'),
+    };
+    return labels[phase] || phase;
+  }
+
   function connectionDetails() {
     const connected =
       status?.active && status.phase === 'connected' && !!status.address;
@@ -103,9 +122,11 @@ export function renderRemoteSupport() {
           `IP: ${status.address}`,
           `${_('Remaining time')}: ${Math.ceil(status.remaining_seconds / 60)} ${_('minutes')}`,
         ].join('\n')
-      : status
-        ? _('Disconnected')
-        : _('Unable to read remote support status');
+      : status?.active
+        ? `${phaseLabel(status.phase)}\n${_('Remaining time')}: ${Math.ceil(status.remaining_seconds / 60)} ${_('minutes')}`
+        : status
+          ? _('Disconnected')
+          : _('Unable to read remote support status');
   }
 
   function updateConnectionDialog() {
@@ -116,7 +137,13 @@ export function renderRemoteSupport() {
       status.address
     );
     connectionDialog.replaceChildren(
-      E('h4', {}, connected ? _('Support access is open') : _('Disconnected')),
+      E(
+        'h4',
+        {},
+        connected
+          ? _('Support access is open')
+          : phaseLabel(status?.phase || 'stopped'),
+      ),
       E(
         'p',
         {},
@@ -142,7 +169,7 @@ export function renderRemoteSupport() {
         }),
         renderButton({
           text: _('Disconnect now'),
-          disabled: busy || !connected,
+          disabled: busy || !status?.active,
           onClick: () => {
             void act('stop');
           },
@@ -164,24 +191,41 @@ export function renderRemoteSupport() {
     updateConnectionDialog();
   }
 
+  async function announceSession(sessionId: string) {
+    if (announcementPending || !sessionId || announcedSession === sessionId)
+      return;
+    announcementPending = true;
+    const epoch = requestEpoch;
+    try {
+      const result = await request('announce', '', sessionId);
+      announcedSession = sessionId;
+      if (
+        result.announcement_granted &&
+        epoch === requestEpoch &&
+        card.isConnected &&
+        status?.active &&
+        status.phase === 'connected' &&
+        status.session_id === sessionId &&
+        !connectionDialog?.isConnected
+      )
+        showConnectionDialog();
+    } catch {
+      /* Retry a failed acknowledgement on the next status poll. */
+    } finally {
+      announcementPending = false;
+    }
+  }
+
   function update() {
     updateConnectionDialog();
-    if (status?.active && status.phase === 'connected' && status.address) {
-      if (announcedAddress !== status.address) {
-        announcedAddress = status.address;
-        showConnectionDialog();
-      }
-    } else if (status && !status.active) {
-      announcedAddress = '';
+    if (
+      card.isConnected &&
+      status?.active &&
+      status.phase === 'connected' &&
+      status.address
+    ) {
+      void announceSession(status.session_id);
     }
-    const labels: Record<string, string> = {
-      stopped: _('Disconnected'),
-      starting: _('Connecting'),
-      installing: _('Installing'),
-      removing: _('Removing'),
-      connected: _('Connected'),
-      failed: _('Failed'),
-    };
     const details: Node[] = [
       E(
         'div',
@@ -190,11 +234,7 @@ export function renderRemoteSupport() {
           ? `${status.lite_installed ? 'Tailscale Lite' : 'Tailscale'} ${status.version}`
           : _('Tailscale is not installed'),
       ),
-      E(
-        'div',
-        {},
-        status ? labels[status.phase] || status.phase : _('Loading'),
-      ),
+      E('div', {}, status ? phaseLabel(status.phase) : _('Loading')),
     ];
     if (status?.primary_running)
       details.push(
@@ -247,7 +287,10 @@ export function renderRemoteSupport() {
     consent.disabled = busy;
     const buttons: Node[] = [];
     if (status?.active) {
-      if (status.phase === 'connected' && status.address) {
+      if (
+        status.session_id &&
+        !['installing', 'removing'].includes(status.phase)
+      ) {
         buttons.push(
           renderButton({
             text: _('Connection details'),
@@ -345,6 +388,7 @@ export function renderRemoteSupport() {
   async function act(operation: string) {
     if (busy) return;
     busy = true;
+    requestEpoch += 1;
     const authKey = operation === 'start' ? key.value.trim() : '';
     key.value = '';
     consent.checked = false;
@@ -363,13 +407,19 @@ export function renderRemoteSupport() {
   async function refresh() {
     if (!card.isConnected) return;
     if (!busy) {
+      const epoch = requestEpoch;
       try {
-        status = await request('status');
-        update();
+        const result = await request('status');
+        if (epoch === requestEpoch && card.isConnected) {
+          status = result;
+          update();
+        }
       } catch {
-        status = null;
-        updateConnectionDialog();
-        message.textContent = _('Unable to read remote support status');
+        if (epoch === requestEpoch && card.isConnected) {
+          status = null;
+          updateConnectionDialog();
+          message.textContent = _('Unable to read remote support status');
+        }
       }
     }
     timer = setTimeout(() => {

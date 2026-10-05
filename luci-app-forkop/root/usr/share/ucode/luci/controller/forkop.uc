@@ -47,6 +47,7 @@ function action_remote_support() {
 		let session = loadfile('/usr/lib/forkop/support/session.uc')();
 		let result = session.request({
 			operation: http.formvalue('operation'),
+			session_id: http.formvalue('session_id'),
 			auth_key: http.formvalue('auth_key'),
 			consent: http.formvalue('consent')
 		});

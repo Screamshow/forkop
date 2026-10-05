@@ -2230,3 +2230,12 @@ msgstr "Не удалось удалить Tailscale Lite"
 
 msgid "Error details"
 msgstr "Подробности ошибки"
+
+msgid "Control connection lost"
+msgstr "Потеряна связь с сервером управления"
+
+msgid "Restoring control connection"
+msgstr "Восстановление связи с сервером управления"
+
+msgid "Tailscale control connection is unhealthy"
+msgstr "Нарушена связь Tailscale с сервером управления"

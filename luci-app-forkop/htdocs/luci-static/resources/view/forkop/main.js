@@ -13324,8 +13324,10 @@ var MonitoringTab = {
 function renderRemoteSupport() {
   let status = null;
   let busy = false;
+  let requestEpoch = 0;
+  let announcedSession = "";
+  let announcementPending = false;
   let timer;
-  let announcedAddress = "";
   let connectionDialog = null;
   const key = E("input", {
     type: "password",
@@ -13370,8 +13372,9 @@ function renderRemoteSupport() {
       message
     ]
   );
-  async function request(operation, authKey = "") {
+  async function request(operation, authKey = "", sessionId = "") {
     const body = new URLSearchParams({ operation, token: L.env.token });
+    if (sessionId) body.set("session_id", sessionId);
     if (operation === "remove") body.set("consent", "remove-tailscale-package");
     if (authKey) {
       body.set("auth_key", authKey);
@@ -13395,19 +13398,37 @@ function renderRemoteSupport() {
       );
     return result.data;
   }
+  function phaseLabel(phase) {
+    const labels = {
+      stopped: _("Disconnected"),
+      starting: _("Connecting"),
+      installing: _("Installing"),
+      removing: _("Removing"),
+      connected: _("Connected"),
+      degraded: _("Control connection lost"),
+      recovering: _("Restoring control connection"),
+      failed: _("Failed")
+    };
+    return labels[phase] || phase;
+  }
   function connectionDetails() {
     const connected = status?.active && status.phase === "connected" && !!status.address;
     return connected && status ? [
       _("Forkop: remote support"),
       `IP: ${status.address}`,
       `${_("Remaining time")}: ${Math.ceil(status.remaining_seconds / 60)} ${_("minutes")}`
-    ].join("\n") : status ? _("Disconnected") : _("Unable to read remote support status");
+    ].join("\n") : status?.active ? `${phaseLabel(status.phase)}
+${_("Remaining time")}: ${Math.ceil(status.remaining_seconds / 60)} ${_("minutes")}` : status ? _("Disconnected") : _("Unable to read remote support status");
   }
   function updateConnectionDialog() {
     if (!connectionDialog?.isConnected) return;
     const connected = !!(status?.active && status.phase === "connected" && status.address);
     connectionDialog.replaceChildren(
-      E("h4", {}, connected ? _("Support access is open") : _("Disconnected")),
+      E(
+        "h4",
+        {},
+        connected ? _("Support access is open") : phaseLabel(status?.phase || "stopped")
+      ),
       E(
         "p",
         {},
@@ -13429,7 +13450,7 @@ function renderRemoteSupport() {
         }),
         renderButton({
           text: _("Disconnect now"),
-          disabled: busy || !connected,
+          disabled: busy || !status?.active,
           onClick: () => {
             void act("stop");
           }
@@ -13449,35 +13470,33 @@ function renderRemoteSupport() {
     ui.showModal(_("Connection details"), connectionDialog);
     updateConnectionDialog();
   }
+  async function announceSession(sessionId) {
+    if (announcementPending || !sessionId || announcedSession === sessionId)
+      return;
+    announcementPending = true;
+    const epoch = requestEpoch;
+    try {
+      const result = await request("announce", "", sessionId);
+      announcedSession = sessionId;
+      if (result.announcement_granted && epoch === requestEpoch && card.isConnected && status?.active && status.phase === "connected" && status.session_id === sessionId && !connectionDialog?.isConnected)
+        showConnectionDialog();
+    } catch {
+    } finally {
+      announcementPending = false;
+    }
+  }
   function update() {
     updateConnectionDialog();
-    if (status?.active && status.phase === "connected" && status.address) {
-      if (announcedAddress !== status.address) {
-        announcedAddress = status.address;
-        showConnectionDialog();
-      }
-    } else if (status && !status.active) {
-      announcedAddress = "";
+    if (card.isConnected && status?.active && status.phase === "connected" && status.address) {
+      void announceSession(status.session_id);
     }
-    const labels = {
-      stopped: _("Disconnected"),
-      starting: _("Connecting"),
-      installing: _("Installing"),
-      removing: _("Removing"),
-      connected: _("Connected"),
-      failed: _("Failed")
-    };
     const details = [
       E(
         "div",
         {},
         status?.installed ? `${status.lite_installed ? "Tailscale Lite" : "Tailscale"} ${status.version}` : _("Tailscale is not installed")
       ),
-      E(
-        "div",
-        {},
-        status ? labels[status.phase] || status.phase : _("Loading")
-      )
+      E("div", {}, status ? phaseLabel(status.phase) : _("Loading"))
     ];
     if (status?.primary_running)
       details.push(
@@ -13529,7 +13548,7 @@ function renderRemoteSupport() {
     consent.disabled = busy;
     const buttons = [];
     if (status?.active) {
-      if (status.phase === "connected" && status.address) {
+      if (status.session_id && !["installing", "removing"].includes(status.phase)) {
         buttons.push(
           renderButton({
             text: _("Connection details"),
@@ -13619,6 +13638,7 @@ function renderRemoteSupport() {
   async function act(operation) {
     if (busy) return;
     busy = true;
+    requestEpoch += 1;
     const authKey = operation === "start" ? key.value.trim() : "";
     key.value = "";
     consent.checked = false;
@@ -13636,13 +13656,19 @@ function renderRemoteSupport() {
   async function refresh() {
     if (!card.isConnected) return;
     if (!busy) {
+      const epoch = requestEpoch;
       try {
-        status = await request("status");
-        update();
+        const result = await request("status");
+        if (epoch === requestEpoch && card.isConnected) {
+          status = result;
+          update();
+        }
       } catch {
-        status = null;
-        updateConnectionDialog();
-        message.textContent = _("Unable to read remote support status");
+        if (epoch === requestEpoch && card.isConnected) {
+          status = null;
+          updateConnectionDialog();
+          message.textContent = _("Unable to read remote support status");
+        }
       }
     }
     timer = setTimeout(() => {

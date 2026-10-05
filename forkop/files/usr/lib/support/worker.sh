@@ -3,30 +3,83 @@ set -eu
 umask 077
 dir=${FORKOP_SUPPORT_DIR:-/var/run/forkop/support}
 lite=${FORKOP_SUPPORT_LITE_DIR:-/usr/lib/forkop-support}
-if [ ! -L "$lite" ] && [ -f "$lite/.forkop-lite" ] && [ -x "$lite/tailscale" ] && [ -x "$lite/tailscaled" ]; then export PATH="$lite:$PATH"; fi
+lib=${FORKOP_SUPPORT_LIB_DIR:-/usr/lib/forkop/support}
+cli=tailscale
+daemon=tailscaled
+if [ ! -L "$lite" ] && [ -f "$lite/.forkop-lite" ] && [ -x "$lite/tailscale" ] && [ -x "$lite/tailscaled" ]; then
+    cli="$lite/tailscale"
+    daemon="$lite/tailscaled"
+fi
 daemon_pid=
 auth_pid=
 phase=stopped
 error=
 free_kib=0
 required_kib=0
+session_id=$(cat /proc/sys/kernel/random/uuid)
+attempts=0
+bad_since=0
+next_attempt=0
+hostname="forkop-support-$(cat /proc/sys/kernel/hostname)"
 uptime_seconds() { cut -d. -f1 /proc/uptime; }
 deadline=$(( $(uptime_seconds) + ${FORKOP_SUPPORT_TTL:-1800} ))
+# The API creates the identity/deadline before starting procd. Standalone tests
+# may omit them, but recovery never regenerates either value.
+if [ -s "$dir/status.json" ]; then
+    existing_id=$(jsonfilter -i "$dir/status.json" -e '@.session_id' 2>/dev/null || true)
+    existing_deadline=$(jsonfilter -i "$dir/status.json" -e '@.deadline' 2>/dev/null || true)
+    case "$existing_id" in ????????-????-????-????-????????????) session_id=$existing_id;; esac
+    case "$existing_deadline" in ''|*[!0-9]*) ;; *) deadline=$existing_deadline;; esac
+fi
 state() {
-    printf '{"schema":2,"phase":"%s","deadline":%s,"error":"%s","free_kib":%s,"required_kib":%s}\n' "$phase" "$deadline" "$error" "$free_kib" "$required_kib" > "$dir/status.new"
+    printf '{"schema":2,"session_id":"%s","phase":"%s","deadline":%s,"error":"%s","free_kib":%s,"required_kib":%s,"recovery_attempts":%s}\n' "$session_id" "$phase" "$deadline" "$error" "$free_kib" "$required_kib" "$attempts" > "$dir/status.new"
     mv "$dir/status.new" "$dir/status.json"
+}
+# Stop parents before walking their children so a cancelled CLI cannot spawn
+# a late helper. All tracked processes belong exclusively to this worker.
+kill_tree() {
+    kill -STOP "$1" 2>/dev/null || return 0
+    for child in $(cat "/proc/$1/task/$1/children" 2>/dev/null); do kill_tree "$child"; done
+    kill -KILL "$1" 2>/dev/null || true
+}
+event() {
+    # RAM only, fixed messages without raw CLI output or credentials.
+    printf '%s %s attempt=%s\n' "$(uptime_seconds)" "$1" "$attempts" >> "$dir/recovery.log"
+}
+within_session() {
+    if [ "$(uptime_seconds)" -ge "$deadline" ]; then phase=stopped; exit 0; fi
+}
+# Bound even a hung local API command, and check expiry while it runs.
+run_cli() {
+    within_session
+    limit=$(( $(uptime_seconds) + $1 )); shift
+    "$cli" --socket="$dir/socket" "$@" > "$dir/check.json" 2>/dev/null &
+    auth_pid=$!
+    while kill -0 "$auth_pid" 2>/dev/null; do
+        within_session
+        if [ "$(uptime_seconds)" -ge "$limit" ]; then
+            kill_tree "$auth_pid"; wait "$auth_pid" 2>/dev/null || true
+            auth_pid=; return 1
+        fi
+        sleep 1
+    done
+    rc=0; wait "$auth_pid" || rc=$?
+    auth_pid=
+    within_session
+    return "$rc"
 }
 cleanup() {
     trap - EXIT TERM INT
-    case "$phase" in starting|connected) phase=stopped;; esac
+    case "$phase" in starting|connected|degraded|recovering) phase=stopped;; esac
     state
     # Revoke SSH authorization before closing the support transport.
-    ucode /usr/lib/forkop/support/ssh-access.uc remove >/dev/null 2>&1 || true
-    [ -z "$auth_pid" ] || kill "$auth_pid" 2>/dev/null || true
-    [ -z "$daemon_pid" ] || kill "$daemon_pid" 2>/dev/null || true
+    ucode "$lib/ssh-access.uc" remove >/dev/null 2>&1 || true
+    [ -z "$auth_pid" ] || kill_tree "$auth_pid"
+    [ -z "$auth_pid" ] || wait "$auth_pid" 2>/dev/null || true
+    [ -z "$daemon_pid" ] || kill_tree "$daemon_pid"
     [ -z "$daemon_pid" ] || wait "$daemon_pid" 2>/dev/null || true
     if [ "$phase" = failed ] && [ -n "$daemon_pid" ]; then
-        FORKOP_SUPPORT_DIR="$dir" ucode /usr/lib/forkop/support/auth-diagnostic.uc >/dev/null 2>&1 || true
+        FORKOP_SUPPORT_DIR="$dir" ucode "$lib/auth-diagnostic.uc" >/dev/null 2>&1 || true
     fi
     rm -f "$dir/daemon.log" "$dir/auth.log"
     rm -f "$dir/lite.download"
@@ -35,12 +88,14 @@ cleanup() {
         rmdir "$lite" 2>/dev/null || true
     fi
     rm -f "$dir/auth.key" "$dir/socket" "$dir/operation"
+    rm -f "$dir/check.json"
     rmdir "$dir/lock" 2>/dev/null || true
     state
 }
 trap cleanup EXIT
 trap 'phase=stopped; exit 0' TERM INT
 rm -f "$dir/auth-detail.txt"
+: > "$dir/recovery.log"
 if [ "$(cat "$dir/operation")" = remove ]; then
     phase=removing; state
     if [ -x "$lite/tailscale" ] && [ -x "$lite/tailscaled" ] && [ -f "$lite/.forkop-lite" ] && [ ! -L "$lite" ]; then
@@ -79,20 +134,22 @@ if [ "$(cat "$dir/operation")" = install ]; then
 fi
 [ -s "$dir/auth.key" ] || { phase=failed; error='Missing temporary auth key'; exit 1; }
 phase=starting; state
-tailscaled --tun=userspace-networking --state=mem: --statedir="$dir" --socket="$dir/socket" --port=0 --no-logs-no-support >"$dir/daemon.log" 2>&1 &
+"$daemon" --tun=userspace-networking --state=mem: --statedir="$dir" --socket="$dir/socket" --port=0 --no-logs-no-support >"$dir/daemon.log" 2>&1 &
 daemon_pid=$!
 count=0
 while [ ! -S "$dir/socket" ]; do
+    within_session
     kill -0 "$daemon_pid" 2>/dev/null || { phase=failed; error='Tailscale failed to start'; exit 1; }
     count=$((count + 1)); [ "$count" -lt 15 ] || { phase=failed; error='Tailscale startup timed out'; exit 1; }
     sleep 1
 done
 # Credentials only enter tailscale via a root-readable file, never argv.
-tailscale --socket="$dir/socket" up --hostname="forkop-support-$(cat /proc/sys/kernel/hostname)" --accept-dns=false --accept-routes=false --netfilter-mode=off --auth-key="file:$dir/auth.key" --timeout=60s >"$dir/auth.log" 2>&1 &
+"$cli" --socket="$dir/socket" up --hostname="$hostname" --accept-dns=false --accept-routes=false --netfilter-mode=off --auth-key="file:$dir/auth.key" --timeout=60s >"$dir/auth.log" 2>&1 &
 auth_pid=$!
 auth_deadline=$(( $(uptime_seconds) + 60 ))
 [ "$auth_deadline" -le "$deadline" ] || auth_deadline=$deadline
 while kill -0 "$auth_pid" 2>/dev/null; do
+    within_session
     [ "$(wc -c < "$dir/daemon.log")" -le 262144 ] || : > "$dir/daemon.log"
     if [ "$(uptime_seconds)" -ge "$auth_deadline" ]; then
         phase=failed; error='Tailscale authorization failed or timed out'; exit 1
@@ -104,11 +161,38 @@ if ! wait "$auth_pid"; then
 fi
 auth_pid=
 rm -f "$dir/auth.key"
-ucode /usr/lib/forkop/support/ssh-access.uc add >/dev/null 2>&1 || { phase=failed; error='Temporary SSH authorization failed'; exit 1; }
-phase=connected; state
+within_session
+ucode "$lib/ssh-access.uc" add >/dev/null 2>&1 || { phase=failed; error='Temporary SSH authorization failed'; exit 1; }
+# Successful up is not sufficient evidence of healthy coordination.
+next_check=0
 while [ "$(uptime_seconds)" -lt "$deadline" ]; do
     [ "$(wc -c < "$dir/daemon.log")" -le 262144 ] || : > "$dir/daemon.log"
     kill -0 "$daemon_pid" 2>/dev/null || { phase=failed; error='Tailscale connection process exited'; exit 1; }
+    now=$(uptime_seconds)
+    if [ "$now" -ge "$next_check" ]; then
+        if run_cli 5 status --json && ucode "$lib/health.uc" "$dir/check.json"; then
+            if [ "$phase" != connected ]; then event control-healthy; fi
+            phase=connected; error=; bad_since=0; state
+        else
+            now=$(uptime_seconds)
+            if [ "$bad_since" = 0 ]; then bad_since=$now; event control-unhealthy; fi
+            phase=degraded; error='Tailscale control connection is unhealthy'; state
+            if [ "$((now - bad_since))" -ge "${FORKOP_SUPPORT_HEALTH_GRACE:-60}" ] && [ "$now" -ge "$next_attempt" ] && [ "$attempts" -lt 3 ]; then
+                attempts=$((attempts + 1))
+                next_attempt=$((now + ${FORKOP_SUPPORT_RECOVERY_INTERVAL:-120}))
+                phase=recovering; error=; state; event recovery-started
+                # Same daemon, same socket/preferences, no auth key, no SSH add.
+                if run_cli 5 down && run_cli 22 up --timeout=20s --accept-dns=false --accept-routes=false --hostname="$hostname" --netfilter-mode=off; then
+                    event recovery-command-completed
+                else
+                    event recovery-command-failed
+                fi
+                phase=degraded; error='Tailscale control connection is unhealthy'; state
+                if [ "$attempts" -eq 3 ]; then event recovery-limit-reached; fi
+            fi
+        fi
+        next_check=$(( $(uptime_seconds) + ${FORKOP_SUPPORT_HEALTH_INTERVAL:-10} ))
+    fi
     sleep 1
 done
 phase=stopped

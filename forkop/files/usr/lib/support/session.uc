@@ -58,6 +58,8 @@ function status() {
         primary_running: primary_running(),
         active,
         phase: active ? (state.phase || 'starting') : (state.phase == 'failed' ? 'failed' : 'stopped'),
+        session_id: state.session_id || '',
+        recovery_attempts: int(state.recovery_attempts || 0),
         error: state.error || '',
         free_kib: int(state.free_kib || 0),
         required_kib: int(state.required_kib || 0),
@@ -88,11 +90,26 @@ function status() {
 function request(data) {
     if (type(data) != 'object') die('Invalid request');
     if (data.operation == 'status') return status();
+    if (data.operation == 'announce') {
+        let current = status();
+        let granted = false;
+        if (current.active && current.phase == 'connected' && current.remaining_seconds > 0 &&
+            data.session_id == current.session_id && match(current.session_id, /^[a-f0-9-]{36}$/)) {
+            // Atomic, RAM-only acknowledgement shared by all browser tabs.
+            // Independent of browser storage and of worker status rewrites.
+            granted = fs.mkdir(DIR + '/announced.' + current.session_id, 0700);
+        }
+        current.announcement_granted = !!granted;
+        return current;
+    }
     if (data.operation == 'stop') {
-        if (index(['installing', 'removing'], status().phase) != -1) die('Wait for the package operation to finish');
+        let current = status();
+        if (index(['installing', 'removing'], current.phase) != -1) die('Wait for the package operation to finish');
         system(SERVICE + ' stop >/dev/null 2>&1');
         fs.unlink(DIR + '/auth.key');
         fs.rmdir(DIR + '/lock');
+        if (match(current.session_id || '', /^[a-f0-9-]{36}$/))
+            fs.rmdir(DIR + '/announced.' + current.session_id);
         fs.writefile(DIR + '/status.json', '{"phase":"stopped"}');
         return status();
     }
@@ -124,6 +141,9 @@ function request(data) {
     fs.chmod(DIR, 0700);
     if (!fs.mkdir(DIR + '/lock', 0700)) die('A support operation is already starting');
     try {
+        let previous = read_json(DIR + '/status.json');
+        if (match(previous.session_id || '', /^[a-f0-9-]{36}$/))
+            fs.rmdir(DIR + '/announced.' + previous.session_id);
         fs.writefile(DIR + '/operation', data.operation);
         if (data.operation == 'start') {
             if (system(SERVICE + ' enable >/dev/null 2>&1') != 0) die('Cannot enable boot cleanup');
@@ -133,6 +153,8 @@ function request(data) {
             file.close();
         }
         fs.writefile(DIR + '/status.json', sprintf('%J', {
+            schema: 2,
+            session_id: trim(fs.readfile('/proc/sys/kernel/random/uuid') || ''),
             phase: data.operation == 'install' ? 'installing' : (data.operation == 'remove' ? 'removing' : 'starting'),
             deadline: uptime() + 1800
         }));

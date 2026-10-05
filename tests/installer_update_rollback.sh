@@ -133,4 +133,24 @@ prepare_current_update_rollback
 [ "$UPDATE_TRANSACTION_ACTIVE" = 0 ] || fail 'staging started mutation transaction'
 printf '{"releases":[]}' > "$work/catalog.json"
 if (prepare_current_update_rollback); then fail 'update accepted without exact rollback packages'; fi
+# Original packages are resolved separately, with the same hash checks.
+printf '{"releases":[{"tag_name":"1.0.5","assets":[' > "$work/original-catalog.json"
+for name in luci-app-forkop luci-i18n-forkop-ru forkop; do
+    [ "$name" = luci-app-forkop ] || printf ',' >> "$work/original-catalog.json"
+    printf '{"name":"%s_1.0.5.ipk","sha256":"%s","browser_download_url":"/original/%s.ipk"}' "$name" "$digest" "$name" >> "$work/original-catalog.json"
+done
+printf ']}]}' >> "$work/original-catalog.json"
+http_get() {
+    case "$1" in
+        */original/releases.json) cat "$work/original-catalog.json" ;;
+        *) cat "$work/catalog.json" ;;
+    esac
+}
+installed_forkop_package_version() { printf '1.0.5\n'; }
+PKG_IS_APK=0
+prepare_current_update_rollback
+[ "$(wc -l < "$UPDATE_ROLLBACK_MANIFEST")" = 3 ] || fail 'original rollback package set incomplete'
+[ "$UPDATE_HAD_I18N" = 1 ] || fail 'original translation not preserved'
+printf '{"releases":[]}' > "$work/original-catalog.json"
+if (prepare_current_update_rollback); then fail 'unknown original release accepted'; fi
 printf 'Installer update rollback checks passed\n'

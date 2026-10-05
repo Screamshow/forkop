@@ -2394,6 +2394,7 @@ installed_forkop_package_version() {
 
 prepare_current_update_rollback() {
     [ "$INSTALL_MODE" = "update" ] || return 0
+    rollback_original_catalog=""
     rollback_catalog="$(http_get "$MIRROR_BASE_URL/forkop/updates/releases.json")" ||
         fail "Cannot obtain exact previous Forkop packages for rollback"
     mkdir -p "$TMP_DIR/rollback" || fail "Cannot prepare update rollback"
@@ -2410,8 +2411,18 @@ prepare_current_update_rollback() {
         fi
         [ "$rollback_name" != luci-i18n-forkop-ru ] || UPDATE_HAD_I18N=1
         rollback_tag="$(printf '%s' "$rollback_version" | sed 's/_rc\([0-9][0-9]*\)$/-canary.\1/')"
-        rollback_release="$(printf '%s' "$rollback_catalog" | install_json_ucode release-catalog-entry "$rollback_tag")" ||
-            fail "Previous $rollback_name release is not available for safe rollback"
+        if ! rollback_release="$(printf '%s' "$rollback_catalog" | install_json_ucode release-catalog-entry "$rollback_tag")"; then
+            # Original Forkop uses the same package names. Its immutable
+            # archives have a separate catalog so mirror sync cannot replace
+            # them with Forkop X packages carrying the same version number.
+            if [ -z "${rollback_original_catalog:-}" ]; then
+                rollback_original_catalog="$(http_get "$MIRROR_BASE_URL/forkop/updates/original/releases.json")" ||
+                    fail "Cannot obtain original Forkop packages for safe rollback"
+            fi
+            rollback_release="$(printf '%s' "$rollback_original_catalog" | install_json_ucode release-catalog-entry "$rollback_tag")" ||
+                fail "Previous $rollback_name release is not available for safe rollback"
+            msg "Caching original Forkop $rollback_version $rollback_name for rollback"
+        fi
         case "$rollback_name" in
             forkop) rollback_kind=backend ;;
             luci-app-forkop) rollback_kind=app ;;

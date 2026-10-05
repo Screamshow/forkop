@@ -25,11 +25,10 @@ def build_catalog(root):
             match = VERSION.fullmatch(version)
             if not match or manifest.parent.name != version:
                 continue
-            # Initial rollback support boundary; older versions need separate validation.
-            if tuple(map(int, match.groups()[:3])) < (1, 14, 3):
-                continue
             assets = []
             for ext in ("apk", "ipk"):
+                if not any(a.get("name", "").endswith("." + ext) for a in release["assets"]):
+                    continue
                 group = []
                 for package in PACKAGES:
                     name = f"{package}_{version}.{ext}"
@@ -42,6 +41,8 @@ def build_catalog(root):
                     group.append({"name": name, "sha256": actual,
                         "browser_download_url": "/forkop/updates/" + path.relative_to(root).as_posix()})
                 assets.extend(group)
+            if not assets:
+                continue
             releases.append({"tag_name": version, "channel": "canary" if match[4] else "stable",
                 "html_url": "/forkop/updates/" + manifest.parent.relative_to(root).as_posix() + "/",
                 "assets": assets})

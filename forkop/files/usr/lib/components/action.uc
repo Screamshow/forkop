@@ -38,6 +38,7 @@ let sing_box_rollback_dependency_files = [];
 let forkop_configuration_backup = "";
 let preserve_update_recovery_files = false;
 let forkop_package_init = "";
+let stage_archived_sing_box_package;
 
 function as_string(value) {
     return value == null ? "" : "" + value;
@@ -525,7 +526,30 @@ function staged_package_info(path, expected_name, expected_version) {
     return supported ? { path, name, version, size } : null;
 }
 
+function sing_box_archive_asset(catalog, package_name, version, arch, format) {
+    for (let asset in catalog?.packages || []) {
+        if (asset.package != package_name || asset.version != version ||
+            asset.arch != arch || asset.format != format)
+            continue;
+        if (match(as_string(asset.sha256), /^[a-f0-9]{64}$/) == null ||
+            match(as_string(asset.filename), /^[A-Za-z0-9_.+~-]+[.](ipk|apk)$/) == null ||
+            asset.url != "/forkop/sing-box-archive/blobs/" + asset.sha256 + "/" + asset.filename)
+            return null;
+        return asset;
+    }
+    return null;
+}
+
+function package_sha256(path) {
+    return split(trim(command_output_from_args([ "sha256sum", path ])), /[ \t]+/)[0];
+}
+
 function stage_repository_package(package_name, expected_version) {
+    let retain = index([ "sing-box", "sing-box-tiny" ], package_name) != -1;
+    if (retain && as_string(expected_version) != "") {
+        let previous = stage_archived_sing_box_package(package_name, expected_version);
+        if (previous != null) return previous;
+    }
     // Both apk fetch and opkg download need repository indexes, including
     // when the current package is being saved for rollback.
     if (!ensure_repository_indexes())
@@ -547,8 +571,9 @@ function stage_repository_package(package_name, expected_version) {
         shell_quote(is_apk() ? package_name + "-*." + ext : package_name + "_*." + ext));
     for (let path in split(matches, "\n")) {
         let info = staged_package_info(trim(path), package_name, expected_version);
-        if (info != null)
+        if (info != null) {
             return info;
+        }
     }
     return null;
 }
@@ -992,6 +1017,23 @@ function download_with_retry(url, output_path, label) {
     }
     return false;
 }
+
+stage_archived_sing_box_package = function(package_name, version) {
+    if (FORKOP_MIRROR_BASE_URL == "") return null;
+    let catalog;
+    try { catalog = json(http_get(FORKOP_MIRROR_BASE_URL + "/forkop/sing-box-archive/packages.json")); }
+    catch (e) { updates_log("Cannot read sing-box archive catalog: " + as_string(e), "warn"); return null; }
+    let asset = sing_box_archive_asset(catalog, package_name, version,
+        read_openwrt_release_value("DISTRIB_ARCH"), is_apk() ? "apk" : "ipk");
+    if (asset == null) return null;
+    let path = tmp_dir + "/archive-" + asset.filename;
+    if (!download_with_retry(FORKOP_MIRROR_BASE_URL + asset.url, path, "exact sing-box rollback archive") ||
+        package_sha256(path) != asset.sha256)
+        return null;
+    let info = staged_package_info(path, package_name, version);
+    if (staged_package_field(path, "arch") != asset.arch) return null;
+    return info;
+};
 
 function fetch_github_release_json(owner, repo) {
     let response = http_get("https://api.github.com/repos/" + as_string(owner) + "/" + as_string(repo) + "/releases/latest");
@@ -2059,7 +2101,7 @@ function install_sing_box_extended_package(action) {
         (current_variant == "extended" && installed_package_version("sing-box-extended") == target.version ?
             target : stage_previous_sing_box_package(current_variant)) : null;
     if (sing_box_variant_is_package_managed(current_variant) && rollback == null)
-        action_fail("sing_box", action, "Cannot cache the exact previous sing-box package for offline rollback", current_version, latest_version);
+        action_fail("sing_box", action, "Cannot find the exact installed sing-box package in the mirror archive or repository; package change was not started", current_version, latest_version);
     let rollback_file = rollback == null ? "" : rollback.path;
     if (!prepare_sing_box_package_dependencies(target, rollback, current_variant))
         action_fail("sing_box", action, "Cannot cache all required sing-box dependencies for offline installation and rollback", current_version, latest_version);
@@ -2380,7 +2422,7 @@ function install_package_sing_box(action, tiny) {
             installed_package_version(package_name) == target.version ? target :
             stage_previous_sing_box_package(previous_variant)) : null;
     if (sing_box_variant_is_package_managed(previous_variant) && rollback == null)
-        action_fail("sing_box", action, "Cannot cache the exact previous sing-box package for offline rollback", current_version, latest_version);
+        action_fail("sing_box", action, "Cannot find the exact installed sing-box package in the mirror archive or repository; package change was not started", current_version, latest_version);
     let rollback_file = rollback == null ? "" : rollback.path;
     if (!prepare_sing_box_package_dependencies(target, rollback, previous_variant))
         action_fail("sing_box", action, "Cannot cache all required sing-box dependencies for offline installation and rollback", current_version, latest_version);
@@ -3244,6 +3286,19 @@ else if (mode == "forkop-release-plan-fixture") {
 }
 else if (mode == "sing-box-file-size-fixture")
     print(file_bytes(ARGV[1]), "\n");
+else if (mode == "sing-box-archive-select-fixture") {
+    let input = fs.open("/dev/stdin", "r");
+    let asset = sing_box_archive_asset(json(input.read("all")), ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
+    input.close();
+    if (asset == null) exit(1);
+    write_json(asset);
+}
+else if (mode == "sing-box-archive-stage-fixture") {
+    init_tmp_dir();
+    let info = stage_archived_sing_box_package(ARGV[1], ARGV[2]);
+    if (info == null) exit(1);
+    write_json(info);
+}
 else if (mode == "sing-box-previous-release-tag-fixture")
     print(previous_sing_box_extended_tag(ARGV[1]), "\n");
 else if (mode == "sing-box-previous-release-fixture") {

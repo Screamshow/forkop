@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the immutable sing-box rollback archive
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
