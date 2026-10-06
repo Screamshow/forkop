@@ -2703,15 +2703,21 @@ function exclude_sources_from_matchers(matchers, section) {
     if (length(excluded) == 0)
         return matchers;
 
+    // An unconditional DNS evaluate has no query matchers. Keep only the
+    // exclusion instead of placing an empty child in a logical AND rule.
+    let exclusion = {
+        source_ip_cidr: single_or_array(excluded),
+        invert: true
+    };
+    if (length(matchers) == 0)
+        return exclusion;
+
     return {
         type: "logical",
         mode: "and",
         rules: [
             matchers,
-            {
-                source_ip_cidr: single_or_array(excluded),
-                invert: true
-            }
+            exclusion
         ]
     };
 }

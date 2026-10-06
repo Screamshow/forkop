@@ -41,6 +41,7 @@ cat >"$WORK_DIR/fixture.json" <<'JSON'
       "enabled": "1",
       "action": "connection",
       "outbound_jsons": [ "{\"type\":\"direct\"}" ],
+      "excluded_source_ip_cidr": [ "192.0.2.133/32" ],
       "domain_suffix": [ "vpn.example" ],
       "community_lists": [ "youtube", "discord" ]
     }
@@ -52,6 +53,7 @@ generate() {
   local version="$1"
   local output="$WORK_DIR/config-$version.json"
   mkdir -p "$output.section-cache" "$output.rulesets"
+  printf '%s\n' '{"version":3,"rules":[{"ip_cidr":["192.0.2.0/24"]}]}' > "$output.rulesets/vpn-community-subnets-lists-ruleset.json"
   ucode -L "$FORKOP_LIB" "$GENERATOR" generate-config-fixture \
     "$WORK_DIR/fixture.json" "$output" "127.0.0.1" "0" "1" "" "$version"
 }
@@ -78,6 +80,22 @@ function domain_rule(rule) {
     for (let child in rule.rules || []) if (domain_rule(child)) return true;
     return false;
 }
+function ruleset_rule(rule, tag) {
+    if (contains(rule.rule_set, tag)) return true;
+    for (let child in rule.rules || []) if (ruleset_rule(child, tag)) return true;
+    return false;
+}
+function response_rule(rule) {
+    if (rule.match_response === true) return true;
+    for (let child in rule.rules || []) if (response_rule(child)) return true;
+    return false;
+}
+function no_empty_children(rule) {
+    for (let child in rule.rules || []) {
+        assert(length(child) > 0, "logical DNS rule must not contain an empty matcher");
+        no_empty_children(child);
+    }
+}
 function find(value, predicate) {
     for (let rule in rules(value)) if (predicate(rule)) return rule;
     return null;
@@ -96,11 +114,16 @@ for (let version in [ "1.12.25", "1.13.18" ]) {
     assert(probe != null && probe.rules[1].match_response == null, version + " must retain the legacy dnsmasq route filter");
     assert(fallback != null, version + " must retain the normal resolver fallback");
     assert(find(value, r => (r.action == "evaluate" || r.action == "respond") && domain_rule(r)) == null, version + " emitted unsupported 1.14 DNS actions");
-    assert(find(value, r => contains(r.rule_set, "vpn-discord-community-ruleset") && r.match_response == null) != null, version + " must retain legacy mixed rule-set matching");
+    assert(find(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && r.match_response == null) != null, version + " must retain legacy mixed rule-set matching");
 }
 
 for (let version in [ "1.14.0", "1.14.1" ]) {
 let value = config(version);
+for (let rule in rules(value)) no_empty_children(rule);
+let excluded_evaluate = find(value, r => r.action == "evaluate" && r.server == "dns-server");
+assert(excluded_evaluate != null && excluded_evaluate.type == null &&
+    contains(excluded_evaluate.source_ip_cidr, "192.0.2.133/32") && excluded_evaluate.invert === true,
+    version + " unconditional evaluate must preserve the device exclusion without an empty logical child");
 let evaluate_index = index(value, r => r.action == "evaluate" && r.server == "dnsmasq-server" && domain_rule(r));
 let respond_index = index(value, r => r.action == "respond" && r.type == "logical" && domain_rule(r));
 let fallback_index = index(value, r => r.action == "route" && r.server == "dns-server" && domain_rule(r));
@@ -112,9 +135,9 @@ assert(respond.server == null, "1.14 respond must return the evaluated response,
 assert(respond.rules[1].match_response === true && respond.rules[1].invert === true, "1.14 response filter must inspect the evaluated non-FakeIP response");
 assert(find(value, r => r.action == "evaluate" && r.server == "dns-server" && domain_rule(r)) == null, "1.14 must not evaluate the fallback resolver before dnsmasq");
 
-let youtube = find(value, r => contains(r.rule_set, "vpn-youtube-community-ruleset"));
+let youtube = find(value, r => ruleset_rule(r, "vpn-youtube-community-ruleset"));
 assert(youtube != null && youtube.match_response == null, version + " must keep domain-only rule-sets on query matching");
-let discord_index = index(value, r => contains(r.rule_set, "vpn-discord-community-ruleset") && r.match_response === true);
+let discord_index = index(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && response_rule(r));
 assert(discord_index >= 0, version + " must match mixed rule-sets on the DNS response");
 let discord_evaluate_index = -1;
 for (let i = discord_index - 1; i >= 0; i--) {
@@ -124,7 +147,7 @@ for (let i = discord_index - 1; i >= 0; i--) {
     }
 }
 assert(discord_evaluate_index >= 0, version + " must evaluate an upstream response before mixed rule-set matching");
-assert(find(value, r => contains(r.rule_set, "vpn-discord-community-ruleset") && r.match_response == null) == null, version + " must not use a mixed rule-set as a legacy query filter");
+assert(find(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && !response_rule(r)) == null, version + " must not use a mixed rule-set as a legacy query filter");
 }
 ' || fail "DNS 1.12/1.13/1.14 semantic chain assertion failed"
 
