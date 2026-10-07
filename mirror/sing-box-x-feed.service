@@ -1,0 +1,6 @@
+[Unit]
+Description=Publish stable sing-box X in the Forkop APK search index
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/forkop/publish-sing-box-x-feed.py

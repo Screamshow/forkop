@@ -1897,7 +1897,10 @@ restore_native_repository_file() {
 remove_owned_apk_mirror_artifacts() {
     feed="/etc/apk/repositories.d/forkop.list"
     [ -f "$feed" ] || return 0
-    grep -Fqx 'https://mirror.51343.ru/forkop/mirror/current/packages.adb' "$feed" || return 0
+    grep -Fqx \
+        -e 'https://mirror.51343.ru/forkop/mirror/current/packages.adb' \
+        -e 'https://mirror.51343.ru/forkop/mirror/current/aarch64_cortex-a53/packages.adb' \
+        -e 'https://mirror.51343.ru/forkop/mirror/current/x86_64/packages.adb' "$feed" || return 0
     rm -f "$feed" /etc/apk/keys/forkop-mirror.pem
 }
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh the Forkop sing-box X package search index
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

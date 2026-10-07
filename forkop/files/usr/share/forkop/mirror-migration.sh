@@ -69,7 +69,10 @@ restore_native_repository_file() {
 
 remove_owned_apk_mirror_artifacts() {
     feed="$repositories_dir/forkop.list"
-    if [ -f "$feed" ] && grep -Fqx "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" "$feed"; then
+    if [ -f "$feed" ] && grep -Fqx \
+        -e "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" \
+        -e "$MIRROR_BASE_URL/forkop/mirror/current/aarch64_cortex-a53/packages.adb" \
+        -e "$MIRROR_BASE_URL/forkop/mirror/current/x86_64/packages.adb" "$feed"; then
         rm -f "$feed" "$keys_dir/forkop-mirror.pem"
     fi
 }
@@ -137,7 +140,7 @@ elif [ "$PACKAGE_MANAGER" = "apk" ]; then
         chmod 0644 "$key_file"
     fi
 
-    printf '%s\n' "$MIRROR_BASE_URL/forkop/mirror/current/packages.adb" \
+    printf '%s\n' "$MIRROR_BASE_URL/forkop/mirror/current/$architecture/packages.adb" \
         > "$repositories_dir/forkop.list"
 else
     rewrite_repository_file "$opkg_distfeeds"

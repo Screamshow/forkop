@@ -39,7 +39,10 @@ repository_plan() {
 
 remove_owned_apk_mirror_artifacts() {
     feed="$ROOT/etc/apk/repositories.d/forkop.list"
-    if [ -f "$feed" ] && grep -Fqx "${MIRROR%/}/forkop/mirror/current/packages.adb" "$feed"; then
+    if [ -f "$feed" ] && grep -Fqx \
+        -e "${MIRROR%/}/forkop/mirror/current/packages.adb" \
+        -e "${MIRROR%/}/forkop/mirror/current/aarch64_cortex-a53/packages.adb" \
+        -e "${MIRROR%/}/forkop/mirror/current/x86_64/packages.adb" "$feed"; then
         rm -f "$feed" "$ROOT/etc/apk/keys/forkop-mirror.pem"
     fi
 }
