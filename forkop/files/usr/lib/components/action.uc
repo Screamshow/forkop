@@ -2663,10 +2663,11 @@ function stage_forkop_rollback_packages() {
 function forkop_package_space_error(overlay_kib, tmp_kib, target_bytes, rollback_bytes) {
     let target_kib = int((target_bytes + 1023) / 1024);
     let rollback_kib = int((rollback_bytes + 1023) / 1024);
-    let install_need = target_kib + int(target_kib / 4) + 8192;
-    let rollback_need = rollback_kib + int(rollback_kib / 4) + 8192;
-    let overlay_need = install_need > rollback_need ? install_need : rollback_need;
-    let tmp_need = overlay_need;
+    // Flash reserve is independent of the temporary workspace allowance.
+    // Budget the larger extracted payload with a fixed 2 MiB reserve.
+    let payload_kib = target_kib > rollback_kib ? target_kib : rollback_kib;
+    let overlay_need = payload_kib + 2048;
+    let tmp_need = payload_kib + int(payload_kib / 4) + 8192;
     if (overlay_kib <= 0 || tmp_kib <= 0 || target_kib <= 0 || rollback_kib <= 0)
         return "Cannot determine storage required for Forkop package update and rollback";
     if (overlay_kib < overlay_need)
