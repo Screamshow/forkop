@@ -12,6 +12,19 @@ version="${FORKOP_TEST_PACKAGE_VERSION:?missing package version}"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 run() { ucode -L "$lib" "$action" "$@"; }
 
+run sing-box-credit-supported-fixture ext4 || fail 'ext4 credit rejected'
+run sing-box-credit-supported-fixture f2fs unsupported || fail 'uncompressed F2FS credit rejected'
+for filesystem in ubifs jffs2 overlay squashfs unknown; do
+  if run sing-box-credit-supported-fixture "$filesystem"; then
+    fail "logical size credit accepted for $filesystem"
+  fi
+done
+for compression in supported enabled ''; do
+  if run sing-box-credit-supported-fixture f2fs "$compression"; then
+    fail 'compression-capable or unknown F2FS credit accepted'
+  fi
+done
+
 size_dir="$(mktemp -d)"
 trap 'rm -rf "$size_dir"' EXIT
 printf test >"$size_dir/present"
@@ -44,9 +57,9 @@ run sing-box-space-fixture 200000 200000 33576419 33576419 0 >/dev/null ||
   fail 'ample free space rejected'
 run sing-box-space-fixture 36568 200000 31138816 0 0 >/dev/null ||
   fail 'fresh Tiny install with reported router free space rejected'
-run sing-box-space-fixture 33369 200000 31138816 0 0 >/dev/null ||
+run sing-box-space-fixture 32457 200000 31138816 0 0 >/dev/null ||
   fail 'fresh install rejected at exact reserve threshold'
-if run sing-box-space-fixture 33368 200000 31138816 0 0 >/dev/null 2>&1; then
+if run sing-box-space-fixture 32456 200000 31138816 0 0 >/dev/null 2>&1; then
   fail 'fresh install accepted below reserve threshold'
 fi
 if run sing-box-space-fixture 1000 200000 33576419 0 0 >/dev/null 2>&1; then
@@ -63,20 +76,20 @@ if run sing-box-space-fixture 0 200000 33576419 0 0 >/dev/null 2>&1; then
 fi
 run sing-box-space-fixture 140000 200000 80000000 70000000 0 0 >/dev/null ||
   fail 'old installed package counted twice against free space'
-if run sing-box-space-fixture 82000 200000 80000000 70000000 0 0 >/dev/null 2>&1; then
-  fail 'target extraction overhead ignored'
+if run sing-box-space-fixture 80172 200000 80000000 70000000 0 0 >/dev/null 2>&1; then
+  fail 'fixed installation reserve ignored'
 fi
-if run sing-box-space-fixture 104000 200000 30000000 100000000 0 0 >/dev/null 2>&1; then
+if run sing-box-space-fixture 99704 200000 30000000 100000000 0 0 >/dev/null 2>&1; then
   fail 'rollback capacity ignored'
 fi
 run sing-box-space-fixture 100000 200000 80000000 70000000 0 20000000 >/dev/null ||
   fail 'verified writable binary credit rejected'
 run sing-box-space-fixture 115000 200000 30000000 100000000 0 20000000 >/dev/null ||
   fail 'rollback ignored space freed by removing the previous package'
-if run sing-box-space-fixture 89636 200000 107121058 30382512 0 22786884 >/dev/null 2>&1; then
+if run sing-box-space-fixture 84406 200000 107121058 30382512 0 22786884 >/dev/null 2>&1; then
   fail 'real Extended IPK threshold accepted below required free space'
 fi
-run sing-box-space-fixture 89637 200000 107121058 30382512 0 22786884 >/dev/null ||
+run sing-box-space-fixture 84407 200000 107121058 30382512 0 22786884 >/dev/null ||
   fail 'real Extended IPK threshold rejected at required free space'
 run sing-box-space-fixture 140000 200000 80000000 70000000 0 60000000 >/dev/null ||
   fail 'verified writable binary credit rejected'

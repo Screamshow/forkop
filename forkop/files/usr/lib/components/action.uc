@@ -707,21 +707,34 @@ function sing_box_space_error(overlay_kib, tmp_kib, target_bytes, previous_bytes
     // The old package is already reflected in df's available space. A
     // conflicting package is removed before installing the target, and a
     // failed target is removed before rollback. Budget for the larger step.
-    // Fresh installs have no previous component to restore. Keep 3% for
-    // filesystem overhead and 2 MiB free; replacements reserve 5%.
-    let fresh_install = previous_kib == 0 && tmp_backup_bytes == 0;
-    let install_need = target_kib + (fresh_install ? int(target_kib * 3 / 100) : int(target_kib / 20)) +
-        2048 - recoverable_kib;
-    let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 20) + 2048 - recoverable_kib : 0;
+    // Fixed 2 MiB installation reserve above the larger unpacked payload.
+    let install_need = target_kib + 2048 - recoverable_kib;
+    let rollback_need = previous_kib > 0 ? previous_kib + 2048 - recoverable_kib : 0;
     let overlay_need = install_need > rollback_need ? install_need : rollback_need;
     let tmp_need = int((tmp_backup_bytes + 1023) / 1024) + 8192;
     if (overlay_kib <= 0 || tmp_kib <= 0 || target_kib <= 0)
         return "Cannot determine storage required for sing-box package change";
     if (overlay_kib < overlay_need)
-        return "Not enough flash space for sing-box: need " + overlay_need + " KiB free, have " + overlay_kib + " KiB";
+        return "Not enough flash space for sing-box: conservative installation reserve needs " + overlay_need + " KiB free, have " + overlay_kib + " KiB";
     if (tmp_kib < tmp_need)
         return "Not enough temporary memory for sing-box: need " + tmp_need + " KiB free, have " + tmp_kib + " KiB";
     return "";
+}
+
+function sing_box_credit_supported(filesystem, compression) {
+    return index([ "ext2", "ext3", "ext4" ], filesystem) != -1 ||
+        (filesystem == "f2fs" && compression == "unsupported");
+}
+
+function sing_box_writable_credit_supported(path) {
+    let mount_path = file_exists("/overlay/upper") ? "/overlay" : path;
+    let fields = split(trim(command_output("df -PT " + shell_quote(mount_path) + " | tail -n 1")), /[ \t]+/);
+    let filesystem = fields[1] || "";
+    let device = replace(as_string(fields[0]), /^.*\//, "");
+    let compression = "";
+    if (filesystem == "f2fs" && match(device, /^[A-Za-z0-9_.-]+$/) != null)
+        compression = trim(as_string(fs.readfile("/sys/fs/f2fs/" + device + "/feature_list/compression")));
+    return sing_box_credit_supported(filesystem, compression);
 }
 
 function sing_box_reclaimable_bytes(previous_variant, target_variant, previous) {
@@ -732,7 +745,10 @@ function sing_box_reclaimable_bytes(previous_variant, target_variant, previous) 
     // verified writable binary to allow for filesystem overhead.
     let old_path = file_exists("/overlay/upper") ?
         "/overlay/upper/usr/bin/sing-box" : "/usr/bin/sing-box";
-    return file_exists(old_path) ? int(file_bytes(old_path) * 3 / 4) : 0;
+    // Logical length is not physical allocation on a compressed filesystem.
+    // Unknown filesystems and compression-capable F2FS get no guaranteed credit.
+    return file_exists(old_path) && sing_box_writable_credit_supported(old_path) ?
+        int(file_bytes(old_path) * 3 / 4) : 0;
 }
 
 function opkg_sing_box_dependencies_to_install(target) {
@@ -804,17 +820,14 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
         previous.name == "sing-box-tiny" ? "tiny" : "stable";
     let recoverable_bytes = sing_box_reclaimable_bytes(previous_variant, target_variant,
         previous_variant == "extended-compressed" ? {} : previous);
-    // Fresh installs reserve 3% plus 2 MiB; component replacements keep
-    // 5% plus 2 MiB and check rollback separately.
+    // Keep a fixed 2 MiB reserve and check rollback separately.
     let space_error = sing_box_space_error(overlay_kib, tmp_kib, target.size + target_dependency_bytes,
         previous == null ? tmp_backup_bytes : previous.size + rollback_dependency_bytes, tmp_backup_bytes, recoverable_bytes);
     if (space_error != "")
         return space_error;
     let recoverable_kib = int(recoverable_bytes / 1024);
-    let fresh_install = previous_kib == 0 && tmp_backup_bytes == 0;
-    let install_need = target_kib + (fresh_install ? int(target_kib * 3 / 100) : int(target_kib / 20)) +
-        2048 - recoverable_kib;
-    let rollback_need = previous_kib > 0 ? previous_kib + int(previous_kib / 20) + 2048 - recoverable_kib : 0;
+    let install_need = target_kib + 2048 - recoverable_kib;
+    let rollback_need = previous_kib > 0 ? previous_kib + 2048 - recoverable_kib : 0;
     let overlay_need = install_need > rollback_need ? install_need : rollback_need;
     let tmp_need = int((tmp_backup_bytes + 1023) / 1024) + 8192;
     updates_log("Sing-box preflight passed: flash " + overlay_kib + "/" + overlay_need +
@@ -2282,8 +2295,7 @@ function install_sing_box_extended(action, compressed) {
         sing_box_reclaimable_bytes(current_variant, "extended-compressed", {}) : 0;
     let overlay_free_kib = available_kib("/usr/bin");
     let compressed_target_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024);
-    let overlay_need_kib = compressed_target_kib + int(compressed_target_kib / 20) +
-        2048 - int(reclaim_bytes / 1024);
+    let overlay_need_kib = compressed_target_kib + 2048 - int(reclaim_bytes / 1024);
     if (overlay_free_kib <= 0 || overlay_free_kib < overlay_need_kib) {
         remove_file(tmp_binary);
         remove_file(tmp_cronet);
@@ -2348,7 +2360,7 @@ function install_sing_box_extended(action, compressed) {
     // Verify the real free blocks after package removal or the compressed
     // binary's move to tmpfs, before copying the new binary to overlay.
     let overlay_after_remove_kib = available_kib("/usr/bin");
-    let full_overlay_need_kib = compressed_target_kib + int(compressed_target_kib / 20) + 2048;
+    let full_overlay_need_kib = compressed_target_kib + 2048;
     if (overlay_after_remove_kib < full_overlay_need_kib) {
         let restored = restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet,
             previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
@@ -3336,6 +3348,8 @@ else if (mode == "forkop-release-plan-fixture") {
         exit(1);
     write_json(release);
 }
+else if (mode == "sing-box-credit-supported-fixture")
+    exit(sing_box_credit_supported(ARGV[1], ARGV[2] || "") ? 0 : 1);
 else if (mode == "sing-box-file-size-fixture")
     print(file_bytes(ARGV[1]), "\n");
 else if (mode == "sing-box-archive-select-fixture") {

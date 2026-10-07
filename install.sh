@@ -2244,9 +2244,8 @@ forkop_install_required_space_kb() {
             missing_dependency_count=$((missing_dependency_count + 1))
     done
 
-    # OpenWrt compresses the writable overlay, so package archive size is a
-    # useful baseline. Doubling it covers unpacking variance; missing direct
-    # dependencies get a separate conservative allowance.
+    # Allowance for Forkop archives, not a prediction of filesystem compression.
+    # Sing-box is budgeted separately from its unpacked payload.
     printf '%s\n' "$((
         archive_kb * PACKAGE_ARCHIVE_SPACE_FACTOR +
         missing_dependency_count * MISSING_DEPENDENCY_ALLOWANCE_KB +
@@ -2310,28 +2309,61 @@ installed_sing_box_package() {
 }
 
 package_reclaimable_space_kb() {
-    package_name="$1"
-    archive_kb=""
-
-    if [ "$PKG_IS_APK" -eq 1 ]; then
-        current_package_dir="$TMP_DIR/current-sing-box-package"
-        mkdir -p "$current_package_dir" || return 1
-        apk fetch --output "$current_package_dir" "$package_name" </dev/null || return 1
-        current_package_file="$(find "$current_package_dir" -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-        [ -n "$current_package_file" ] && [ -s "$current_package_file" ] || return 1
-        archive_kb="$(file_size_kb "$current_package_file")" || return 1
-    else
-        archive_size_bytes="$(opkg info "$package_name" 2>/dev/null |
-            awk '$1 == "Size:" && $2 ~ /^[0-9]+$/ { value = $2 } END { print value }')"
-        case "$archive_size_bytes" in
-            ''|*[!0-9]*) return 1 ;;
-        esac
-        archive_kb=$(((archive_size_bytes + 1023) / 1024))
+    writable_binary=/overlay/upper/usr/bin/sing-box
+    if [ ! -f "$writable_binary" ] ||
+        ! package_owns_path "$1" /usr/bin/sing-box ||
+        ! sing_box_writable_credit_supported "$writable_binary"; then
+        printf '0\n'
+        return 0
     fi
+    binary_bytes="$(wc -c < "$writable_binary")" || return 1
+    printf '%s\n' "$((binary_bytes * 3 / 4 / 1024))"
+}
 
-    # Count only 90% of the current package archive as guaranteed reclaimable.
-    # This leaves room for package metadata and preserved configuration files.
-    printf '%s\n' "$((archive_kb * 9 / 10))"
+sing_box_credit_supported() {
+    case "$1:${2:-}" in
+        ext2:*|ext3:*|ext4:*|f2fs:unsupported) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sing_box_writable_credit_supported() {
+    fs_mount_path="$1"
+    [ ! -d /overlay/upper ] || fs_mount_path=/overlay
+    fs_row="$(df -PT "$fs_mount_path" 2>/dev/null | tail -n 1)"
+    fs_type="$(printf '%s\n' "$fs_row" | awk '{print $2}')"
+    fs_device="$(printf '%s\n' "$fs_row" | awk '{print $1}')"
+    fs_device="${fs_device##*/}"
+    fs_compression=""
+    if [ "$fs_type" = f2fs ]; then
+        case "$fs_device" in ''|*[!A-Za-z0-9_.-]*) return 1 ;; esac
+        fs_compression="$(cat "/sys/fs/f2fs/$fs_device/feature_list/compression" 2>/dev/null || true)"
+    fi
+    sing_box_credit_supported "$fs_type" "$fs_compression"
+}
+
+sing_box_payload_size_kb() {
+    payload_package="$1"
+    if [ "$PKG_IS_APK" -eq 1 ]; then
+        payload_bytes="$(apk --allow-untrusted adbdump "$payload_package" 2>/dev/null |
+            awk '$1 == "installed-size:" && $2 ~ /^[0-9]+$/ {print $2; exit}')"
+    else
+        # IPK Installed-Size has inconsistent units; measure data.tar.gz.
+        payload_data="$(mktemp "$TMP_DIR/sing-box-payload.XXXXXX")" || return 1
+        if ! tar -xzOf "$payload_package" ./data.tar.gz > "$payload_data" 2>/dev/null &&
+            ! tar -xzOf "$payload_package" data.tar.gz > "$payload_data" 2>/dev/null; then
+            rm -f "$payload_data"
+            return 1
+        fi
+        payload_listing="$(tar -tvzf "$payload_data" 2>/dev/null)" || {
+            rm -f "$payload_data"
+            return 1
+        }
+        rm -f "$payload_data"
+        payload_bytes="$(printf '%s\n' "$payload_listing" | awk '{sum += $3} END {printf "%.0f", sum}')"
+    fi
+    case "$payload_bytes" in ''|*[!0-9]*|0) return 1 ;; esac
+    printf '%s\n' "$(((payload_bytes + 1023) / 1024))"
 }
 
 download_sing_box_tiny_package() {
@@ -2600,20 +2632,19 @@ ensure_flash_space() {
 
     download_sing_box_tiny_package ||
         fail "Failed to download sing-box-tiny before changing the installed sing-box package"
-    tiny_archive_kb="$(file_size_kb "$SING_BOX_TINY_FILE")" ||
-        fail "Failed to determine the downloaded sing-box-tiny package size"
-    tiny_required_kb=$(((tiny_archive_kb * 5 + 3) / 4 + PACKAGE_INSTALL_OVERHEAD_KB))
+    tiny_payload_kb="$(sing_box_payload_size_kb "$SING_BOX_TINY_FILE")" ||
+        fail "Failed to determine the unpacked sing-box-tiny payload size"
+    tiny_required_kb=$((tiny_payload_kb + 2048))
     reclaimable_kb="$(package_reclaimable_space_kb "$previous_package" 2>/dev/null || true)"
-    [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR/current-sing-box-package"
     case "$reclaimable_kb" in
         ''|*[!0-9]*) fail "Failed to calculate space reclaimable from $previous_package" ;;
     esac
     expected_after_kb=$((available_space + reclaimable_kb - tiny_required_kb))
     if [ "$expected_after_kb" -lt "$required_space" ]; then
-        fail "Not enough free flash space even after replacing $previous_package with sing-box-tiny. Available now: ${available_space} KB, reclaimable: ${reclaimable_kb} KB, tiny allowance: ${tiny_required_kb} KB, Forkop plan: ${required_space} KB."
+        fail "Not enough free flash space even after replacing $previous_package with sing-box-tiny. Available now: ${available_space} KiB, reclaimable: ${reclaimable_kb} KiB, conservative Tiny installation reserve: ${tiny_required_kb} KiB, Forkop plan: ${required_space} KiB."
     fi
 
-    msg "Low-space plan: ${available_space} KB free + ${reclaimable_kb} KB reclaimable - ${tiny_required_kb} KB for tiny = ${expected_after_kb} KB; Forkop plan: ${required_space} KB"
+    msg "Low-space plan: ${available_space} KiB free + ${reclaimable_kb} KiB reclaimable - ${tiny_required_kb} KiB conservative Tiny installation reserve = ${expected_after_kb} KiB; Forkop plan: ${required_space} KiB"
     warn "$(installer_text low_flash_space)"
     if interactive_terminal_available; then
         numbered_yes_no_prompt "$(installer_text tiny_recovery_prompt)" ||
@@ -2864,7 +2895,7 @@ prepare_sing_box_x_plan() {
     # The extracted package retains its UPX binary on flash. The plain binary
     # size describes runtime memory, not installed storage.
     SING_BOX_X_SPACE_KB=$(((x_installed_bytes + 1023) / 1024))
-    SING_BOX_X_SPACE_KB=$((SING_BOX_X_SPACE_KB + SING_BOX_X_SPACE_KB * 3 / 100))
+    SING_BOX_X_SPACE_KB=$((SING_BOX_X_SPACE_KB + 2048))
     x_tmp_free="$(df -Pk "$TMP_DIR" | tail -n 1 | awk '{print $4}')"
     [ "$x_tmp_free" -ge "$(((x_archive_bytes + 1023) / 1024 + 8192))" ] ||
         fail "Not enough temporary memory for sing-box X installation"
