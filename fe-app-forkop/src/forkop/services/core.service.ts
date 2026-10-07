@@ -8,6 +8,7 @@ import {
   ForkopLogNotification,
 } from './logNotificationDeduper.service';
 import { StartRecoveryNotificationController } from './startRecoveryNotification.service';
+import { getLogErrorMessage } from './logErrorMessage.service';
 import { ForkopShellMethods } from '../methods';
 import {
   registerRuntimeStateResumeRefresh,
@@ -85,9 +86,18 @@ function showLogNotification(notification: ForkopLogNotification) {
     return;
   }
 
+  const errorMessage = getLogErrorMessage(notification.line);
   ui.addNotification(
     _('Forkop Error'),
-    E('div', {}, notification.line),
+    errorMessage
+      ? E('div', {}, [
+        E('div', {}, errorMessage),
+        E('details', {}, [
+          E('summary', {}, _('Technical details')),
+          E('pre', { style: 'white-space: pre-wrap; overflow-wrap: anywhere;' }, notification.line),
+        ]),
+      ])
+      : E('div', {}, notification.line),
     'error',
     'fkp-log-error-notification',
   );

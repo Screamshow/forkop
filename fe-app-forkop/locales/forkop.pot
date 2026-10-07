@@ -3144,3 +3144,27 @@ msgstr ""
 #: src/forkop/tabs/diagnostic/checks/runZapret2Check.ts:107
 msgid "Zapret2 sing-box outbound is not configured"
 msgstr ""
+
+msgid "Not enough storage for sing-box installation. Required reserve: %s KiB; available: %s KiB."
+msgstr ""
+
+msgid "Not enough storage for Forkop update and rollback. Required reserve: %s KiB; available: %s KiB."
+msgstr ""
+
+msgid "Not enough temporary memory. Required: %s KiB; available: %s KiB."
+msgstr ""
+
+msgid "Automatic restart is paused. Check the configuration and the startup error in the logs."
+msgstr ""
+
+msgid "The generated sing-box configuration is invalid. See technical details for the validation error."
+msgstr ""
+
+msgid "Startup phase %s failed (exit code %s)."
+msgstr ""
+
+msgid "Automatic recovery failed. Check the startup error in the logs."
+msgstr ""
+
+msgid "Technical details"
+msgstr ""

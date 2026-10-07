@@ -334,6 +334,20 @@
     ]
   },
   {
+    "call": "Automatic recovery failed. Check the startup error in the logs.",
+    "key": "Automatic recovery failed. Check the startup error in the logs.",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:26"
+    ]
+  },
+  {
+    "call": "Automatic restart is paused. Check the configuration and the startup error in the logs.",
+    "key": "Automatic restart is paused. Check the configuration and the startup error in the logs.",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:15"
+    ]
+  },
+  {
     "call": "Automatically add text to the name of each server from this subscription for convenient filtering.",
     "key": "Automatically add text to the name of each server from this subscription for convenient filtering.",
     "places": [
@@ -3173,6 +3187,27 @@
     ]
   },
   {
+    "call": "Not enough storage for Forkop update and rollback. Required reserve: %s KiB; available: %s KiB.",
+    "key": "Not enough storage for Forkop update and rollback. Required reserve: %s KiB; available: %s KiB.",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:10"
+    ]
+  },
+  {
+    "call": "Not enough storage for sing-box installation. Required reserve: %s KiB; available: %s KiB.",
+    "key": "Not enough storage for sing-box installation. Required reserve: %s KiB; available: %s KiB.",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:9"
+    ]
+  },
+  {
+    "call": "Not enough temporary memory. Required: %s KiB; available: %s KiB.",
+    "key": "Not enough temporary memory. Required: %s KiB; available: %s KiB.",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:11"
+    ]
+  },
+  {
     "call": "Not implement yet",
     "key": "Not implement yet",
     "places": [
@@ -4339,6 +4374,13 @@
     ]
   },
   {
+    "call": "Startup phase %s failed (exit code %s).",
+    "key": "Startup phase %s failed (exit code %s).",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:22"
+    ]
+  },
+  {
     "call": "Stop checking when URLTest group is not used. Use sing-box duration format like 1d, 12h or 30m.",
     "key": "Stop checking when URLTest group is not used. Use sing-box duration format like 1d, 12h or 30m.",
     "places": [
@@ -4466,6 +4508,13 @@
     ]
   },
   {
+    "call": "Technical details",
+    "key": "Technical details",
+    "places": [
+      "src/forkop/services/core.service.ts:96"
+    ]
+  },
+  {
     "call": "Test latency",
     "key": "Test latency",
     "places": [
@@ -4530,6 +4579,13 @@
     "places": [
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:5140",
       "../luci-app-forkop/htdocs/luci-static/resources/view/forkop/section.js:5585"
+    ]
+  },
+  {
+    "call": "The generated sing-box configuration is invalid. See technical details for the validation error.",
+    "key": "The generated sing-box configuration is invalid. See technical details for the validation error.",
+    "places": [
+      "src/forkop/services/logErrorMessage.service.ts:18"
     ]
   },
   {
