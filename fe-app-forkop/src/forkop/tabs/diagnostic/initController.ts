@@ -56,6 +56,7 @@ import {
 import { isActiveLuciTab } from '../../helpers/isActiveLuciTab';
 import {
   formatSingBoxVersion,
+  getSingBoxName,
   normalizeSingBoxVariantFields,
 } from '../../helpers/singBoxVariant';
 import {
@@ -941,7 +942,7 @@ function renderDiagnosticSystemInfoWidget() {
       value: normalizeCompiledVersion(FORKOP_LUCI_APP_VERSION),
     },
     {
-      key: 'Sing-box',
+      key: getSingBoxName(diagnosticsSystemInfo),
       value: formatSingBoxVersion(diagnosticsSystemInfo),
     },
   ];

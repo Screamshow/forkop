@@ -18,6 +18,8 @@ import { isActiveLuciTab } from '../../helpers/isActiveLuciTab';
 import { shouldShowLoadingForRestoredAction } from '../../helpers/restoredActionLoading';
 import {
   formatSingBoxVersion,
+  getSingBoxName,
+  getSingBoxXVersion,
   normalizeSingBoxVariantFields,
 } from '../../helpers/singBoxVariant';
 import {
@@ -352,11 +354,11 @@ function patchSystemInfoAfterMutation(result: Forkop.ComponentActionResult) {
       nextSystemInfo.sing_box_tailscale = 1;
     }
 
-    if (result.action === 'install_stable') {
+    if (result.action === 'install_stable' || result.action === 'install_x') {
       nextSystemInfo.sing_box_extended = 0;
       nextSystemInfo.sing_box_tiny = 0;
       nextSystemInfo.sing_box_compressed = 0;
-      nextSystemInfo.sing_box_tailscale = 1;
+      nextSystemInfo.sing_box_tailscale = result.action === 'install_x' ? 0 : 1;
     }
 
     if (result.action === 'install_tiny') {
@@ -847,6 +849,7 @@ function getComponentCards(): ComponentCard[] {
     Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
   const singBoxExtendedCompressed = Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
+  const singBoxX = Boolean(getSingBoxXVersion(systemInfo.sing_box_version));
 
   const forkopActions = getInstalledUpdateActions(
     'forkop',
@@ -857,16 +860,16 @@ function getComponentCards(): ComponentCard[] {
     'sing_box',
     'singBoxCheck',
     'singBoxInstall',
-    singBoxTiny || singBoxExtended || singBoxExtendedCompressed,
+    singBoxX || singBoxTiny || singBoxExtended || singBoxExtendedCompressed,
   );
 
-  if (!singBoxTiny) {
+  if (!singBoxX) {
     singBoxActions.push({
-      key: 'singBoxInstallTiny',
-      text: 'Tiny',
+      key: 'singBoxInstallX',
+      text: 'Sing-Box X',
       icon: renderDownloadIcon24,
       component: 'sing_box',
-      action: 'install_tiny',
+      action: 'install_x',
     });
   }
   if (!singBoxExtended) {
@@ -944,7 +947,7 @@ function getComponentCards(): ComponentCard[] {
     {
       component: 'sing_box',
       column: 0,
-      title: 'Sing-box',
+      title: getSingBoxName(systemInfo),
       version: systemInfoLoading
         ? _('Loading...')
         : formatSingBoxVersion(systemInfo),
@@ -1030,7 +1033,7 @@ function getComponentCards(): ComponentCard[] {
       column: 2,
       title: _('Direct Proxy'),
       version: directProxyEnabled
-        ? `HTTP/SOCKS5 · ${directProxyEndpoint || _('Enabled')}`
+        ? `HTTP/SOCKS5 Â· ${directProxyEndpoint || _('Enabled')}`
         : _('Disabled'),
       copyValue: directProxyEnabled ? directProxyEndpoint : undefined,
       actions: [

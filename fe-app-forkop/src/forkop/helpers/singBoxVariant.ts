@@ -6,6 +6,16 @@ type SingBoxVariantFields = {
   sing_box_tailscale?: number;
 };
 
+export function getSingBoxXVersion(version?: string) {
+  return String(version || '').match(
+    /^v?\d+\.\d+\.\d+-x-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/,
+  )?.[1];
+}
+
+export function getSingBoxName(value: SingBoxVariantFields) {
+  return getSingBoxXVersion(value.sing_box_version) ? 'Sing-Box X' : 'Sing-box';
+}
+
 export function isExtendedSingBoxVersion(version?: string) {
   return String(version || '').includes('extended');
 }
@@ -32,6 +42,8 @@ function isVersionPlaceholder(version?: string) {
 
 export function formatSingBoxVersion(value: SingBoxVariantFields) {
   const version = String(value.sing_box_version || '');
+  const xVersion = getSingBoxXVersion(version);
+  if (xVersion) return xVersion;
 
   if (!version || version === 'not installed') {
     return _('Not installed');
@@ -60,13 +72,17 @@ export function normalizeSingBoxVariantFields<T extends SingBoxVariantFields>(
   value: T,
 ): T {
   const versionExtended = isExtendedSingBoxVersion(value.sing_box_version);
-  const singBoxExtended = Boolean(value.sing_box_extended) || versionExtended;
+  const singBoxX = Boolean(getSingBoxXVersion(value.sing_box_version));
+  const singBoxExtended =
+    !singBoxX && (Boolean(value.sing_box_extended) || versionExtended);
 
   return {
     ...value,
     sing_box_extended: singBoxExtended ? 1 : 0,
-    sing_box_tiny: singBoxExtended ? 0 : value.sing_box_tiny ? 1 : 0,
+    sing_box_tiny:
+      singBoxExtended || singBoxX ? 0 : value.sing_box_tiny ? 1 : 0,
     sing_box_compressed: singBoxExtended && value.sing_box_compressed ? 1 : 0,
-    sing_box_tailscale: singBoxExtended || value.sing_box_tailscale ? 1 : 0,
+    sing_box_tailscale:
+      !singBoxX && (singBoxExtended || value.sing_box_tailscale) ? 1 : 0,
   } as T;
 }

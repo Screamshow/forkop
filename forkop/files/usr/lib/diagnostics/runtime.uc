@@ -945,7 +945,7 @@ function sing_box_package_installed_exact(package_name) {
 }
 
 function sing_box_installed_package_name() {
-    for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ])
+    for (let package_name in [ "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
         if (sing_box_package_installed_exact(package_name))
             return package_name;
 
@@ -989,7 +989,7 @@ function sing_box_capability_flags(sing_box_version, sing_box_version_output) {
         if (module_success(SINGBOX_RUNTIME_UC, [ "supports-tailscale", sing_box_version, sing_box_version_output ]))
             tailscale = 1;
     }
-    else if (tiny == 0 && sing_box_component_action_running())
+    else if (package_name != "sing-box-x" && tiny == 0 && sing_box_component_action_running())
         tailscale = 1;
 
     return { extended, tiny, tailscale, package_name };

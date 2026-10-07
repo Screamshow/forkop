@@ -4443,6 +4443,7 @@ var initialDiagnosticStore = {
     singBoxInstallExtended: { loading: false },
     singBoxInstallExtendedCompressed: { loading: false },
     singBoxInstallTiny: { loading: false },
+    singBoxInstallX: { loading: false },
     singBoxInstallStable: { loading: false },
     zapretCheck: { loading: false },
     zapretInstall: { loading: false },
@@ -4857,6 +4858,7 @@ var componentActionKeyMap = {
   "sing_box:install_extended": "singBoxInstallExtended",
   "sing_box:install_extended_compressed": "singBoxInstallExtendedCompressed",
   "sing_box:install_tiny": "singBoxInstallTiny",
+  "sing_box:install_x": "singBoxInstallX",
   "sing_box:install_stable": "singBoxInstallStable",
   "zapret:check_update": "zapretCheck",
   "zapret:install": "zapretInstall",
@@ -4881,6 +4883,14 @@ function getComponentActionKey(component, action) {
 }
 
 // src/forkop/helpers/singBoxVariant.ts
+function getSingBoxXVersion(version) {
+  return String(version || "").match(
+    /^v?\d+\.\d+\.\d+-x-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/
+  )?.[1];
+}
+function getSingBoxName(value) {
+  return getSingBoxXVersion(value.sing_box_version) ? "Sing-Box X" : "Sing-box";
+}
 function isExtendedSingBoxVersion(version) {
   return String(version || "").includes("extended");
 }
@@ -4893,6 +4903,8 @@ function isVersionPlaceholder(version) {
 }
 function formatSingBoxVersion(value) {
   const version = String(value.sing_box_version || "");
+  const xVersion = getSingBoxXVersion(version);
+  if (xVersion) return xVersion;
   if (!version || version === "not installed") {
     return _("Not installed");
   }
@@ -4910,13 +4922,14 @@ function formatSingBoxVersion(value) {
 }
 function normalizeSingBoxVariantFields(value) {
   const versionExtended = isExtendedSingBoxVersion(value.sing_box_version);
-  const singBoxExtended = Boolean(value.sing_box_extended) || versionExtended;
+  const singBoxX = Boolean(getSingBoxXVersion(value.sing_box_version));
+  const singBoxExtended = !singBoxX && (Boolean(value.sing_box_extended) || versionExtended);
   return {
     ...value,
     sing_box_extended: singBoxExtended ? 1 : 0,
-    sing_box_tiny: singBoxExtended ? 0 : value.sing_box_tiny ? 1 : 0,
+    sing_box_tiny: singBoxExtended || singBoxX ? 0 : value.sing_box_tiny ? 1 : 0,
     sing_box_compressed: singBoxExtended && value.sing_box_compressed ? 1 : 0,
-    sing_box_tailscale: singBoxExtended || value.sing_box_tailscale ? 1 : 0
+    sing_box_tailscale: !singBoxX && (singBoxExtended || value.sing_box_tailscale) ? 1 : 0
   };
 }
 
@@ -4987,6 +5000,7 @@ function getEmptyUpdatesActions() {
     singBoxInstallExtended: { loading: false },
     singBoxInstallExtendedCompressed: { loading: false },
     singBoxInstallTiny: { loading: false },
+    singBoxInstallX: { loading: false },
     singBoxInstallStable: { loading: false },
     zapretCheck: { loading: false },
     zapretInstall: { loading: false },
@@ -10689,7 +10703,7 @@ function renderDiagnosticSystemInfoWidget() {
       value: normalizeCompiledVersion(FORKOP_LUCI_APP_VERSION)
     },
     {
-      key: "Sing-box",
+      key: getSingBoxName(diagnosticsSystemInfo),
       value: formatSingBoxVersion(diagnosticsSystemInfo)
     }
   ];
@@ -14161,11 +14175,11 @@ function patchSystemInfoAfterMutation(result) {
       nextSystemInfo.sing_box_compressed = 1;
       nextSystemInfo.sing_box_tailscale = 1;
     }
-    if (result.action === "install_stable") {
+    if (result.action === "install_stable" || result.action === "install_x") {
       nextSystemInfo.sing_box_extended = 0;
       nextSystemInfo.sing_box_tiny = 0;
       nextSystemInfo.sing_box_compressed = 0;
-      nextSystemInfo.sing_box_tailscale = 1;
+      nextSystemInfo.sing_box_tailscale = result.action === "install_x" ? 0 : 1;
     }
     if (result.action === "install_tiny") {
       nextSystemInfo.sing_box_extended = 0;
@@ -14535,6 +14549,7 @@ function getComponentCards() {
   const singBoxExtended = Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
   const singBoxExtendedCompressed = Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
+  const singBoxX = Boolean(getSingBoxXVersion(systemInfo.sing_box_version));
   const forkopActions = getInstalledUpdateActions(
     "forkop",
     "forkopCheck",
@@ -14544,15 +14559,15 @@ function getComponentCards() {
     "sing_box",
     "singBoxCheck",
     "singBoxInstall",
-    singBoxTiny || singBoxExtended || singBoxExtendedCompressed
+    singBoxX || singBoxTiny || singBoxExtended || singBoxExtendedCompressed
   );
-  if (!singBoxTiny) {
+  if (!singBoxX) {
     singBoxActions.push({
-      key: "singBoxInstallTiny",
-      text: "Tiny",
+      key: "singBoxInstallX",
+      text: "Sing-Box X",
       icon: renderDownloadIcon24,
       component: "sing_box",
-      action: "install_tiny"
+      action: "install_x"
     });
   }
   if (!singBoxExtended) {
@@ -14624,7 +14639,7 @@ function getComponentCards() {
     {
       component: "sing_box",
       column: 0,
-      title: "Sing-box",
+      title: getSingBoxName(systemInfo),
       version: systemInfoLoading ? _("Loading...") : formatSingBoxVersion(systemInfo),
       latestVersion: getLatestVersion("sing_box"),
       releaseUrl: getGitHubReleaseUrl("sing_box"),
@@ -14691,7 +14706,7 @@ function getComponentCards() {
       component: "direct_proxy",
       column: 2,
       title: _("Direct Proxy"),
-      version: directProxyEnabled ? `HTTP/SOCKS5 \xB7 ${directProxyEndpoint || _("Enabled")}` : _("Disabled"),
+      version: directProxyEnabled ? `HTTP/SOCKS5 \xC2\xB7 ${directProxyEndpoint || _("Enabled")}` : _("Disabled"),
       copyValue: directProxyEnabled ? directProxyEndpoint : void 0,
       actions: [
         directProxyEnabled ? {

@@ -33,6 +33,7 @@ LEGACY_CLEANUP_STARTED=0
 FORKOP_I18N_REQUESTED=1
 INSTALLER_LANG="en"
 SING_BOX_INSTALL_VARIANT=""
+SING_BOX_X_SPACE_KB=0
 SING_BOX_TINY_FILE=""
 SING_BOX_TINY_SWITCHED=0
 SING_BOX_CHANGE_STARTED=0
@@ -99,7 +100,7 @@ Installs or updates Forkop packages:
 
 sing-box policy:
   - preserve the currently installed sing-box variant
-  - install sing-box-tiny when sing-box is absent
+  - install sing-box X from the Forkop mirror when sing-box is absent
   - offer a switch to tiny only when the flash-space preflight requires it
 
 Automation options (must be explicitly requested):
@@ -1657,6 +1658,25 @@ function github_message() {
         print(as_string(value.message), "\n");
 }
 
+function sing_box_x_plan(arch, format, base) {
+    let catalog = read_stdin_json();
+    if (catalog?.schema != 1 || catalog?.name != "sing-box-x" ||
+        match(as_string(catalog.version), /^[0-9]+[.][0-9]+[.][0-9]+$/) == null)
+        exit(1);
+    for (let asset in catalog.assets || []) {
+        if (asset.package != "sing-box-x" || asset.format != format ||
+            (asset.architecture != arch && !(format == "apk" && arch == "aarch64" && asset.architecture == "aarch64_cortex-a53")))
+            continue;
+        if (match(as_string(asset.name), /^sing-box-x_[A-Za-z0-9_.+-]+[.](apk|ipk)$/) == null ||
+            asset.url != base + "/forkop/sing-box-x/releases/" + catalog.version + "/" + asset.name ||
+            match(as_string(asset.sha256), /^[a-f0-9]{64}$/) == null || int(asset.installed_size) <= 0 || int(asset.size) <= 0)
+            exit(1);
+        print(asset.url, "\t", asset.sha256, "\t", asset.size, "\t", asset.installed_size, "\n");
+        return;
+    }
+    exit(1);
+}
+
 function release_tag() {
     let release = read_stdin_json();
     if (type(release) == "object" && release.tag_name != null)
@@ -1740,6 +1760,8 @@ else if (mode == "installer-stop-current")
     exit(installer_stop_old_forkop(INSTALLER_FORKOP_INIT) ? 0 : 1);
 else if (mode == "managed-upgrade-sing-box-marker")
     managed_upgrade_sing_box_marker(ARGV[1]);
+else if (mode == "sing-box-x-plan")
+    sing_box_x_plan(ARGV[1], ARGV[2], ARGV[3]);
 else if (mode == "sing-box-exe-path-fixture")
     exit(sing_box_exe_path(ARGV[1]) ? 0 : 1);
 else
@@ -2225,7 +2247,7 @@ forkop_install_required_space_kb() {
     printf '%s\n' "$((
         archive_kb * PACKAGE_ARCHIVE_SPACE_FACTOR +
         missing_dependency_count * MISSING_DEPENDENCY_ALLOWANCE_KB +
-        PACKAGE_INSTALL_OVERHEAD_KB + FLASH_RESERVE_KB
+        PACKAGE_INSTALL_OVERHEAD_KB + FLASH_RESERVE_KB + ${SING_BOX_X_SPACE_KB:-0}
     ))"
 }
 
@@ -2274,7 +2296,7 @@ package_owns_path() {
 installed_sing_box_package() {
     owner=""
     owner_count=0
-    for candidate in sing-box-tiny sing-box sing-box-extended; do
+    for candidate in sing-box-x sing-box-tiny sing-box sing-box-extended; do
         if pkg_is_installed "$candidate" && package_owns_path "$candidate" /usr/bin/sing-box; then
             owner="$candidate"
             owner_count=$((owner_count + 1))
@@ -2629,7 +2651,7 @@ installer_text() {
             i18n_installed) printf '%s\n' "Русский пакет интерфейса уже установлен и будет обновлен." ;;
             i18n_default) printf '%s\n' "Устанавливаю русский пакет интерфейса; язык LuCI не изменится." ;;
             sing_box_prompt) printf '%s\n' "Какую сборку singbox ставить?" ;;
-            sing_box_tiny) printf '%s\n' "singbox tiny (по умолчанию)" ;;
+            sing_box_tiny) printf '%s\n' "singbox tiny (совместимость)" ;;
             sing_box_stable) printf '%s\n' "singbox stable" ;;
             sing_box_extended) printf '%s\n' "singbox extended (если нужен xhttp)" ;;
             sing_box_skip_msg) printf '%s\n' "Пропускаю установку sing-box." ;;
@@ -2652,7 +2674,7 @@ installer_text() {
         i18n_installed) printf '%s\n' "The Russian interface package is already installed and will be updated." ;;
         i18n_default) printf '%s\n' "Installing the Russian interface package; the LuCI language will not change." ;;
         sing_box_prompt) printf '%s\n' "Which singbox build should be installed?" ;;
-        sing_box_tiny) printf '%s\n' "singbox tiny (default)" ;;
+        sing_box_tiny) printf '%s\n' "singbox tiny (legacy)" ;;
         sing_box_stable) printf '%s\n' "singbox stable" ;;
         sing_box_extended) printf '%s\n' "singbox extended (if xhttp is needed)" ;;
         sing_box_skip_msg) printf '%s\n' "Skipping sing-box installation." ;;
@@ -2800,7 +2822,8 @@ sing_box_is_present() {
     command_exists sing-box ||
         pkg_is_installed "sing-box" ||
         pkg_is_installed "sing-box-tiny" ||
-        pkg_is_installed "sing-box-extended"
+        pkg_is_installed "sing-box-extended" ||
+        pkg_is_installed "sing-box-x"
 }
 
 select_sing_box_installation() {
@@ -2815,8 +2838,33 @@ select_sing_box_installation() {
         return 0
     fi
 
-    SING_BOX_INSTALL_VARIANT="tiny"
-    msg "sing-box is not installed; sing-box-tiny will be installed"
+    SING_BOX_INSTALL_VARIANT="x"
+    msg "sing-box is not installed; sing-box X will be installed from the Forkop mirror"
+}
+
+prepare_sing_box_x_plan() {
+    [ "$SING_BOX_INSTALL_VARIANT" = x ] || return 0
+    format=ipk
+    [ "$PKG_IS_APK" -eq 0 ] || format=apk
+    http_get "$MIRROR_BASE_URL/forkop/sing-box-x/latest.json" > "$TMP_DIR/sing-box-x-catalog.json" ||
+        fail "Cannot read sing-box X mirror catalog"
+    install_json_ucode sing-box-x-plan "$(read_openwrt_release_value DISTRIB_ARCH)" "$format" "$MIRROR_BASE_URL" \
+        < "$TMP_DIR/sing-box-x-catalog.json" > "$TMP_DIR/sing-box-x-plan.tsv" ||
+        fail "sing-box X is unavailable for this architecture in the Forkop mirror"
+    IFS="$(printf '\t')" read -r x_url x_hash x_archive_bytes x_installed_bytes < "$TMP_DIR/sing-box-x-plan.tsv"
+    download_with_retry "$x_url" "$TMP_DIR/sing-box-x.$format" "sing-box X preflight package" ||
+        fail "Cannot download sing-box X before Forkop installation"
+    [ "$(sha256sum "$TMP_DIR/sing-box-x.$format" | cut -d ' ' -f 1)" = "$x_hash" ] ||
+        fail "sing-box X package hash mismatch"
+    [ "$(wc -c < "$TMP_DIR/sing-box-x.$format")" -eq "$x_archive_bytes" ] ||
+        fail "sing-box X package size mismatch"
+    # The extracted package retains its UPX binary on flash. The plain binary
+    # size describes runtime memory, not installed storage.
+    SING_BOX_X_SPACE_KB=$(((x_installed_bytes + 1023) / 1024))
+    SING_BOX_X_SPACE_KB=$((SING_BOX_X_SPACE_KB + SING_BOX_X_SPACE_KB * 3 / 100))
+    x_tmp_free="$(df -Pk "$TMP_DIR" | tail -n 1 | awk '{print $4}')"
+    [ "$x_tmp_free" -ge "$(((x_archive_bytes + 1023) / 1024 + 8192))" ] ||
+        fail "Not enough temporary memory for sing-box X installation"
 }
 
 install_selected_sing_box() {
@@ -2824,6 +2872,9 @@ install_selected_sing_box() {
     output_file="$TMP_DIR/sing-box-component-action.json"
 
     case "$SING_BOX_INSTALL_VARIANT" in
+        x)
+            action="install_x"
+            ;;
         "")
             msg "$(installer_text sing_box_skip_msg)"
             return 0
@@ -3115,6 +3166,7 @@ main() {
     resolve_forkop_release
     msg "Downloading Forkop X packages before making system changes"
     download_forkop_packages
+    prepare_sing_box_x_plan
 
     confirm_legacy_migration
     prepare_current_config_backup

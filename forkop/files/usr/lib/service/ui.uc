@@ -930,13 +930,13 @@ function apk_package_installed(package_name) {
 }
 
 function installed_sing_box_package_name() {
-    for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ])
+    for (let package_name in [ "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
         if (apk_package_installed(package_name))
             return package_name;
 
     let installed = command_success_from_args([ "sh", "-c", "command -v opkg" ]) ?
         command_output_from_args([ "opkg", "list-installed" ]) : "";
-    for (let package_name in [ "sing-box-extended", "sing-box-tiny", "sing-box" ]) {
+    for (let package_name in [ "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ]) {
         for (let line in split(installed, "\n"))
             if (split(trim(as_string(line)), /[ \t]+/)[0] == package_name)
                 return package_name;
@@ -1093,7 +1093,7 @@ function capability_flags() {
         // A manually installed regular package supersedes a persisted variant
         // marker from a previous Forkop-managed Tiny/Extended installation.
         // Package-manager state is authoritative for this case.
-        let regular_installed = result.sing_box_package == "sing-box";
+        let regular_installed = result.sing_box_package == "sing-box" || result.sing_box_package == "sing-box-x";
         if (result.sing_box_package == "sing-box-extended") {
             result.sing_box_extended = 1;
             result.sing_box_tailscale = 1;

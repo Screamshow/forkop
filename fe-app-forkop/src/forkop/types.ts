@@ -510,6 +510,7 @@ export namespace Forkop {
     | 'install_extended'
     | 'install_extended_compressed'
     | 'install_tiny'
+    | 'install_x'
     | 'install_stable'
     | 'enable'
     | 'disable'
