@@ -2,6 +2,12 @@
 
 Candidate: Forkop X 2.0.0-canary.1. Existing main branch and existing VMware OpenWrt 25.12.5/APK and 24.10.8/IPK VMs were used. Package/service state and configuration were saved before mutations. No replacement VM was created; the customer router was not changed.
 
+Published as a GitHub prerelease and synchronized with `forkop-canary-mirror.service`.
+Public `canary.json`, `releases.json`, release manifest and all six package
+SHA-256 hashes were verified. The shared public installer was updated atomically
+after a backup and verified by hash; it uses X for 2.0 and retains Tiny for older
+backends that do not implement `install_x`. Stable remains 1.16.4.
+
 ## Behavior
 
 - LuCI offers Sing-Box X, Extended and Extended compressed. Installed Tiny remains recognized and supported by its existing backend action.

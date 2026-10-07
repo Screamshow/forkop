@@ -1,6 +1,9 @@
 # LuCI sing-box package changes
 
-The LuCI tiny and Extended actions are transactions in `components/action.uc`.
+The LuCI X and Extended actions are transactions in `components/action.uc`.
+Tiny remains supported as a legacy backend action. X is installed from the
+Forkop mirror with package metadata, length and SHA-256 validation; its build
+version is compared separately from the upstream kernel and package revision.
 Before Forkop is stopped or a package is removed, the action downloads the
 target package and the exact installed package needed for rollback into `/tmp`.
 On APK systems it also stages dependencies needed after removal of the old
