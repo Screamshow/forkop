@@ -2867,6 +2867,18 @@ prepare_sing_box_x_plan() {
         fail "Not enough temporary memory for sing-box X installation"
 }
 
+select_sing_box_for_release() {
+    [ "$SING_BOX_INSTALL_VARIANT" = x ] || return 0
+    release_major="${FORKOP_RELEASE_TAG%%.*}"
+    case "$release_major" in ''|*[!0-9]*) fail "Invalid Forkop release version" ;; esac
+    # The shared installer also serves older stable releases whose backend
+    # does not implement install_x. Preserve their supported clean-install path.
+    if [ "$release_major" -lt 2 ]; then
+        SING_BOX_INSTALL_VARIANT=tiny
+        msg "Selected Forkop release predates X integration; using its supported Tiny component action"
+    fi
+}
+
 install_selected_sing_box() {
     action=""
     output_file="$TMP_DIR/sing-box-component-action.json"
@@ -3164,6 +3176,7 @@ main() {
     ensure_bootstrap_ucode_runtime
 
     resolve_forkop_release
+    select_sing_box_for_release
     msg "Downloading Forkop X packages before making system changes"
     download_forkop_packages
     prepare_sing_box_x_plan

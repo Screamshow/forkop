@@ -23,3 +23,20 @@ if ucode "$helper" sing-box-x-plan x86_64 ipk https://mirror.51343.ru <"$work/wr
   echo 'Off-mirror package URL accepted' >&2; exit 1
 fi
 echo 'Installer X catalog and flash plan: OK'
+sed -n '/^select_sing_box_for_release() {/,/^}/p' "$ROOT/install.sh" >"$work/release-choice.sh"
+. "$work/release-choice.sh"
+msg() { :; }
+fail() { echo "$*" >&2; exit 1; }
+SING_BOX_INSTALL_VARIANT=x
+FORKOP_RELEASE_TAG=1.16.4
+select_sing_box_for_release
+[ "$SING_BOX_INSTALL_VARIANT" = tiny ] || exit 1
+SING_BOX_INSTALL_VARIANT=x
+FORKOP_RELEASE_TAG=2.0.0-canary.1
+select_sing_box_for_release
+[ "$SING_BOX_INSTALL_VARIANT" = x ] || exit 1
+SING_BOX_INSTALL_VARIANT=extended-compressed
+FORKOP_RELEASE_TAG=2.0.0-canary.1
+select_sing_box_for_release
+[ "$SING_BOX_INSTALL_VARIANT" = extended-compressed ] || exit 1
+echo 'Old stable and 2.0 installer component choices: OK'
