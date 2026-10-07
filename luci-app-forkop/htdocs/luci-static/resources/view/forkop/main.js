@@ -11388,6 +11388,9 @@ function formatRouteReason(rule = "", payload = "", translate2 = (value) => valu
   if (!text) return translate2("Not available");
   if (/^(?:final|match|default)$/i.test(text))
     return translate2("Default route");
+  const evidence = payload.trim();
+  if (/^(?:domain|domain_suffix|domain_keyword|domain_regex|ip_cidr)=/.test(evidence))
+    return evidence;
   const tags = [...text.matchAll(/rule_set=(?:\[([^\]]*)\]|([^\s)]+))/g)].flatMap((match) => (match[1] || match[2]).split(/[\s,]+/)).filter(Boolean);
   if (tags.length) {
     const labels = [...new Set(tags)].map((tag) => {

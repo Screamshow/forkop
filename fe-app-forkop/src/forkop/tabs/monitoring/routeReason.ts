@@ -11,6 +11,12 @@ export function formatRouteReason(
   if (/^(?:final|match|default)$/i.test(text))
     return translate('Default route');
 
+  // X captures this evidence while evaluating the route, before metadata can
+  // change. Prefer it to the abbreviated rule and client-side reconstruction.
+  const evidence = payload.trim();
+  if (/^(?:domain|domain_suffix|domain_keyword|domain_regex|ip_cidr)=/.test(evidence))
+    return evidence;
+
   const tags = [...text.matchAll(/rule_set=(?:\[([^\]]*)\]|([^\s)]+))/g)]
     .flatMap((match) => (match[1] || match[2]).split(/[\s,]+/))
     .filter(Boolean);
