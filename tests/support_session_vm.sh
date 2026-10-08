@@ -66,7 +66,7 @@ status)
     fi
     bad=0
     case "$SCENARIO" in
-      persistent|down-hang|up-hang) bad=1;;
+      persistent|down-hang|up-hang|peer-degraded|peer-degraded-fail) bad=1;;
       recover) [ -f "$FORKOP_SUPPORT_DIR/recovered" ] || bad=1;;
       transient) [ "$count" -ne 2 ] || bad=1;;
     esac
@@ -80,7 +80,7 @@ status)
 ping)
     test "$*" = 'ping --c=1 --timeout=5s --until-direct=false 100.114.74.44'
     case "$SCENARIO" in
-      peer-fail|netcheck-hang) exit 1;;
+      peer-fail|peer-degraded-fail|netcheck-hang) exit 1;;
       peer-hang) sleep 120 & echo $! > "$FORKOP_SUPPORT_DIR/child"; wait;;
     esac
     ;;
@@ -148,23 +148,32 @@ for SCENARIO in healthy transient recover persistent; do
     case "$SCENARIO" in healthy|transient) test "$attempts" = 0;; recover) test "$attempts" = 1; grep -q control-healthy "$FORKOP_SUPPORT_DIR/recovery.log";; persistent) test "$attempts" = 3;; esac
     echo "$SCENARIO: deadline, identity, retry count, SSH preservation and process cleanup passed"
 done
-for SCENARIO in peer-ok peer-fail peer-invalid; do
+for SCENARIO in peer-ok peer-fail peer-invalid peer-degraded peer-degraded-fail; do
     export SCENARIO FORKOP_SUPPORT_TTL=9 FORKOP_SUPPORT_OPERATOR_IP=100.114.74.44
+    export FORKOP_SUPPORT_HEALTH_GRACE=30
     [ "$SCENARIO" != peer-invalid ] || export FORKOP_SUPPORT_OPERATOR_IP='100.114.74.44;reboot'
     prepare
     PATH="$test_dir/tools" sh "$worker_path" & worker=$!
+    case "$SCENARIO" in peer-degraded|peer-degraded-fail)
+        sleep 4
+        test "$(jsonfilter -i "$FORKOP_SUPPORT_DIR/status.json" -e '@.phase')" = degraded
+        test "$(jsonfilter -i "$FORKOP_SUPPORT_DIR/status.json" -e '@.recovery_attempts')" = 0
+        test -S "$FORKOP_SUPPORT_DIR/socket"
+        ;;
+    esac
     wait "$worker"; worker=
     clean_assert
     test "$(jsonfilter -i "$FORKOP_SUPPORT_DIR/status.json" -e '@.recovery_attempts')" = 0
     pings=$(grep -c '^ping ' "$FORKOP_SUPPORT_DIR/commands" || true)
     checks=$(grep -c '^netcheck$' "$FORKOP_SUPPORT_DIR/commands" || true)
     case "$SCENARIO" in
-      peer-ok) test "$pings" = 1; test "$checks" = 0;;
-      peer-fail) test "$pings" = 2; test "$checks" = 1;;
+      peer-ok|peer-degraded) test "$pings" = 1; test "$checks" = 0;;
+      peer-fail|peer-degraded-fail) test "$pings" = 2; test "$checks" = 1;;
       peer-invalid) test "$pings" = 0; test "$checks" = 0;;
     esac
     echo "$SCENARIO: bounded peer probes without control recovery passed"
 done
+export FORKOP_SUPPORT_HEALTH_GRACE=2
 for SCENARIO in down-hang up-hang status-hang auth-hang peer-hang netcheck-hang; do
     export SCENARIO
     export FORKOP_SUPPORT_OPERATOR_IP=

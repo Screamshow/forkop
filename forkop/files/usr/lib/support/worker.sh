@@ -223,7 +223,9 @@ while [ "$(uptime_seconds)" -lt "$deadline" ]; do
         fi
         next_check=$(( $(uptime_seconds) + ${FORKOP_SUPPORT_HEALTH_INTERVAL:-10} ))
     fi
-    if [ "$phase" = connected ] && [ -n "$peer" ] && [ "$(uptime_seconds)" -ge "$next_peer_check" ]; then
+    # Coordination can be degraded while a peer path remains usable. Probe the
+    # authorized session without granting SSH or changing its health phase.
+    if { [ "$phase" = connected ] || [ "$phase" = degraded ]; } && [ -n "$peer" ] && [ "$(uptime_seconds)" -ge "$next_peer_check" ]; then
         probe_peer
     fi
     sleep 1
