@@ -43,7 +43,7 @@ cat >"$WORK_DIR/fixture.json" <<'JSON'
       "outbound_jsons": [ "{\"type\":\"direct\"}" ],
       "excluded_source_ip_cidr": [ "192.0.2.133/32" ],
       "domain_suffix": [ "vpn.example" ],
-      "community_lists": [ "youtube", "discord" ]
+      "community_lists": [ "youtube", "discord", "meta" ]
     }
   ]
 }
@@ -107,6 +107,21 @@ function index(value, predicate) {
 }
 function assert(ok, message) { if (!ok) { warn(message, "\n"); exit(1); } }
 
+for (let version in [ "1.12.25", "1.13.18", "1.14.0", "1.14.1" ]) {
+    let count = 0;
+    for (let rule in rules(config(version))) {
+        if (rule.server != "fakeip-server") continue;
+        count++;
+        let types = rule.query_type;
+        if (rule.type == "logical" && rule.mode == "and")
+            for (let child in rule.rules) if (child.query_type != null) types = child.query_type;
+        assert(type(types) == "array" && length(types) == 2 &&
+            contains(types, "A") && contains(types, "AAAA"),
+            version + " FakeIP must only receive address queries");
+    }
+    assert(count > 0, version + " fixture must exercise FakeIP routes");
+}
+
 for (let version in [ "1.12.25", "1.13.18" ]) {
     let value = config(version);
     let probe = find(value, r => r.type == "logical" && r.action == "route" && r.server == "dnsmasq-server" && domain_rule(r));
@@ -137,17 +152,10 @@ assert(find(value, r => r.action == "evaluate" && r.server == "dns-server" && do
 
 let youtube = find(value, r => ruleset_rule(r, "vpn-youtube-community-ruleset"));
 assert(youtube != null && youtube.match_response == null, version + " must keep domain-only rule-sets on query matching");
-let discord_index = index(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && response_rule(r));
-assert(discord_index >= 0, version + " must match mixed rule-sets on the DNS response");
-let discord_evaluate_index = -1;
-for (let i = discord_index - 1; i >= 0; i--) {
-    if (rules(value)[i].action == "evaluate" && rules(value)[i].server == "dns-server") {
-        discord_evaluate_index = i;
-        break;
-    }
-}
-assert(discord_evaluate_index >= 0, version + " must evaluate an upstream response before mixed rule-set matching");
-assert(find(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && !response_rule(r)) == null, version + " must not use a mixed rule-set as a legacy query filter");
+assert(find(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && !response_rule(r)) != null,
+    version + " must select Discord domains before resolution");
+assert(find(value, r => ruleset_rule(r, "vpn-discord-community-ruleset") && response_rule(r)) == null,
+    version + " must not issue FakeIP by matching Discord shared edge addresses");
 }
 ' || fail "DNS 1.12/1.13/1.14 semantic chain assertion failed"
 

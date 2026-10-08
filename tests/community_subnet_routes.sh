@@ -11,7 +11,8 @@ mkdir -p "$WORK_DIR/config.json.rulesets"
 ucode -L "$FORKOP_LIB" -e '
 let fs = require("fs"); let ip = require("core.ip");
 let rules = ip.community_subnet_rules("discord", "#comment\n162.158.0.0/15\n2606:4700::/32\n66.22.192.0/18\ninvalid\n");
-if (length(rules) != 2 || rules[1].network != "udp") die("Discord subnet split failed\n");
+if (length(rules) != 3 || rules[1].network != "udp" || rules[2].network != "tcp") die("Discord subnet split failed\n");
+if (sprintf("%J", rules[2].port_range) != sprintf("%J", ["443:443","1080:1080","2053:2053","2083:2083","2087:2087","2096:2096","8443:8443"])) die("media ports mismatch\n");
 if (index(rules[1].port_range, "443:443") < 0 || index(rules[1].port_range, "3478:3478") < 0) die("voice ports missing\n");
 let regular = ip.community_subnet_rules("telegram", "149.154.160.0/20\n");
 if (regular[0].network != null) die("ordinary subnet unexpectedly UDP-only\n");
@@ -92,9 +93,11 @@ fs.writefile(ARGV[0]+"/manifest.json",sprintf("%J",{format:"2",generation:"gen-f
 ucode -L "$FORKOP_LIB" "$FORKOP_LIB/components/updates.uc" apply-list-cache
 ucode -e '
 let fs=require("fs"); let c=json(fs.readfile(ARGV[0]));
-if(length(c.rules)!=3 || c.rules[1].network!="udp" || c.rules[2].network!="udp") die("cached Discord source not materialized\n");
+if(length(c.rules)!=5 || c.rules[1].network!="udp" || c.rules[2].network!="tcp" || c.rules[3].network!="udp" || c.rules[4].network!="tcp") die("cached Discord source not materialized\n");
 ' "$WORK_DIR/runtime/voice-community-subnets-lists-ruleset.json"
 grep -Fq '162.158.0.0/15 . 3478' "$WORK_DIR/candidate.nft"
 grep -Fq '2606:4700::/32 . 443' "$WORK_DIR/candidate.nft"
+grep -Eq 'voice_tcp_ip_ports.*162\.158\.0\.0/15 \. 8443' "$WORK_DIR/candidate.nft"
+grep -Eq 'voice_tcp_ip6_ports.*2606:4700::/32 \. 2053' "$WORK_DIR/candidate.nft"
 printf 'Community cached-source materialization checks passed\n'
 )
