@@ -199,6 +199,7 @@ export interface StoreType {
     luci_app_version: string;
     sing_box_version: string;
     sing_box_extended: number;
+    sing_box_xhttp?: number;
     sing_box_tiny: number;
     sing_box_compressed: number;
     sing_box_tailscale: number;

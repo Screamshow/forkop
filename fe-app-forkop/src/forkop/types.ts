@@ -406,6 +406,7 @@ export namespace Forkop {
   }
 
   export interface GetSystemInfo {
+    sing_box_xhttp?: 0 | 1;
     forkop_version: string;
     forkop_latest_version: string;
     luci_app_version: string;
@@ -435,6 +436,7 @@ export namespace Forkop {
   }
 
   export interface GetUiCapabilities {
+    sing_box_xhttp?: 0 | 1;
     sing_box_extended: 0 | 1;
     sing_box_tiny: 0 | 1;
     sing_box_compressed: 0 | 1;

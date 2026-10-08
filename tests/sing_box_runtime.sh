@@ -161,7 +161,7 @@ grep -Fq 'Generated sing-box configuration is invalid: " + check_result.reason' 
   fail "generated config failure must include the captured sing-box check diagnostic"
 
 cat >"$WORK_DIR/generator-failure.log" <<'EOF_GENERATOR_FAILURE'
-skipped incompatible subscription outbound for rule 'only_xhttp': Only XHTTP node (XHTTP requires sing-box-extended)
+skipped incompatible subscription outbound for rule 'only_xhttp': Only XHTTP node (installed sing-box does not advertise XHTTP support)
 connection section has no usable outbounds
 EOF_GENERATOR_FAILURE
 generator_reason="$(ucode -L "$FORKOP_LIB" "$SINGBOX_RUNTIME_UC" generator-failure-reason-fixture \
@@ -1202,7 +1202,7 @@ generate_config_with_subscription_cache "$WORK_DIR/subscription-group-disabled-f
 generate_config_with_subscription_cache "$WORK_DIR/subscription-xhttp-fixture.json" "$WORK_DIR/subscription-xhttp-extended.json" 1
 generate_config_with_subscription_cache "$WORK_DIR/subscription-xhttp-fixture.json" "$WORK_DIR/subscription-xhttp-stable.json" 0 \
   2>"$WORK_DIR/subscription-xhttp-stable.stderr"
-grep -Fq "Moscow XHTTP (XHTTP requires sing-box-extended)" "$WORK_DIR/subscription-xhttp-stable.stderr" ||
+grep -Fq "Moscow XHTTP (installed sing-box does not advertise XHTTP support)" "$WORK_DIR/subscription-xhttp-stable.stderr" ||
   fail "stable sing-box XHTTP warning should identify the incompatible subscription outbound"
 grep -Fq "Recursive dependent (detour depends on unavailable outbound 'depends-on-xhttp')" "$WORK_DIR/subscription-xhttp-stable.stderr" ||
   fail "stable sing-box XHTTP filtering should report recursively pruned detours"
@@ -1211,7 +1211,7 @@ if generate_config_with_subscription_cache "$WORK_DIR/subscription-only-xhttp-fi
   >"$WORK_DIR/subscription-only-xhttp.stdout" 2>"$WORK_DIR/subscription-only-xhttp.stderr"; then
   fail "stable sing-box should reject a subscription section with only XHTTP outbounds"
 fi
-grep -Fq "Only XHTTP node (XHTTP requires sing-box-extended)" "$WORK_DIR/subscription-only-xhttp.stderr" ||
+grep -Fq "Only XHTTP node (installed sing-box does not advertise XHTTP support)" "$WORK_DIR/subscription-only-xhttp.stderr" ||
   fail "all-XHTTP subscription failure should identify the incompatible outbound"
 [ "$(tail -n 1 "$WORK_DIR/subscription-only-xhttp.stderr")" = 'connection section has no usable outbounds' ] ||
   fail "all-XHTTP subscription failure should end with the actionable generator error"
@@ -1222,8 +1222,8 @@ for fixture in manual-xhttp json-xhttp; do
     >"$WORK_DIR/$fixture-stable.stdout" 2>"$WORK_DIR/$fixture-stable.stderr"; then
     fail "stable sing-box should reject explicit $fixture configuration"
   fi
-  grep -Fq "uses XHTTP transport, but sing-box-extended is not installed" "$WORK_DIR/$fixture-stable.stderr" ||
-    fail "explicit $fixture XHTTP failure should explain the extended requirement"
+  grep -Fq "uses XHTTP transport, but installed sing-box does not advertise XHTTP support" "$WORK_DIR/$fixture-stable.stderr" ||
+    fail "explicit $fixture XHTTP failure should explain the capability requirement"
   generate_config "$WORK_DIR/$fixture-fixture.json" "$WORK_DIR/$fixture-extended.json"
 done
 

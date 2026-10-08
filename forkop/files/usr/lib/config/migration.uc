@@ -1378,6 +1378,12 @@ function migrate_default_subscription_exclude_regex(ctx) {
         set_list_option(ctx, ctx.model.settings, "subscription_exclude_regex", [ "🏳️" ]);
 }
 
+function migrate_support_operator_ip(ctx) {
+    // Preserve explicit empty values (probes disabled) and custom operators.
+    if (ctx.model.settings.support_operator_ip == null)
+        set_option(ctx, ctx.model.settings, "support_operator_ip", "100.114.74.44");
+}
+
 const MIGRATIONS = [
     { id: "interface_sections", run: migrate_interface_sections },
     { id: "enable_component_checks", run: migrate_enable_component_checks },
@@ -1385,7 +1391,8 @@ const MIGRATIONS = [
     { id: "flintnet_urltest_default", run: migrate_flintnet_urltest_default },
     { id: "retired_secondary_rulesets", run: migrate_retired_secondary_rulesets },
     { id: "secondary_rulesets_mirror_v1", run: migrate_secondary_rulesets_to_mirror },
-    { id: "default_subscription_exclude_regex_v1", run: migrate_default_subscription_exclude_regex }
+    { id: "default_subscription_exclude_regex_v1", run: migrate_default_subscription_exclude_regex },
+    { id: "support_operator_ip_v1", run: migrate_support_operator_ip }
 ];
 
 function apply_migrations(ctx) {

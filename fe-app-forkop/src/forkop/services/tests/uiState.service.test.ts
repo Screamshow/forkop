@@ -89,6 +89,19 @@ function createUiState(
 }
 
 describe('applyUiStateToStore', () => {
+  it('preserves XHTTP capability independently of the core variant', () => {
+    applyUiStateToStore(
+      createUiState({}, { sing_box_extended: 0, sing_box_xhttp: 1 }),
+    );
+    expect(store.get().diagnosticsSystemInfo.sing_box_xhttp).toBe(1);
+    expect(store.get().diagnosticsSystemInfo.sing_box_extended).toBe(0);
+    applyUiStateToStore(
+      createUiState({}, { sing_box_extended: 0, sing_box_xhttp: 0 }),
+    );
+    expect(store.get().diagnosticsSystemInfo.sing_box_xhttp).toBe(0);
+    applyUiStateToStore(createUiState({}, { sing_box_extended: 1 }));
+    expect(store.get().diagnosticsSystemInfo.sing_box_xhttp).toBe(1);
+  });
   beforeEach(() => {
     clearLocalActionOverlay();
     store.reset();

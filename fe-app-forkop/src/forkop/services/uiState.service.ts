@@ -106,6 +106,9 @@ function applyServiceState(uiState: Forkop.UiState) {
   };
 
   nextSystemInfo.sing_box_extended = uiState.capabilities.sing_box_extended;
+  nextSystemInfo.sing_box_xhttp =
+    uiState.capabilities.sing_box_xhttp ??
+    uiState.capabilities.sing_box_extended;
   nextSystemInfo.sing_box_tiny = uiState.capabilities.sing_box_tiny;
   nextSystemInfo.sing_box_compressed = uiState.capabilities.sing_box_compressed;
   nextSystemInfo.sing_box_tailscale = uiState.capabilities.sing_box_tailscale;

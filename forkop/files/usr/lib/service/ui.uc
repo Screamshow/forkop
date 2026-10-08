@@ -984,22 +984,24 @@ function sing_box_version_info_from_output(output) {
         return null;
 
     let tags = "";
+    let features = "";
     for (let line in split(as_string(output), "\n")) {
         line = as_string(line);
         if (substr(line, 0, 5) == "Tags:") {
             tags = trim(substr(line, 5));
-            break;
         }
+        if (substr(line, 0, 9) == "Features:")
+            features = trim(substr(line, 9));
     }
 
-    return { version, tags };
+    return { version, tags, features };
 }
 
 function sing_box_cached_version_info(signature) {
     let cache = read_json_file(SING_BOX_VERSION_CACHE_FILE);
     if (type(cache) == "object" && as_string(cache.signature) == signature) {
-        if (cache.success === true && as_string(cache.version) != "")
-            return { hit: true, info: { version: as_string(cache.version), tags: as_string(cache.tags) } };
+        if (cache.success === true && as_string(cache.version) != "" && cache.features != null)
+            return { hit: true, info: { version: as_string(cache.version), tags: as_string(cache.tags), features: as_string(cache.features) } };
 
         let checked_at = arg_number(cache.checked_at);
         let failure_ttl = arg_number(SING_BOX_VERSION_PROBE_FAILURE_TTL_SECONDS);
@@ -1070,6 +1072,7 @@ function sing_box_version_info() {
         success: info != null,
         version: info != null ? info.version : "",
         tags: info != null ? info.tags : "",
+        features: info != null ? info.features : "",
         checked_at: now_seconds()
     });
     release_dir_lock(SING_BOX_VERSION_CACHE_LOCK_DIR);
@@ -1082,6 +1085,7 @@ function capability_flags() {
         sing_box_tiny: 0,
         sing_box_compressed: 0,
         sing_box_tailscale: 0,
+        sing_box_xhttp: 0,
         sing_box_package: "",
         zapret_installed: file_executable(ZAPRET_PROVIDER_NFQWS_BIN) ? 1 : 0,
         zapret2_installed: file_executable(ZAPRET2_PROVIDER_NFQWS2_BIN) ? 1 : 0,
@@ -1129,6 +1133,11 @@ function capability_flags() {
         }
     }
 
+    if (file_executable(SING_BOX_BIN_PATH)) {
+        let info = sing_box_version_info();
+        result.sing_box_xhttp = result.sing_box_extended ||
+            (info != null && match(as_string(info.features), /(^|[, \t])transport[.]xhttp([, \t]|$)/) != null) ? 1 : 0;
+    }
     return result;
 }
 

@@ -544,7 +544,7 @@ function outbound_uses_xhttp(outbound) {
 
 function ensure_explicit_outbound_supported(outbound, source, name) {
     if (!runtime_supports_xhttp && outbound_uses_xhttp(outbound))
-        runtime_generate_unsupported(as_string(source) + " '" + as_string(name) + "' uses XHTTP transport, but sing-box-extended is not installed");
+        runtime_generate_unsupported(as_string(source) + " '" + as_string(name) + "' uses XHTTP transport, but installed sing-box does not advertise XHTTP support");
 }
 
 function subscription_outbound_display_name(outbound) {
@@ -594,7 +594,7 @@ function compatible_subscription_outbounds(outbounds, section_name) {
         if (!supported_subscription_outbound(outbound))
             continue;
         if (!runtime_supports_xhttp && outbound_uses_xhttp(outbound)) {
-            warn_skipped_subscription_outbound(section_name, outbound, "XHTTP requires sing-box-extended");
+            warn_skipped_subscription_outbound(section_name, outbound, "installed sing-box does not advertise XHTTP support");
             continue;
         }
         push(retained, outbound);
