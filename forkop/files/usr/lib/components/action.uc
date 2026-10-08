@@ -35,6 +35,7 @@ let forkop_stopped_for_sing_box_change = false;
 let last_logged_output = "";
 let sing_box_target_dependency_files = [];
 let sing_box_rollback_dependency_files = [];
+let sing_box_flash_after_remove_bytes = 0;
 let forkop_configuration_backup = "";
 let preserve_update_recovery_files = false;
 let forkop_package_init = "";
@@ -479,6 +480,18 @@ function staged_package_field(path, field) {
         "(tar -xzOf " + shell_quote(path) + " control.tar.gz 2>/dev/null || " +
         "tar -xzOf " + shell_quote(path) + " ./control.tar.gz 2>/dev/null) | tar -xzOf - ./control";
     let metadata = command_output(command);
+    if (field == "installed-size") {
+        // Measure files stored on flash, including an UPX-packed executable.
+        // Producer metadata may describe an unpacked executable or use KiB.
+        if (!is_apk())
+            return sprintf("%d", ipk_unpacked_bytes(path));
+        let bytes = 0;
+        for (let line in split(metadata, "\n")) {
+            let size = match(line, /^        size: ([0-9]+)$/);
+            if (size != null) bytes += int(size[1]);
+        }
+        return sprintf("%d", bytes);
+    }
     let key = (is_apk() ? field :
         field == "name" ? "Package" : field == "version" ? "Version" :
         field == "arch" ? "Architecture" : field == "depends" ? "Depends" : "Installed-Size") + ": ";
@@ -486,12 +499,6 @@ function staged_package_field(path, field) {
         line = trim(as_string(line));
         if (substr(line, 0, length(key)) == key) {
             let value = trim(substr(line, length(key)));
-            if (!is_apk() && field == "installed-size") {
-                // IPK producers disagree on whether Installed-Size is bytes or KiB.
-                // Measure the actual data archive and use the conservative maximum.
-                let unpacked = ipk_unpacked_bytes(path);
-                return unpacked > 0 ? sprintf("%d", int(value) > unpacked ? int(value) : unpacked) : "";
-            }
             return value;
         }
     }
@@ -660,7 +667,7 @@ function prepare_sing_box_package_dependencies(target, rollback, previous_varian
     if (removed == null)
         return false;
     let target_dependencies = [];
-    if (!stage_apk_dependency_tree(target, removed, target_dependencies))
+    if (target != null && !stage_apk_dependency_tree(target, removed, target_dependencies))
         return false;
     for (let item in target_dependencies)
         push(sing_box_target_dependency_files, item.path);
@@ -668,6 +675,15 @@ function prepare_sing_box_package_dependencies(target, rollback, previous_varian
         let rollback_dependencies = [];
         if (!stage_apk_dependency_tree(rollback, removed, rollback_dependencies))
             return false;
+        // apk del may garbage-collect dependencies beyond this package's
+        // direct dependency tree. Cache their exact installed revisions too.
+        for (let name in removed) {
+            if (name == previous_package || staged_package_by_name(rollback_dependencies, name) != null)
+                continue;
+            let item = stage_repository_package(name, installed_package_version(name));
+            if (item == null) return false;
+            push(rollback_dependencies, item);
+        }
         for (let item in rollback_dependencies)
             push(sing_box_rollback_dependency_files, item.path);
     }
@@ -700,19 +716,10 @@ function file_bytes(path) {
     return stat == null ? 0 : int(stat.size || 0);
 }
 
-function sing_box_space_error(overlay_kib, tmp_kib, target_bytes, previous_bytes, tmp_backup_bytes, recoverable_bytes) {
-    let target_kib = int((target_bytes + 1023) / 1024);
-    let previous_kib = int((previous_bytes + 1023) / 1024);
-    let recoverable_kib = int(recoverable_bytes / 1024);
-    // The old package is already reflected in df's available space. A
-    // conflicting package is removed before installing the target, and a
-    // failed target is removed before rollback. Budget for the larger step.
-    // Fixed 2 MiB installation reserve above the larger unpacked payload.
-    let install_need = target_kib + 2048 - recoverable_kib;
-    let rollback_need = previous_kib > 0 ? previous_kib + 2048 - recoverable_kib : 0;
-    let overlay_need = install_need > rollback_need ? install_need : rollback_need;
+function sing_box_space_error(overlay_kib, tmp_kib, write_bytes, tmp_backup_bytes) {
+    let overlay_need = int((write_bytes + 1023) / 1024) + 2048;
     let tmp_need = int((tmp_backup_bytes + 1023) / 1024) + 8192;
-    if (overlay_kib <= 0 || tmp_kib <= 0 || target_kib <= 0)
+    if (overlay_kib <= 0 || tmp_kib <= 0 || write_bytes < 0)
         return "Cannot determine storage required for sing-box package change";
     if (overlay_kib < overlay_need)
         return "Not enough flash space for sing-box: conservative installation reserve needs " + overlay_need + " KiB free, have " + overlay_kib + " KiB";
@@ -721,34 +728,39 @@ function sing_box_space_error(overlay_kib, tmp_kib, target_bytes, previous_bytes
     return "";
 }
 
-function sing_box_credit_supported(filesystem, compression) {
-    return index([ "ext2", "ext3", "ext4" ], filesystem) != -1 ||
-        (filesystem == "f2fs" && compression == "unsupported");
+function sing_box_writable_path(path, has_upper, has_rom) {
+    return has_upper ? "/overlay/upper" + path : has_rom ? "" : path;
 }
 
-function sing_box_writable_credit_supported(path) {
-    let mount_path = file_exists("/overlay/upper") ? "/overlay" : path;
-    let fields = split(trim(command_output("df -PT " + shell_quote(mount_path) + " | tail -n 1")), /[ \t]+/);
-    let filesystem = fields[1] || "";
-    let device = replace(as_string(fields[0]), /^.*\//, "");
-    let compression = "";
-    if (filesystem == "f2fs" && match(device, /^[A-Za-z0-9_.-]+$/) != null)
-        compression = trim(as_string(fs.readfile("/sys/fs/f2fs/" + device + "/feature_list/compression")));
-    return sing_box_credit_supported(filesystem, compression);
+function sing_box_writable_file_bytes(path) {
+    // Removing a symlink or one of several hardlinks cannot release the
+    // executable's storage. Never use the target's logical size as credit.
+    let stat = fs.lstat(path);
+    return stat?.type == "file" && int(stat.nlink) == 1 ? int(stat.size) : 0;
 }
 
-function sing_box_reclaimable_bytes(previous_variant, target_variant, previous) {
-    if (previous == null || (previous_variant == target_variant && target_variant != "x"))
-        return 0;
-    // Only a variant switch removes the old package before installation.
-    // A firmware file cannot free overlay blocks; credit only 75% of a
-    // verified writable binary to allow for filesystem overhead.
-    let old_path = file_exists("/overlay/upper") ?
-        "/overlay/upper/usr/bin/sing-box" : "/usr/bin/sing-box";
-    // Logical length is not physical allocation on a compressed filesystem.
-    // Unknown filesystems and compression-capable F2FS get no guaranteed credit.
-    return file_exists(old_path) && sing_box_writable_credit_supported(old_path) ?
-        int(file_bytes(old_path) * 3 / 4) : 0;
+function sing_box_existing_writable_bytes(previous) {
+    // The exact previous writable files already fit. This describes the
+    // rollback baseline, not an estimate of blocks that removal will free.
+    // Installation uses actual df after removal on every filesystem.
+    let bytes = 0;
+    let owned = previous == null ? null : split(command_output_from_args(is_apk() ?
+        [ "apk", "info", "-L", previous.name ] : [ "opkg", "files", previous.name ]), "\n");
+    for (let path in [ "/usr/bin/sing-box", "/usr/lib/libcronet.so" ]) {
+        // A library belonging to another package remains installed and is
+        // not part of this rollback baseline.
+        if (owned != null && !array_has(owned, path) && !array_has(owned, substr(path, 1)))
+            continue;
+        let writable = sing_box_writable_path(path, file_exists("/overlay/upper"), file_exists("/rom" + path));
+        if (writable != "" && file_exists(writable))
+            bytes += sing_box_writable_file_bytes(writable);
+    }
+    return bytes;
+}
+
+function sing_box_rollback_growth_bytes(previous_bytes, writable_bytes, dependency_bytes) {
+    let growth = previous_bytes > writable_bytes ? previous_bytes - writable_bytes : 0;
+    return growth + dependency_bytes;
 }
 
 function opkg_sing_box_dependencies_to_install(target) {
@@ -798,30 +810,27 @@ function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
         target_dependency_bytes += int(staged_package_field(path, "installed-size"));
     for (let path in sing_box_rollback_dependency_files)
         rollback_dependency_bytes += int(staged_package_field(path, "installed-size"));
-    let target_kib = int((target.size + target_dependency_bytes + 1023) / 1024);
-    let previous_kib = int(((previous == null ? tmp_backup_bytes : previous.size + rollback_dependency_bytes) + 1023) / 1024);
-    let target_variant = target.name == "sing-box-x" ? "x" : target.name == "sing-box-extended" ? "extended" :
-        target.name == "sing-box-tiny" ? "tiny" : "stable";
-    let previous_variant = previous == null ?
-        (tmp_backup_bytes > 0 ? trim(module_output([ LIB_DIR + "/singbox/runtime.uc", "variant" ])) : "") :
-        previous.name == "sing-box-x" ? "x" : previous.name == "sing-box-extended" ? "extended" :
-        previous.name == "sing-box-tiny" ? "tiny" : "stable";
-    let recoverable_bytes = sing_box_reclaimable_bytes(previous_variant, target_variant,
-        previous_variant == "extended-compressed" ? {} : previous);
-    // Keep a fixed 2 MiB reserve and check rollback separately.
-    let space_error = sing_box_space_error(overlay_kib, tmp_kib, target.size + target_dependency_bytes,
-        previous == null ? tmp_backup_bytes : previous.size + rollback_dependency_bytes, tmp_backup_bytes, recoverable_bytes);
+    // Target dependencies may remain after an opkg failure. Reserve them
+    // during rollback as well. Rollback archives already occupy tmpfs.
+    let rollback_growth = sing_box_rollback_growth_bytes(previous == null ? tmp_backup_bytes : previous.size,
+        sing_box_existing_writable_bytes(previous), rollback_dependency_bytes + target_dependency_bytes);
+    sing_box_flash_after_remove_bytes = target.size + target_dependency_bytes + rollback_dependency_bytes;
+    let space_error = sing_box_space_error(overlay_kib, tmp_kib, rollback_growth, tmp_backup_bytes);
     if (space_error != "")
         return space_error;
-    let recoverable_kib = int(recoverable_bytes / 1024);
-    let install_need = target_kib + 2048 - recoverable_kib;
-    let rollback_need = previous_kib > 0 ? previous_kib + 2048 - recoverable_kib : 0;
-    let overlay_need = install_need > rollback_need ? install_need : rollback_need;
+    let overlay_need = int((rollback_growth + 1023) / 1024) + 2048;
     let tmp_need = int((tmp_backup_bytes + 1023) / 1024) + 8192;
     updates_log("Sing-box preflight passed: flash " + overlay_kib + "/" + overlay_need +
-        " KiB, tmp " + tmp_kib + "/" + tmp_need + " KiB, rollback installed size " + previous_kib +
-        " KiB, writable binary credit " + recoverable_kib + " KiB");
+        " KiB, tmp " + tmp_kib + "/" + tmp_need + " KiB; target flash checked after removal");
     return "";
+}
+
+function sing_box_removed_space_error() {
+    // sync allows delayed allocation/GC to update df. Never force-space:
+    // insufficient actual blocks trigger the already staged exact rollback.
+    command_success_from_args([ "sync" ]);
+    return sing_box_space_error(available_kib("/usr/bin"), available_kib(tmp_dir),
+        sing_box_flash_after_remove_bytes, 0);
 }
 
 function pkg_install_files(files) {
@@ -1711,6 +1720,7 @@ function move_file_portable(source_path, target_path) {
     let staged_path = as_string(target_path) + ".forkop-move." + owner_pid();
     remove_file(staged_path);
     if (!command_success_from_args([ "cp", "-p", source_path, staged_path ]) ||
+        !command_success_from_args([ "cmp", source_path, staged_path ]) ||
         !fs.rename(staged_path, target_path)) {
         remove_file(staged_path);
         return false;
@@ -2043,6 +2053,7 @@ function restore_sing_box_after_failed_extended_install(previous_variant, backup
     clear_version_caches();
     if (restore_status)
         restore_status = restart_forkop_after_successful_change() && wait_forkop_running_after_sing_box_change();
+    if (!restore_status) preserve_update_recovery_files = true;
     return restore_status;
 }
 
@@ -2060,6 +2071,9 @@ function restore_sing_box_after_failed_extended_package_install(previous_variant
     if (!restore_sing_box_service_from_marker(previous_marker))
         restore_status = false;
     clear_version_caches();
+    if (restore_status)
+        restore_status = restart_forkop_after_successful_change() && wait_forkop_running_after_sing_box_change();
+    if (!restore_status) preserve_update_recovery_files = true;
     return restore_status;
 }
 
@@ -2097,6 +2111,10 @@ function fail_package_sing_box_install(action, tiny, reason, current_version, la
     );
 
     let prefix = target_package == "sing-box-x" ? "Sing-box X" : tiny ? "sing-box-tiny" : "Stable sing-box";
+    if (restored)
+        restored = restart_forkop_after_successful_change() && wait_forkop_running_after_sing_box_change();
+    if (!restored)
+        preserve_update_recovery_files = true;
     if (restored)
         action_fail("sing_box", action, prefix + " " + reason + "; previous sing-box variant was restored", current_version, latest_version);
     action_fail("sing_box", action, prefix + " " + reason + " and previous sing-box variant could not be restored", current_version, latest_version);
@@ -2177,6 +2195,13 @@ function install_sing_box_extended_package(action) {
         action_fail("sing_box", action, "Failed to remove sing-box; previous variant " + (restored ? "was restored" : "could not be restored"), current_version, latest_version);
     }
 
+    let removed_space_error = sing_box_removed_space_error();
+    if (removed_space_error != "") {
+        let restored = restore_sing_box_after_failed_extended_package_install(current_variant, backup_binary, backup_cronet,
+            previous_marker, previous_version_state, package_file, cronet_touched, rollback_file);
+        action_fail("sing_box", action, removed_space_error + "; previous variant " +
+            (restored ? "was restored" : "could not be restored"), current_version, latest_version);
+    }
     if (!run_logged("Installing sing-box-extended package " + release.asset_name,
         pkg_install_sing_box_files_command(sing_box_target_files(package_file)))) {
         let restored = restore_sing_box_after_failed_extended_package_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, package_file, cronet_touched, rollback_file);
@@ -2248,6 +2273,11 @@ function install_sing_box_extended(action, compressed) {
         action_fail("sing_box", action, "sing-box binary was not found in the downloaded archive", current_version, latest_version);
     }
     let cronet_path = select_archive_member_path(archive_file, "libcronet.so");
+    let extract_bytes = int(trim(command_output(command_from_args([ "tar", "-tvzf", archive_file ]) +
+        " | awk '{sum += $3} END {printf \"%.0f\", sum}'")));
+    let extract_need_kib = int((extract_bytes + 1023) / 1024) + 8192;
+    if (extract_bytes <= 0 || available_kib(tmp_dir) < extract_need_kib)
+        action_fail("sing_box", action, "Not enough temporary memory to extract compressed sing-box", current_version, latest_version);
     let extract_error = tmp_dir + "/sing-box-extract.err";
     let tmp_binary = tmp_dir + "/sing-box.compressed." + owner_pid();
     let tmp_cronet = "";
@@ -2277,25 +2307,24 @@ function install_sing_box_extended(action, compressed) {
         }
     }
 
-    // A package switch removes the old binary before writing the new one.
-    // Count only a conservative share of a verified writable-layer file.
-    let reclaim_bytes = current_variant != "not-installed" ?
-        sing_box_reclaimable_bytes(current_variant, "extended-compressed", {}) : 0;
-    let overlay_free_kib = available_kib("/usr/bin");
     let compressed_target_kib = int((file_bytes(tmp_binary) + file_bytes(tmp_cronet) + 1023) / 1024);
-    let overlay_need_kib = compressed_target_kib + 2048 - int(reclaim_bytes / 1024);
-    if (overlay_free_kib <= 0 || overlay_free_kib < overlay_need_kib) {
-        remove_file(tmp_binary);
-        remove_file(tmp_cronet);
-        remove_file(archive_file);
-        action_fail("sing_box", action, "Not enough flash space for " + label + ": need " + overlay_need_kib + " KiB free, have " + overlay_free_kib + " KiB", current_version, latest_version);
-    }
 
     remove_file(archive_file);
     let package_variant = sing_box_variant_is_package_managed(current_variant);
     let rollback = package_variant ? stage_previous_sing_box_package(current_variant) : null;
     if (package_variant && rollback == null)
         action_fail("sing_box", action, "Cannot cache the installed sing-box package for rollback", current_version, latest_version);
+    if (!prepare_sing_box_package_dependencies(null, rollback, current_variant))
+        action_fail("sing_box", action, "Cannot cache dependencies for compressed variant rollback", current_version, latest_version);
+    let rollback_dependencies = 0;
+    for (let path in sing_box_rollback_dependency_files)
+        rollback_dependencies += int(staged_package_field(path, "installed-size"));
+    let backup_bytes = package_variant ? 0 : file_bytes("/usr/bin/sing-box") + file_bytes("/usr/lib/libcronet.so");
+    let rollback_growth = sing_box_rollback_growth_bytes(rollback == null ? backup_bytes : rollback.size,
+        sing_box_existing_writable_bytes(rollback), rollback_dependencies);
+    let space_error = sing_box_space_error(available_kib("/usr/bin"), available_kib(tmp_dir), rollback_growth, backup_bytes);
+    if (space_error != "")
+        action_fail("sing_box", action, space_error, current_version, latest_version);
     let rollback_file = rollback == null ? null : rollback.path;
     stop_forkop_before_sing_box_change();
     let new_version = validate_sing_box_extended_binary(tmp_binary, tmp_dir);
@@ -2321,7 +2350,7 @@ function install_sing_box_extended(action, compressed) {
     if (cronet_path != "") {
         cronet_touched = true;
         if (file_exists("/usr/lib/libcronet.so")) {
-            backup_cronet = "/usr/lib/libcronet.so.forkop-backup." + owner_pid();
+            backup_cronet = tmp_dir + "/libcronet.so.forkop-backup";
             if (!move_file_to_backup("/usr/lib/libcronet.so", backup_cronet)) {
                 restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
                 remove_file(tmp_binary);
@@ -2348,7 +2377,7 @@ function install_sing_box_extended(action, compressed) {
     // Verify the real free blocks after package removal or the compressed
     // binary's move to tmpfs, before copying the new binary to overlay.
     let overlay_after_remove_kib = available_kib("/usr/bin");
-    let full_overlay_need_kib = compressed_target_kib + 2048;
+    let full_overlay_need_kib = compressed_target_kib + int((rollback_dependencies + 1023) / 1024) + 2048;
     if (overlay_after_remove_kib < full_overlay_need_kib) {
         let restored = restore_sing_box_after_failed_extended_install(current_variant, backup_binary, backup_cronet,
             previous_marker, previous_version_state, archive_file, cronet_touched, rollback_file);
@@ -2503,9 +2532,16 @@ function install_package_sing_box(action, tiny, x) {
     if (!run_logged_pkg_remove_sing_box_conflict("sing-box-x", "Removing sing-box-x before " + label + " installation") ||
         (x && !run_logged_pkg_remove_sing_box_conflict("sing-box-tiny", "Removing sing-box-tiny before X installation")) ||
         !run_logged_pkg_remove_sing_box_conflict("sing-box-extended", "Removing sing-box-extended before " + label + " installation") ||
-        !run_logged_pkg_remove_sing_box_conflict(conflict, "Removing conflicting sing-box package") ||
-        !run_logged("Installing " + label + " package",
-            pkg_install_sing_box_files_command(sing_box_target_files(target.path))))
+        !run_logged_pkg_remove_sing_box_conflict(conflict, "Removing conflicting sing-box package"))
+        fail_package_sing_box_install(action, tiny, "package installation failed", current_version, latest_version,
+            package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
+
+    let removed_space_error = sing_box_removed_space_error();
+    if (removed_space_error != "")
+        fail_package_sing_box_install(action, tiny, removed_space_error, current_version, latest_version,
+            package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
+    if (!run_logged("Installing " + label + " package",
+        pkg_install_sing_box_files_command(sing_box_target_files(target.path))))
         fail_package_sing_box_install(action, tiny, "package installation failed", current_version, latest_version,
             package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
 
@@ -3337,10 +3373,12 @@ else if (mode == "forkop-release-plan-fixture") {
         exit(1);
     write_json(release);
 }
-else if (mode == "sing-box-credit-supported-fixture")
-    exit(sing_box_credit_supported(ARGV[1], ARGV[2] || "") ? 0 : 1);
 else if (mode == "sing-box-file-size-fixture")
     print(file_bytes(ARGV[1]), "\n");
+else if (mode == "sing-box-writable-path-fixture")
+    print(sing_box_writable_path(ARGV[1], ARGV[2] == "1", ARGV[3] == "1"), "\n");
+else if (mode == "sing-box-writable-file-size-fixture")
+    print(sing_box_writable_file_bytes(ARGV[1]), "\n");
 else if (mode == "sing-box-archive-select-fixture") {
     let input = fs.open("/dev/stdin", "r");
     let asset = sing_box_archive_asset(json(input.read("all")), ARGV[1], ARGV[2], ARGV[3], ARGV[4]);
@@ -3381,7 +3419,16 @@ else if (mode == "sing-box-package-preflight-fixture") {
 }
 else if (mode == "sing-box-space-fixture") {
     let error = sing_box_space_error(int(ARGV[1]), int(ARGV[2]), int(ARGV[3]),
-        int(ARGV[4] || "0"), int(ARGV[5] || "0"), int(ARGV[6] || "0"));
+        int(ARGV[4] || "0"));
+    if (error != "") {
+        warn(error, "\n");
+        exit(1);
+    }
+    print("ok\n");
+}
+else if (mode == "sing-box-rollback-space-fixture") {
+    let growth = sing_box_rollback_growth_bytes(int(ARGV[3]), int(ARGV[4]), int(ARGV[5] || "0"));
+    let error = sing_box_space_error(int(ARGV[1]), int(ARGV[2]), growth, int(ARGV[6] || "0"));
     if (error != "") {
         warn(error, "\n");
         exit(1);

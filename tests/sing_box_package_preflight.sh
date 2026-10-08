@@ -12,18 +12,9 @@ version="${FORKOP_TEST_PACKAGE_VERSION:?missing package version}"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 run() { ucode -L "$lib" "$action" "$@"; }
 
-run sing-box-credit-supported-fixture ext4 || fail 'ext4 credit rejected'
-run sing-box-credit-supported-fixture f2fs unsupported || fail 'uncompressed F2FS credit rejected'
-for filesystem in ubifs jffs2 overlay squashfs unknown; do
-  if run sing-box-credit-supported-fixture "$filesystem"; then
-    fail "logical size credit accepted for $filesystem"
-  fi
-done
-for compression in supported enabled ''; do
-  if run sing-box-credit-supported-fixture f2fs "$compression"; then
-    fail 'compression-capable or unknown F2FS credit accepted'
-  fi
-done
+[ "$(run sing-box-writable-path-fixture /usr/bin/sing-box 1 1)" = /overlay/upper/usr/bin/sing-box ] || fail 'overlay path wrong'
+[ -z "$(run sing-box-writable-path-fixture /usr/bin/sing-box 0 1)" ] || fail 'ROM file credited'
+[ "$(run sing-box-writable-path-fixture /usr/bin/sing-box 0 0)" = /usr/bin/sing-box ] || fail 'writable root rejected'
 
 size_dir="$(mktemp -d)"
 trap 'rm -rf "$size_dir"' EXIT
@@ -32,6 +23,12 @@ printf test >"$size_dir/present"
 [ "$(run sing-box-file-size-fixture "$size_dir/present")" = 4 ] || fail 'existing file size is wrong'
 [ "$(run sing-box-file-size-fixture "$size_dir/empty")" = 0 ] || fail 'empty file size is wrong'
 [ "$(run sing-box-file-size-fixture "$size_dir/missing")" = 0 ] || fail 'missing optional library invalidates backup size'
+ln -s "$size_dir/present" "$size_dir/link"
+[ "$(run sing-box-writable-file-size-fixture "$size_dir/link")" = 0 ] || fail 'symlink target credited'
+ln "$size_dir/present" "$size_dir/hardlink"
+[ "$(run sing-box-writable-file-size-fixture "$size_dir/present")" = 0 ] || fail 'shared hardlink credited'
+rm "$size_dir/hardlink"
+[ "$(run sing-box-writable-file-size-fixture "$size_dir/present")" = 4 ] || fail 'regular writable file not credited'
 
 info="$(run sing-box-package-info-fixture "$archive" "$name" "$version")" ||
   fail 'valid package metadata rejected'
@@ -39,6 +36,10 @@ info="$(run sing-box-package-info-fixture "$archive" "$name" "$version")" ||
   fail 'package name mismatch'
 [ "$(printf '%s\n' "$info" | jsonfilter -e '@.version')" = "$version" ] ||
   fail 'package version mismatch'
+if [ -n "${FORKOP_TEST_EXPECT_PAYLOAD_BYTES:-}" ]; then
+  [ "$(printf '%s\n' "$info" | jsonfilter -e '@.size')" = "$FORKOP_TEST_EXPECT_PAYLOAD_BYTES" ] ||
+    fail 'payload differs from actual packed package files'
+fi
 if [ -n "${FORKOP_TEST_MIN_INSTALLED_BYTES:-}" ]; then
   [ "$(printf '%s\n' "$info" | jsonfilter -e '@.size')" -ge "$FORKOP_TEST_MIN_INSTALLED_BYTES" ] ||
     fail 'installed size underestimates the unpacked package'
@@ -53,45 +54,23 @@ if run sing-box-package-info-fixture /tmp/nonexistent-sing-box-package "$name" "
   fail 'missing package accepted'
 fi
 
-run sing-box-space-fixture 200000 200000 33576419 33576419 0 >/dev/null ||
-  fail 'ample free space rejected'
-run sing-box-space-fixture 36568 200000 31138816 0 0 >/dev/null ||
-  fail 'fresh Tiny install with reported router free space rejected'
-run sing-box-space-fixture 32457 200000 31138816 0 0 >/dev/null ||
-  fail 'fresh install rejected at exact reserve threshold'
-if run sing-box-space-fixture 32456 200000 31138816 0 0 >/dev/null 2>&1; then
-  fail 'fresh install accepted below reserve threshold'
-fi
-if run sing-box-space-fixture 1000 200000 33576419 0 0 >/dev/null 2>&1; then
-  fail 'flash shortage accepted'
-fi
-if run sing-box-space-fixture 200000 1000 33576419 0 0 >/dev/null 2>&1; then
-  fail 'tmp shortage accepted'
-fi
-if run sing-box-space-fixture 200000 10000 33576419 0 33576419 >/dev/null 2>&1; then
-  fail 'tmp backup shortage accepted'
-fi
-if run sing-box-space-fixture 0 200000 33576419 0 0 >/dev/null 2>&1; then
-  fail 'unknown flash capacity accepted'
-fi
-run sing-box-space-fixture 140000 200000 80000000 70000000 0 0 >/dev/null ||
-  fail 'old installed package counted twice against free space'
-if run sing-box-space-fixture 80172 200000 80000000 70000000 0 0 >/dev/null 2>&1; then
-  fail 'fixed installation reserve ignored'
-fi
-if run sing-box-space-fixture 99704 200000 30000000 100000000 0 0 >/dev/null 2>&1; then
-  fail 'rollback capacity ignored'
-fi
-run sing-box-space-fixture 100000 200000 80000000 70000000 0 20000000 >/dev/null ||
-  fail 'verified writable binary credit rejected'
-run sing-box-space-fixture 115000 200000 30000000 100000000 0 20000000 >/dev/null ||
-  fail 'rollback ignored space freed by removing the previous package'
-if run sing-box-space-fixture 84406 200000 107121058 30382512 0 22786884 >/dev/null 2>&1; then
-  fail 'real Extended IPK threshold accepted below required free space'
-fi
-run sing-box-space-fixture 84407 200000 107121058 30382512 0 22786884 >/dev/null ||
-  fail 'real Extended IPK threshold rejected at required free space'
-run sing-box-space-fixture 140000 200000 80000000 70000000 0 60000000 >/dev/null ||
-  fail 'verified writable binary credit rejected'
+# Actual blocks after removal, independent of filesystem/compression.
+run sing-box-space-fixture 200000 200000 33576419 0 >/dev/null || fail 'ample free space rejected'
+run sing-box-space-fixture 32457 200000 31138816 0 >/dev/null || fail 'exact installation reserve rejected'
+if run sing-box-space-fixture 32456 200000 31138816 0 >/dev/null 2>&1; then fail 'installation reserve ignored'; fi
+if run sing-box-space-fixture 1000 200000 9941146 0 >/dev/null 2>&1; then fail 'actual flash shortage ignored'; fi
+if run sing-box-space-fixture 200000 1000 9941146 0 >/dev/null 2>&1; then fail 'tmp workspace shortage ignored'; fi
+if run sing-box-space-fixture 0 200000 9941146 0 >/dev/null 2>&1; then fail 'unknown capacity accepted'; fi
 
+# Existing writable core already fit. Reserve only growth above that baseline.
+run sing-box-rollback-space-fixture 39716 200000 99775488 99000000 0 0 >/dev/null || fail 'Extended rollback counted twice'
+run sing-box-rollback-space-fixture 39716 200000 31000000 31000000 0 31000000 >/dev/null || fail 'compressed rollback used ordinary Extended'
+run sing-box-space-fixture 39716 200000 9941146 0 >/dev/null || fail 'packed X payload rejected'
+# ROM never freed writable storage: reinstalling it needs its full payload.
+if run sing-box-rollback-space-fixture 39716 200000 99775488 0 0 0 >/dev/null 2>&1; then fail 'ROM rollback capacity ignored'; fi
+if run sing-box-rollback-space-fixture 39716 20000 31000000 31000000 0 31000000 >/dev/null 2>&1; then fail 'compressed backup tmp shortage ignored'; fi
+# A failed opkg transaction can retain newly installed target dependencies.
+run sing-box-rollback-space-fixture 10240 200000 100000000 100000000 8388608 0 >/dev/null || fail 'exact dependency reserve rejected'
+if run sing-box-rollback-space-fixture 10239 200000 100000000 100000000 8388608 0 >/dev/null 2>&1; then fail 'dependency recovery reserve ignored'; fi
+if run sing-box-rollback-space-fixture 2047 200000 100000000 100000000 0 0 >/dev/null 2>&1; then fail 'recovery workspace reserve ignored'; fi
 printf '%s\n' 'sing-box package metadata and storage preflight: OK'

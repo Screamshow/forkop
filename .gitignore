@@ -74,6 +74,9 @@ ops/deployed-nginx/
 !/tests/dns_rollback_transaction.sh
 !/tests/subscription_bootstrap_dns.sh
 !/tests/sing_box_package_preflight.sh
+!/tests/sing_box_payload_size.sh
+!/tests/sing_box_flash_transition_vm.sh
+!/tests/sing_box_tmp_shortage_vm.sh
 !/tests/sing_box_previous_release.sh
 !/tests/sing_box_component_transition_vm.sh
 !/tests/sing_box_x_transition_vm.sh
