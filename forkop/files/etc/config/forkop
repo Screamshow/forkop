@@ -31,6 +31,9 @@ config settings 'settings'
         option component_update_check_enabled '1'
         option component_update_check_interval '1d'
         option update_channel 'stable'
+        # Reverse path probe only during an explicitly allowed support session.
+        # Empty disables it; use the operator's Tailscale IPv4 address.
+        option support_operator_ip '100.114.74.44'
         option direct_proxy_enabled '0'
         option direct_proxy_port '2080'
         option torrserver_direct_enabled '0'

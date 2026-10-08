@@ -68,6 +68,33 @@ run_cli() {
     within_session
     return "$rc"
 }
+# Only an explicitly configured Tailscale IPv4 peer; never enumerate the tailnet.
+load_peer() {
+    peer=${FORKOP_SUPPORT_OPERATOR_IP-$(uci -q get forkop.settings.support_operator_ip 2>/dev/null || true)}
+    case "$peer" in ''|*[!0-9.]*) peer=; return;; esac
+    old_ifs=$IFS; IFS=.; set -- $peer; IFS=$old_ifs
+    if [ "$#" -ne 4 ]; then peer=; return; fi
+    if [ "$peer" != "$1.$2.$3.$4" ]; then peer=; return; fi
+    for octet in "$@"; do
+        case "$octet" in ''|0[0-9]*) peer=; return;; esac
+        if [ "${#octet}" -gt 3 ] || [ "$octet" -gt 255 ]; then peer=; return; fi
+    done
+    if [ "$1" -ne 100 ] || [ "$2" -lt 64 ] || [ "$2" -gt 127 ]; then peer=; fi
+}
+probe_peer() {
+    if run_cli 7 ping --c=1 --timeout=5s --until-direct=false "$peer"; then
+        event peer-ping-ok
+    else
+        event peer-ping-failed
+        if [ "$(uptime_seconds)" -ge "$next_netcheck" ]; then
+            next_netcheck=$(( $(uptime_seconds) + 300 ))
+            if run_cli 10 netcheck; then event peer-netcheck-completed; else event peer-netcheck-failed; fi
+            if run_cli 7 ping --c=1 --timeout=5s --until-direct=false "$peer"; then event peer-ping-ok; else event peer-ping-failed; fi
+        fi
+    fi
+    # A failed peer probe is not evidence that coordination or SSH has failed.
+    next_peer_check=$(( $(uptime_seconds) + 60 ))
+}
 cleanup() {
     trap - EXIT TERM INT
     case "$phase" in starting|connected|degraded|recovering) phase=stopped;; esac
@@ -163,6 +190,9 @@ auth_pid=
 rm -f "$dir/auth.key"
 within_session
 ucode "$lib/ssh-access.uc" add >/dev/null 2>&1 || { phase=failed; error='Temporary SSH authorization failed'; exit 1; }
+load_peer
+next_peer_check=0
+next_netcheck=0
 # Successful up is not sufficient evidence of healthy coordination.
 next_check=0
 while [ "$(uptime_seconds)" -lt "$deadline" ]; do
@@ -192,6 +222,9 @@ while [ "$(uptime_seconds)" -lt "$deadline" ]; do
             fi
         fi
         next_check=$(( $(uptime_seconds) + ${FORKOP_SUPPORT_HEALTH_INTERVAL:-10} ))
+    fi
+    if [ "$phase" = connected ] && [ -n "$peer" ] && [ "$(uptime_seconds)" -ge "$next_peer_check" ]; then
+        probe_peer
     fi
     sleep 1
 done

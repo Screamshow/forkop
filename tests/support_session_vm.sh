@@ -77,6 +77,18 @@ status)
         printf '{"BackendState":"Running","Self":{"Online":false},"Health":["DNS configuration warning"]}\n'
     fi
     ;;
+ping)
+    test "$*" = 'ping --c=1 --timeout=5s --until-direct=false 100.114.74.44'
+    case "$SCENARIO" in
+      peer-fail|netcheck-hang) exit 1;;
+      peer-hang) sleep 120 & echo $! > "$FORKOP_SUPPORT_DIR/child"; wait;;
+    esac
+    ;;
+netcheck)
+    if [ "$SCENARIO" = netcheck-hang ]; then
+        sleep 120 & echo $! > "$FORKOP_SUPPORT_DIR/child"; wait
+    fi
+    ;;
 *) exit 1;;
 esac
 EOF
@@ -85,6 +97,7 @@ export FORKOP_SUPPORT_DIR="$test_dir/session" FORKOP_SUPPORT_LITE_DIR="$test_dir
 export FORKOP_SUPPORT_LIB_DIR="$lib_path" FORKOP_SUPPORT_PUBLIC_KEY="$lib_path/operator.pub"
 export FORKOP_SUPPORT_AUTHORIZED_KEYS="$test_dir/authorized_keys"
 export FORKOP_SUPPORT_HEALTH_INTERVAL=1 FORKOP_SUPPORT_HEALTH_GRACE=2 FORKOP_SUPPORT_RECOVERY_INTERVAL=3
+export FORKOP_SUPPORT_OPERATOR_IP=
 prepare() {
     rm -f "$FORKOP_SUPPORT_DIR/"*
     printf 'existing-customer-key\n' > "$test_dir/authorized_keys"
@@ -135,8 +148,27 @@ for SCENARIO in healthy transient recover persistent; do
     case "$SCENARIO" in healthy|transient) test "$attempts" = 0;; recover) test "$attempts" = 1; grep -q control-healthy "$FORKOP_SUPPORT_DIR/recovery.log";; persistent) test "$attempts" = 3;; esac
     echo "$SCENARIO: deadline, identity, retry count, SSH preservation and process cleanup passed"
 done
-for SCENARIO in down-hang up-hang status-hang auth-hang; do
+for SCENARIO in peer-ok peer-fail peer-invalid; do
+    export SCENARIO FORKOP_SUPPORT_TTL=9 FORKOP_SUPPORT_OPERATOR_IP=100.114.74.44
+    [ "$SCENARIO" != peer-invalid ] || export FORKOP_SUPPORT_OPERATOR_IP='100.114.74.44;reboot'
+    prepare
+    PATH="$test_dir/tools" sh "$worker_path" & worker=$!
+    wait "$worker"; worker=
+    clean_assert
+    test "$(jsonfilter -i "$FORKOP_SUPPORT_DIR/status.json" -e '@.recovery_attempts')" = 0
+    pings=$(grep -c '^ping ' "$FORKOP_SUPPORT_DIR/commands" || true)
+    checks=$(grep -c '^netcheck$' "$FORKOP_SUPPORT_DIR/commands" || true)
+    case "$SCENARIO" in
+      peer-ok) test "$pings" = 1; test "$checks" = 0;;
+      peer-fail) test "$pings" = 2; test "$checks" = 1;;
+      peer-invalid) test "$pings" = 0; test "$checks" = 0;;
+    esac
+    echo "$SCENARIO: bounded peer probes without control recovery passed"
+done
+for SCENARIO in down-hang up-hang status-hang auth-hang peer-hang netcheck-hang; do
     export SCENARIO
+    export FORKOP_SUPPORT_OPERATOR_IP=
+    case "$SCENARIO" in peer-hang|netcheck-hang) export FORKOP_SUPPORT_OPERATOR_IP=100.114.74.44;; esac
     for termination in cancel expiry; do
         prepare
         if [ "$termination" = cancel ]; then export FORKOP_SUPPORT_TTL=60; else export FORKOP_SUPPORT_TTL=7; fi
