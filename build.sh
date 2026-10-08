@@ -68,8 +68,8 @@ APP_DESCRIPTION="Rule-based Forkop LuCI app with hybrid sing-box + zapret orches
 I18N_DESCRIPTION="Translation for luci-app-forkop - Русский (Russian)"
 MAINTAINER="Screamshow <235684779+Screamshow@users.noreply.github.com>"
 PROJECT_URL="https://github.com/Screamshow/forkop"
-BACKEND_DEPENDS_IPK="libc, ca-bundle, kmod-inet-diag, kmod-tun, curl, ucode, ucode-mod-fs, ucode-mod-uci, kmod-nft-tproxy, coreutils-base64, bind-dig, nftables-json, kmod-nft-nat, ip-full"
-BACKEND_DEPENDS_APK="bind-dig ca-bundle coreutils-base64 curl ip-full kmod-inet-diag kmod-nft-nat kmod-nft-tproxy kmod-tun libc nftables-json ucode ucode-mod-fs ucode-mod-uci !https-dns-proxy !nextdns !luci-app-passwall !luci-app-passwall2"
+BACKEND_DEPENDS_IPK="libc, ca-bundle, kmod-inet-diag, kmod-tun, curl, ucode, ucode-mod-fs, ucode-mod-uci, kmod-nft-tproxy, bind-dig, nftables-json, kmod-nft-nat, ip-full"
+BACKEND_DEPENDS_APK="bind-dig ca-bundle curl ip-full kmod-inet-diag kmod-nft-nat kmod-nft-tproxy kmod-tun libc nftables-json ucode ucode-mod-fs ucode-mod-uci !https-dns-proxy !nextdns !luci-app-passwall !luci-app-passwall2"
 BACKEND_CONFLICTS_IPK="https-dns-proxy, nextdns, luci-app-passwall, luci-app-passwall2"
 APP_DEPENDS_IPK="libc, luci-base, forkop"
 APP_DEPENDS_APK="libc luci-base forkop"
@@ -228,6 +228,8 @@ build_app_root() {
   make_dir "$output_root/www"
 
   cp -a "$ROOT_DIR/luci-app-forkop/htdocs/." "$output_root/www/"
+  (cd "$ROOT_DIR/luci-app-forkop" && sha256sum -c generated/source.sha256) >/dev/null
+  cp -a "$ROOT_DIR/luci-app-forkop/generated/luci-static/." "$output_root/www/luci-static/"
   cp -a "$ROOT_DIR/luci-app-forkop/root/." "$output_root/"
   sed -i -e "s/__COMPILED_VERSION_VARIABLE__/${RELEASE_VERSION}/g" \
     "$output_root/www/luci-static/resources/view/forkop/main.js"

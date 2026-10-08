@@ -118,8 +118,10 @@ grep -Fq 'runtime-list-cache-active' "$LIFECYCLE_UC" ||
   fail "service reload must preserve a newer RAM-only list generation"
 grep -Fq 'function prepare_list_downloads(sections, proxy_address)' "$UPDATES_UC" ||
   fail "all remote list sources must pass preflight before active state changes"
-grep -Fq 'function restore_list_nft_snapshot()' "$UPDATES_UC" ||
-  fail "an aborted list transaction must restore the active nftables table"
+grep -Fq 'FORKOP_NFT_BATCH_FILE: list_nft_candidate_file' "$UPDATES_UC" ||
+  fail "list preparation must write to an isolated nft candidate"
+grep -Fq 'discard_list_nft_candidate();' "$UPDATES_UC" ||
+  fail "a finished list transaction must discard its unpublished nft candidate"
 grep -Fq 'current_list_update_signature() != list_update_signature_at_start' "$UPDATES_UC" ||
   fail "a concurrent source edit must discard the stale downloaded generation"
 grep -Fq 'module_background(UPDATES_UC, [ "list-update-after-start" ])' "$LIFECYCLE_UC" ||

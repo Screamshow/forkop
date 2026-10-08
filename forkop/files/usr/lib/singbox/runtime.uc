@@ -645,14 +645,6 @@ function log_lines(text, level, prefix) {
             log_message(as_string(prefix) + as_string(line), level);
 }
 
-function first_nonblank_line(path) {
-    let data = as_string(fs.readfile(path) || "");
-    for (let line in split(data, "\n"))
-        if (trim(as_string(line)) != "")
-            return as_string(line);
-    return "";
-}
-
 function last_nonblank_line(path) {
     let result = "";
     let data = as_string(fs.readfile(path) || "");
@@ -928,6 +920,9 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
         exit(1);
     }
 
+    // This invocation cannot change the installed core; use one capability
+    // snapshot for both generator arguments instead of executing version twice.
+    let core_version = sing_box_version();
     let generate_status = command_status(
         module_command([
             LIB_DIR + "/singbox/generator.uc",
@@ -935,9 +930,9 @@ function init_config(populate_nft, caches_prepared, no_refresh, prepared_deferre
             temp_config,
             service_listen_address_value(settings),
             mwan3_active ? "1" : "0",
-            sing_box_is_extended(sing_box_version()) ? "1" : "0",
+            sing_box_is_extended(core_version) ? "1" : "0",
             deferred_sections,
-            sing_box_version()
+            core_version
         ]) + " >" + shell_quote(runtime_log) + " 2>&1"
     );
     if (SINGBOX_CONFIG_FAIL_PHASE == "generate")

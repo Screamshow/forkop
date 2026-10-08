@@ -1456,13 +1456,21 @@ function get_sing_box_version() {
     return sing_box_version_from_output(command_output_from_args([ "sing-box", "version" ]));
 }
 
+let default_subscription_user_agent = null;
+
 function get_subscription_user_agent(custom_user_agent) {
     custom_user_agent = as_string(custom_user_agent);
     if (custom_user_agent != "")
         return custom_user_agent;
 
+    if (default_subscription_user_agent != null)
+        return default_subscription_user_agent;
     let version = get_sing_box_version();
-    return "sing-box/" + (version != "" ? version : "unknown");
+    // Cache successful detection only within an operation. An unavailable core
+    // may become available on a later bootstrap attempt and must be retried.
+    if (version != "")
+        default_subscription_user_agent = "sing-box/" + version;
+    return version != "" ? default_subscription_user_agent : "sing-box/unknown";
 }
 
 function user_agent_candidates(configured_user_agent, preferred_user_agent, default_user_agent) {
@@ -1902,6 +1910,7 @@ function cached_source_status(source_section, parsed) {
 }
 
 function update_subscription_source(section_name_value, index_value, entry, phase, metadata_output_path) {
+    default_subscription_user_agent = null;
     ensure_runtime_dirs();
     let sections = uci_sections();
     let settings = uci_named_section("settings");
@@ -2322,6 +2331,7 @@ function prepared_runtime_cache_should_skip(sections, section_cache_dir, phase, 
 }
 
 function prepare_subscription_caches(phase, already_prepared, no_refresh) {
+    default_subscription_user_agent = null;
     phase = as_string(phase || "startup");
     let sections = uci_sections();
 
@@ -2390,6 +2400,7 @@ function trigger_subscription_recovery_reload(worker) {
 }
 
 function subscription_bootstrap_retry_result(deferred_sections) {
+    default_subscription_user_agent = null;
     let sections = uci_sections();
     let default_user_agent = get_subscription_user_agent("");
     let result = {

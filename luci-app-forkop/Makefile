@@ -11,7 +11,8 @@ ifeq ($(FORKOP_RELEASE_VERSION_VALID),)
 $(error FORKOP_PACKAGE_VERSION and FORKOP_VERSION must use x.y.z or x.y.z-canary.N format)
 endif
 
-PKG_VERSION:=$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0)
+# apk-tools uses rc prerelease syntax; embedded/public version remains canary.N.
+PKG_VERSION:=$(if $(CONFIG_USE_APK),$(subst -canary.,_rc,$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0)),$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0))
 PKG_RELEASE:=
 PKG_PO_VERSION:=$(PKG_VERSION)
 
@@ -28,6 +29,9 @@ PKG_LICENSE:=GPL-2.0-or-later
 LUCI_LANGUAGES:=en ru
 
 define Build/Prepare/$(PKG_NAME)
+	$(CP) $(CURDIR)/generated $(PKG_BUILD_DIR)/
+	(cd $(PKG_BUILD_DIR) && sha256sum -c generated/source.sha256)
+	$(CP) $(PKG_BUILD_DIR)/generated/luci-static/resources/view/forkop/*.js $(PKG_BUILD_DIR)/htdocs/luci-static/resources/view/forkop/
 	sed -i -e 's/__COMPILED_VERSION_VARIABLE__/$(FORKOP_COMPILED_VERSION)/g' $(PKG_BUILD_DIR)/htdocs/luci-static/resources/view/forkop/main.js
 endef
 

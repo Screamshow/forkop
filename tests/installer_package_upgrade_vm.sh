@@ -13,6 +13,8 @@ TMP_DIR="$ROOT/adapter"
 mkdir -p "$TMP_DIR"
 sed -n '/^prepare_package_init_adapter() {/,/^}/p; /^pkg_install_files() {/,/^}/p' "$ROOT/install.sh" > "$ROOT/functions.sh"
 sed -n '/^opkg_with_lock_retry() (/,/^)/p' "$ROOT/install.sh" >> "$ROOT/functions.sh"
+# The adapter uses the standalone helper while older backend hooks run.
+sed -n '/^install_json_helper_path() {/,/^install_json_ucode() {/p' "$ROOT/install.sh" | sed '$d' >> "$ROOT/functions.sh"
 . "$ROOT/functions.sh"
 prepare_package_init_adapter
 cp -p /etc/config/forkop "$ROOT/config.original"

@@ -127,17 +127,17 @@ grep -Fq 'sing_box_is_present' "$INSTALLER" ||
   fail "installer must detect an existing sing-box before showing the build choice"
 grep -Fq 'singbox extended (если нужен xhttp)' "$INSTALLER" ||
   fail "extended sing-box choice must explain that it is needed for xhttp"
-grep -Fq 'Русский пакет интерфейса будет установлен автоматически.' "$INSTALLER" ||
+grep -Fq 'Устанавливаю русский пакет интерфейса; язык LuCI не изменится.' "$INSTALLER" ||
   fail "Russian LuCI language must enable the Russian interface package without a prompt"
-grep -Fq 'SING_BOX_INSTALL_VARIANT="tiny"' "$INSTALLER" ||
-  fail "fresh non-interactive installation must default to sing-box-tiny"
-grep -Fq 'msg "sing-box is not installed; sing-box-tiny will be installed"' "$INSTALLER" ||
-  fail "fresh installation must announce the automatic sing-box-tiny plan"
+grep -Fq 'SING_BOX_INSTALL_VARIANT="x"' "$INSTALLER" ||
+  fail "fresh installation must default to sing-box X"
+grep -Fq 'msg "sing-box is not installed; sing-box X will be installed from the Forkop mirror"' "$INSTALLER" ||
+  fail "fresh installation must announce the automatic sing-box X plan"
 select_sing_box_block="$WORK_DIR/select-sing-box.sh"
 sed -n '/^select_sing_box_installation()/,/^}/p' "$INSTALLER" > "$select_sing_box_block"
 [ -s "$select_sing_box_block" ] || fail "failed to extract sing-box selection helper"
 
-# A: an absent sing-box must select tiny without an interactive build chooser.
+# A: an absent sing-box must select X without an interactive build chooser.
 fresh_variant="$(
   legacy_binary_managed_sing_box_present() { return 1; }
   sing_box_is_present() { return 1; }
@@ -147,7 +147,16 @@ fresh_variant="$(
   select_sing_box_installation
   printf '%s' "$SING_BOX_INSTALL_VARIANT"
 )"
-[ "$fresh_variant" = "tiny" ] || fail "absent sing-box must select sing-box-tiny automatically"
+[ "$fresh_variant" = "x" ] || fail "absent sing-box must select sing-box X automatically"
+eval "$(sed -n '/^select_sing_box_for_release()/,/^}/p' "$INSTALLER")"
+legacy_variant="$(
+  msg() { :; }
+  SING_BOX_INSTALL_VARIANT=x
+  FORKOP_RELEASE_TAG=1.14.6
+  select_sing_box_for_release
+  printf '%s' "$SING_BOX_INSTALL_VARIANT"
+)"
+[ "$legacy_variant" = tiny ] || fail "pre-2.0 releases must retain the supported Tiny action"
 if grep -Eq 'select_sing_box_installation\(\).*interactive_terminal_available|interactive_terminal_available.*select_sing_box_installation' "$INSTALLER"; then
   fail "fresh sing-box selection must not use an interactive chooser"
 fi

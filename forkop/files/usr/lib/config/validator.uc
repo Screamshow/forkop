@@ -193,13 +193,19 @@ function bounded_command_output_from_args(args, timeout_seconds) {
     timeout_seconds = int(timeout_seconds || 5);
     if (timeout_seconds < 1)
         timeout_seconds = 5;
-    let script = "tmp=/tmp/forkop-validator-version.$$; " + command_from_args(args) +
-        " >\"$tmp\" 2>/dev/null & child=$!; " +
-        "elapsed=0; while kill -0 \"$child\" 2>/dev/null && [ \"$elapsed\" -lt " + as_string(timeout_seconds) + " ]; do sleep 1; elapsed=$((elapsed + 1)); done; " +
-        "if kill -0 \"$child\" 2>/dev/null; then kill -KILL \"$child\" 2>/dev/null; fi; " +
-        "wait \"$child\"; rc=$?; " +
-        "if [ \"$rc\" -eq 0 ]; then cat \"$tmp\"; fi; rm -f \"$tmp\"; exit \"$rc\"";
-    return command_output_from_args([ "sh", "-c", script ]);
+    let directory = type(fs.mkdtemp) == "function"
+        ? fs.mkdtemp("/tmp/forkop-validator-version.XXXXXX")
+        : trim(command_output_from_args([ "mktemp", "-d", "/tmp/forkop-validator-version.XXXXXX" ]));
+    if (directory == null || directory == "")
+        return "";
+    let path = directory + "/output";
+    // exec makes the bounded child the command itself, not a waiting shell.
+    let status = system("exec " + command_from_args(args) +
+        " >" + shell_quote(path) + " 2>/dev/null", timeout_seconds * 1000);
+    let output = status == 0 ? as_string(fs.readfile(path)) : "";
+    fs.unlink(path);
+    fs.rmdir(directory);
+    return output;
 }
 
 function command_exists(name) {
@@ -1687,7 +1693,6 @@ function context_from_runtime() {
         zapret2_queue_range_size: constant_value(constants, "ZAPRET2_QUEUE_RANGE_SIZE"),
         nft_fakeip_mark: constant_value(constants, "NFT_FAKEIP_MARK"),
         nft_outbound_mark: constant_value(constants, "NFT_OUTBOUND_MARK"),
-        coreutils_base64_required_version: constant_value(constants, "COREUTILS_BASE64_REQUIRED_VERSION"),
         sing_box_required_version: constant_value(constants, "SB_REQUIRED_VERSION"),
         sing_box_variant_state_file: constant_value(constants, "SB_VARIANT_STATE_FILE"),
         sing_box_version_state_file: constant_value(constants, "SB_VERSION_STATE_FILE"),
@@ -1975,7 +1980,6 @@ function check_runtime_requirements() {
     let sing_box_version = sing_box_compressed_marker_set(ctx) ? sing_box_version_state(ctx) : first_line_last_field(sing_box_version_output);
     if (sing_box_version == "")
         sing_box_version = installed_sing_box_version();
-    let coreutils_base64_version = first_line_field_from_text(command_output("base64 --version 2>/dev/null"), 4);
 
     if (sing_box_version == "") {
         if (!command_exists("sing-box") || !sing_box_compressed_marker_set(ctx))
@@ -1991,11 +1995,6 @@ function check_runtime_requirements() {
     if (!service_exists("sing-box"))
         fail_requirement("Service 'sing-box' is missing. Install a sing-box package or reinstall the compressed sing-box-extended binary variant. Aborted.", "error");
 
-
-    if (coreutils_base64_version == "")
-        fail_requirement("Package 'coreutils-base64' is not installed. Aborted.", "error");
-    else if (!version_at_least(coreutils_base64_version, ctx.coreutils_base64_required_version))
-        log_message("Package 'coreutils-base64' version (" + coreutils_base64_version + ") is lower than the required minimum (" + ctx.coreutils_base64_required_version + "). This may cause issues when decoding base64 streams with missing padding, as automatic padding support is not available in older versions.", "warn");
 
     if (dhcp_has_https_dns_proxy_options("/etc/config/dhcp") === true)
         log_message("https-dns-proxy is enabled in DHCP config. Disable it or edit /etc/config/dhcp before starting Forkop.", "error");

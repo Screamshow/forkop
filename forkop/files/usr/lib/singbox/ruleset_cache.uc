@@ -231,9 +231,35 @@ function binary_stat_signature(path) {
     return join(":", [ stat.inode, stat.size, stat.mtime, stat.ctime ]);
 }
 
+function binary_digest(path) {
+    let digest = split(trim(command_output([ "sha256sum", path ])), /[ \t\r\n]+/)[0];
+    return match(as_string(digest), /^[0-9a-f]{64}$/) != null ? digest : "";
+}
+
 function mark_binary_valid(path) {
     let signature = binary_stat_signature(path);
-    return signature != "" && fs.writefile(binary_validation_path(path), signature + "\n") != null;
+    let digest = signature != "" ? binary_digest(path) : "";
+    return digest != "" && binary_stat_signature(path) == signature &&
+        fs.writefile(binary_validation_path(path), signature + "\n" + digest + "\n") != null;
+}
+
+function trusted_binary_digest(path) {
+    let signature = binary_stat_signature(path);
+    let marker = split(trim(as_string(fs.readfile(binary_validation_path(path)))), "\n");
+    if (signature == "" || length(marker) != 2 || marker[0] != signature)
+        return "";
+    let digest = binary_digest(path);
+    return digest != "" && digest == marker[1] && binary_stat_signature(path) == signature ? digest : "";
+}
+
+function reuse_binary_validation(source, target) {
+    let digest = trusted_binary_digest(source);
+    let signature = binary_stat_signature(target);
+    if (digest == "" || signature == "" || binary_digest(target) != digest ||
+        trusted_binary_digest(source) != digest || binary_stat_signature(target) != signature)
+        return false;
+    // Transfer proof of identical validated bytes, never just file metadata.
+    return fs.writefile(binary_validation_path(target), signature + "\n" + digest + "\n") != null;
 }
 
 function valid_binary(path) {
@@ -243,25 +269,22 @@ function valid_binary(path) {
         fs.unlink(validation_path);
         return false;
     }
-    if (trim(as_string(fs.readfile(validation_path))) == signature)
+    if (trusted_binary_digest(path) != "")
         return true;
 
-    // match reads the complete binary rule set and constructs every rule,
-    // even when the probe does not match. Unlike decompile it keeps compiled
-    // domain/IP structures instead of expanding them into source JSON. The
-    // expansion can OOM a 256 MiB router while its main sing-box is running.
-    // A non-match is successful; malformed or unsupported rules return error.
-    let ok = command_success([
+    // Parse once for new bytes or legacy/stale markers. Keep the digest from
+    // before parsing, so a changed file cannot inherit the parser's success.
+    let digest = binary_digest(path);
+    let ok = digest != "" && command_success([
         "sing-box", "rule-set", "match", "--format", "binary", path,
         "forkop-validation.invalid"
-    ]);
+    ]) && binary_stat_signature(path) == signature && binary_digest(path) == digest;
     if (ok)
-        mark_binary_valid(path);
+        fs.writefile(validation_path, signature + "\n" + digest + "\n");
     else
         fs.unlink(validation_path);
     return ok;
 }
-
 function valid_cache(path, format) {
     return format == "source" ? valid_source(path) : valid_binary(path);
 }
@@ -421,7 +444,8 @@ function commit_persistent_candidate(source, target, format) {
     let staged = target + ".download." + as_string(stamp[0]) + "." + as_string(stamp[1]);
     fs.unlink(staged);
     fs.unlink(binary_validation_path(staged));
-    if (!command_success([ "cp", source, staged ]) || !valid_cache(staged, format) || !fs.rename(staged, target)) {
+    if (!command_success([ "cp", source, staged ]) ||
+        !(format == "binary" && reuse_binary_validation(source, staged) || valid_cache(staged, format)) || !fs.rename(staged, target)) {
         fs.unlink(staged);
         fs.unlink(binary_validation_path(staged));
         return false;
@@ -450,16 +474,16 @@ function refresh_entry(entry, proxy_address, runtime_manifest) {
             fs.unlink(binary_validation_path(temporary));
             continue;
         }
-        if (!valid_cache(temporary, format)) {
+        let current = active_cache_path(runtime_manifest, url, format);
+        if (!(format == "binary" && reuse_binary_validation(current, temporary) || valid_cache(temporary, format))) {
             warn("rule-set download returned an invalid ", format, " payload for ", candidate, "\n");
             fs.unlink(temporary);
             fs.unlink(binary_validation_path(temporary));
             continue;
         }
-        let current = active_cache_path(runtime_manifest, url, format);
-        let old_md5 = file_md5(current);
-        let new_md5 = file_md5(temporary);
-        if (old_md5 != "" && old_md5 == new_md5) {
+        let old_digest = format == "binary" ? binary_digest(current) : file_md5(current);
+        let new_digest = format == "binary" ? binary_digest(temporary) : file_md5(temporary);
+        if (old_digest != "" && old_digest == new_digest) {
             let new_bytes = allocated_bytes(temporary);
             if (current == runtime_target && new_bytes >= 0 && persistent_cache_can_store(persistent_target, new_bytes) &&
                 commit_persistent_candidate(temporary, persistent_target, format)) {

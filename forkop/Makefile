@@ -11,7 +11,8 @@ ifeq ($(FORKOP_RELEASE_VERSION_VALID),)
 $(error FORKOP_PACKAGE_VERSION and FORKOP_VERSION must use x.y.z or x.y.z-canary.N format)
 endif
 
-PKG_VERSION:=$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0)
+# apk-tools uses rc prerelease syntax; embedded/public version remains canary.N.
+PKG_VERSION:=$(if $(CONFIG_USE_APK),$(subst -canary.,_rc,$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0)),$(or $(FORKOP_HAS_RELEASE_VERSION),0.0.0))
 PKG_RELEASE:=
 
 PKG_MAINTAINER:=Screamshow <235684779+Screamshow@users.noreply.github.com>
@@ -22,7 +23,7 @@ include $(INCLUDE_DIR)/package.mk
 define Package/forkop
 	SECTION:=net
 	CATEGORY:=Network
-	DEPENDS:=+ca-bundle +kmod-inet-diag +kmod-tun +curl +ucode +ucode-mod-fs +ucode-mod-uci +kmod-nft-tproxy +coreutils-base64 +bind-dig +nftables-json +kmod-nft-nat +ip-full
+	DEPENDS:=+ca-bundle +kmod-inet-diag +kmod-tun +curl +ucode +ucode-mod-fs +ucode-mod-uci +kmod-nft-tproxy +bind-dig +nftables-json +kmod-nft-nat +ip-full
 	CONFLICTS:=https-dns-proxy nextdns luci-app-passwall luci-app-passwall2
 	TITLE:=Forkop backend service
 	URL:=https://github.com/Screamshow/forkop

@@ -52,7 +52,8 @@ cat >"$WORK_DIR/duplicate.json" <<'EOF'
 EOF
 
 sing-box check -c "$WORK_DIR/duplicate.json" >/dev/null
-sing-box run -c "$WORK_DIR/duplicate.json" >"$WORK_DIR/duplicate.log" 2>&1 &
+cp "$(command -v sing-box)" "$WORK_DIR/sing-box"
+"$WORK_DIR/sing-box" run -c "$WORK_DIR/duplicate.json" >"$WORK_DIR/duplicate.log" 2>&1 &
 DUPLICATE_PID="$!"
 
 for _ in 1 2 3 4 5; do
@@ -81,6 +82,12 @@ fi
   fail "ambiguous sing-box ownership tore down the active nft policy"
 [ "$(state sing-box-service-runtime-pid)" = "$expected_pid" ] ||
   fail "duplicate rejection restarted the procd-owned sing-box"
+
+rm "$WORK_DIR/sing-box"
+[ "$(process_count)" = "2" ] || fail "deleted executable escaped duplicate detection"
+if state sing-box-single-owned-service-runtime; then
+  fail "deleted foreign executable was accepted as owned runtime"
+fi
 
 kill "$DUPLICATE_PID"
 wait "$DUPLICATE_PID" 2>/dev/null || true

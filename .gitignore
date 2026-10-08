@@ -85,6 +85,7 @@ ops/deployed-nginx/
 !/docs/releases/1.3.11.md
 !/docs/releases/1.14.9-canary.3.md
 !/docs/releases/2.0.0-canary.1.md
+!/docs/releases/2.1.0-canary.1.md
 /ops/mirror/
 /.github/workflows/backend-ci.yml
 /.github/workflows/shellcheck.yml
@@ -102,3 +103,14 @@ ops/deployed-nginx/
 # Python release catalog test caches
 /scripts/__pycache__/
 /scripts/tests/__pycache__/
+
+!/tests/provider_shutdown.sh
+!/tests/provider_shutdown_vm.sh
+!/tests/subscription_base64.sh
+!/tests/native_process_identity.sh
+!/tests/version_deadline.sh
+!/tests/ruleset_digest_reuse.sh
+!/tests/subscription_version_snapshot.sh
+!/tests/dns_reload_config.sh
+!/tests/dns_reload_vm.sh
+!/tests/installer_dhcp_detection.sh

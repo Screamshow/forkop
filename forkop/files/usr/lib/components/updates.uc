@@ -102,7 +102,6 @@ let routing_rulesets_module_value = null;
 let singbox_rulesets_module_value = null;
 let list_mirror_download_state = {};
 let list_ruleset_snapshot_dir = "";
-let list_nft_snapshot_file = "";
 let list_nft_candidate_file = "";
 let list_download_staging_dir = "";
 let list_download_cache = {};
@@ -755,14 +754,6 @@ function recover_list_generation_transaction(root, signature) {
         command_success_from_args([ "rm", "-rf", previous ]);
     command_success_from_args([ "rm", "-rf", stage ]);
     return active.valid;
-}
-
-function recover_persistent_list_cache_transaction() {
-    return recover_list_generation_transaction(PERSISTENT_LIST_CACHE_DIR, current_list_update_signature());
-}
-
-function recover_runtime_list_generation_transaction() {
-    return recover_list_generation_transaction(RUNTIME_LIST_GENERATION_DIR, current_list_update_signature());
 }
 
 function persistent_list_cache_validation() {
@@ -3640,7 +3631,7 @@ function begin_list_ruleset_snapshot() {
     }
 }
 
-function begin_list_nft_snapshot() {
+function begin_list_nft_candidate() {
     list_nft_candidate_file = temp_path();
     if (list_nft_candidate_file == "")
         return false;
@@ -3652,21 +3643,11 @@ function begin_list_nft_snapshot() {
     return true;
 }
 
-function restore_list_nft_snapshot() {
-    // Candidate preparation has not touched the active table, so rollback is
-    // only disposal of the uncommitted batch.
-    return true;
-}
-
-function finish_list_nft_snapshot(commit) {
+function discard_list_nft_candidate() {
     // Preflight can fail before a candidate is created. In that case the
     // active nft table was never touched and there is nothing to roll back.
-    let ok = true;
     remove_file(list_nft_candidate_file);
     list_nft_candidate_file = "";
-    remove_file(list_nft_snapshot_file);
-    list_nft_snapshot_file = "";
-    return ok;
 }
 
 function finish_list_ruleset_snapshot(commit) {
@@ -3782,7 +3763,7 @@ function finish_list_update(status, applied, generation_changed) {
     if (generation_changed == null)
         generation_changed = applied;
     let rulesets_changed = finish_list_ruleset_snapshot(applied);
-    let nft_restored = finish_list_nft_snapshot(applied);
+    discard_list_nft_candidate();
     cleanup_list_downloads();
     let reload_deferred = file_exists_value(LIST_UPDATE_RELOAD_FILE);
     let ruleset_request = trim(file_first_line_value(RULESET_REFRESH_AFTER_LIST_FILE));
@@ -3831,8 +3812,6 @@ function finish_list_update(status, applied, generation_changed) {
     let pending_reload = applied ? fs.readfile(PENDING_RELOAD_FILE) : null;
     if (!applied)
         service_state_success([ "run-pending-reload-if-requested", PENDING_RELOAD_FILE, SERVICE_INIT ]);
-    if (!applied && !nft_restored)
-        log_message("Failed to restore nftables after an aborted list update", "fatal");
     // nft list mutations were only candidate data. Publish the committed
     // generation through lifecycle, which rebuilds the full nft table in one
     // transaction; never append those elements to the active table here.
@@ -3938,8 +3917,8 @@ function list_update() {
     if (!prepare_list_downloads(sections, proxy_address))
         finish_list_update(1, false);
     begin_list_ruleset_snapshot();
-    if (!begin_list_nft_snapshot()) {
-        log_message("Could not snapshot the active nftables table; aborting the list transaction", "error");
+    if (!begin_list_nft_candidate()) {
+        log_message("Could not prepare the nftables candidate batch; aborting the list transaction", "error");
         finish_list_update(1, false);
     }
     reset_remote_plain_rulesets(sections);

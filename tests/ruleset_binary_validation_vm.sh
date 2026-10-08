@@ -19,12 +19,13 @@ function as_string(v) { return v == null ? "" : "" + v; }
 function shell_quote(v) { return "'" + replace(as_string(v), /'/g, "'\\''") + "'"; }
 function trim(v) { return replace(v, /^\s+|\s+$/g, ""); }
 function command_success(args) { return system(join(" ", map(args, shell_quote)) + " >/dev/null 2>&1") == 0; }
+function command_output(args) { let p=fs.popen(join(" ", map(args, shell_quote)), "r"); let data=p.read("all"); return p.close()==0 ? data : ""; }
 function command_success_from_args(args) { return command_success(args); }
 function file_nonempty(path) { let s = fs.stat(path); return s != null && s.size > 0; }
 function remove_file(path) { fs.unlink(path); }
 function valid_list_ruleset_file(path) { let v = json(fs.readfile(path)); return type(v) == "object" && type(v.rules) == "array"; }
 UCODE
-sed -n '/^function binary_validation_path(path) {/,/^}/p; /^function binary_stat_signature(path) {/,/^}/p; /^function mark_binary_valid(path) {/,/^}/p; /^function valid_binary(path) {/,/^}/p' "$LIB/singbox/ruleset_cache.uc"
+sed -n '/^function binary_validation_path(path) {/,/^}/p; /^function binary_stat_signature(path) {/,/^}/p; /^function binary_digest(path) {/,/^}/p; /^function trusted_binary_digest(path) {/,/^}/p; /^function mark_binary_valid(path) {/,/^}/p; /^function valid_binary(path) {/,/^}/p' "$LIB/singbox/ruleset_cache.uc"
 sed -n '/^function validate_staged_list_download(path, format) {/,/^}/p' "$LIB/components/updates.uc"
 cat <<'UCODE'
 for (let path in [ ARGV[0], ARGV[1] ]) {
@@ -88,3 +89,22 @@ fi
 [ "$old_hash" = "$(md5sum "$cache_path")" ]
 [ -f "$cache_path.validated" ]
 echo 'Large cache publication, unchanged refresh and last-known-good preservation passed'
+
+# A changed valid binary may live in RAM when flash is constrained, then be
+# promoted without reparsing already validated bytes when space returns.
+sing-box rule-set compile "$work/probe.json" -o "$work/probe.srs"
+export RULESET_REAL_DOWNLOAD="$work/probe.srs"
+export FORKOP_PERSISTENT_LIST_CACHE_AVAILABLE_BYTES=8388608
+ucode -L "$LIB" "$LIB/singbox/ruleset_cache.uc" refresh
+[ "$old_hash" = "$(md5sum "$cache_path")" ]
+runtime_path=$(ucode -e 'let fs=require("fs");let m=json(fs.readfile(ARGV[0]));for(let k,e in m)if(e.path)print(e.path);' "$FORKOP_RULESET_RUNTIME_MANIFEST")
+[ -f "$runtime_path" ] && [ -f "$runtime_path.validated" ]
+cmp "$RULESET_REAL_DOWNLOAD" "$runtime_path"
+export FORKOP_PERSISTENT_LIST_CACHE_AVAILABLE_BYTES=33554432
+status=0
+ucode -L "$LIB" "$LIB/singbox/ruleset_cache.uc" refresh || status=$?
+[ "$status" = 1 ]
+cmp "$RULESET_REAL_DOWNLOAD" "$cache_path"
+[ ! -e "$runtime_path" ]
+[ -f "$cache_path.validated" ]
+echo 'Changed binary, RAM-only cache and later persistent promotion passed'

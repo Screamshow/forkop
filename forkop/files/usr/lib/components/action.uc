@@ -783,18 +783,6 @@ function opkg_sing_box_dependencies_to_install(target) {
     return dependencies;
 }
 
-function install_opkg_sing_box_dependencies(target) {
-    let dependencies = opkg_sing_box_dependencies_to_install(target);
-    if (dependencies == null)
-        return false;
-    for (let package_name in dependencies) {
-        if (!run_logged("Installing required sing-box dependency " + package_name,
-            pkg_install_name_command(package_name)))
-            return false;
-    }
-    return true;
-}
-
 function sing_box_package_preflight(target, previous, tmp_backup_bytes) {
     if (target == null)
         return "Target package is unavailable, invalid, or incompatible with this architecture";

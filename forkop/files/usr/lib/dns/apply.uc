@@ -2,6 +2,7 @@
 
 let fs = require("fs");
 let uci = require("core.uci");
+let dns_reload = require("dns.reload");
 
 const CONFIG_NAME = getenv("FORKOP_CONFIG_NAME") || "forkop";
 const SB_DNS_INBOUND_ADDRESS = getenv("SB_DNS_INBOUND_ADDRESS") || "127.0.0.42";
@@ -76,7 +77,7 @@ function log(message, level) {
 }
 
 function restart_dnsmasq() {
-    return run("[ -x " + shell_quote(DNSMASQ_INIT) + " ] && " + shell_quote(DNSMASQ_INIT) + " restart");
+    return dns_reload.apply(DNSMASQ_INIT);
 }
 
 function dnsmasq_legacy_instance_exists() {

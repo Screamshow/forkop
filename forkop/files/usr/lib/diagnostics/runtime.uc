@@ -476,71 +476,11 @@ function network_status_ip_addresses(data, key) {
     return result;
 }
 
-function get_wan_ip_addresses() {
-    let result = [];
-    let seen = {};
-
-    for (let interface in [ "wan", "wwan" ]) {
-        let data = command_output_from_args([
-            "ubus", "-S", "call", "network.interface." + interface, "status"
-        ]);
-        for (let ip in network_status_ip_addresses(data, "ipv4-address"))
-            push_unique(result, seen, ip);
-        for (let ip in network_status_ip_addresses(data, "ipv6-address"))
-            push_unique(result, seen, ip);
-    }
-
-    let route = command_output_from_args([ "ip", "-4", "route", "show", "default" ]);
-    let fields = words(route);
-    let iface = "";
-    for (let i = 0; i + 1 < length(fields); i++) {
-        if (fields[i] == "dev") {
-            iface = fields[i + 1];
-            break;
-        }
-    }
-    if (iface == "")
-        return "";
-
-    let addr = command_output_from_args([ "ip", "-4", "addr", "show", "dev", iface ]);
-    for (let line in split(addr, "\n")) {
-        line = trim(as_string(line));
-        let matched = match(line, /^inet[ \t]+([0-9.]+)\//);
-        if (matched != null)
-            push_unique(result, seen, matched[1]);
-    }
-
-    route = command_output_from_args([ "ip", "-6", "route", "show", "default" ]);
-    fields = words(route);
-    iface = "";
-    for (let i = 0; i + 1 < length(fields); i++) {
-        if (fields[i] == "dev") {
-            iface = fields[i + 1];
-            break;
-        }
-    }
-    if (iface != "") {
-        addr = command_output_from_args([ "ip", "-6", "addr", "show", "dev", iface, "scope", "global" ]);
-        for (let line in split(addr, "\n")) {
-            line = trim(as_string(line));
-            let matched = match(line, /^inet6[ \t]+([^\/ \t]+)\//);
-            if (matched != null)
-                push_unique(result, seen, matched[1]);
-        }
-    }
-
-    return join(" ", result);
-}
-
 function helper_output(mode, args) {
     let full = [ mode ];
     for (let arg in args)
         push(full, arg);
     return replace(module_output(HELPERS_UC, full), /[\r\n]+$/g, "");
-}
-
-function server_inbound_tag(section) {
-    return helper_output("server-inbound-tag", [ section ]);
 }
 
 function server_required_inbound_proto(protocol) {
@@ -586,36 +526,6 @@ function server_required_ports_listening(listen, port, required_proto) {
         [ "server-required-ports-listening", listen, port, required_proto ],
         command_output_from_args([ "netstat", "-ln" ])
     );
-}
-
-function resolve_public_host_ips(host) {
-    host = as_string(host);
-    if (substr(host, 0, 1) == "[" && substr(host, length(host) - 1, 1) == "]")
-        host = substr(host, 1, length(host) - 2);
-    if (host == "")
-        return "";
-    if (valid_ipv4(host))
-        return host;
-    if (core_ip.valid_ipv6(host))
-        return host;
-
-    let seen = {};
-    for (let line in split(command_output_from_args([
-        "dig", "+short", "A", host, "+timeout=2", "+tries=1"
-    ]), "\n")) {
-        line = trim(as_string(line));
-        if (valid_ipv4(line))
-            seen[line] = true;
-    }
-    for (let line in split(command_output_from_args([
-        "dig", "+short", "AAAA", host, "+timeout=2", "+tries=1"
-    ]), "\n")) {
-        line = trim(as_string(line));
-        if (core_ip.valid_ipv6(line))
-            seen[line] = true;
-    }
-
-    return join(" ", sort(keys(seen)));
 }
 
 function public_host_flags(public_host, public_host_ips, wan_ip, wan_public) {

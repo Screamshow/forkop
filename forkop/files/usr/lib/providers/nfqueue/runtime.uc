@@ -398,12 +398,16 @@ function supervisor(cfg, section, queue, raw_opt, child_pidfile) {
 }
 
 function stop_runtime(cfg) {
-    for (let pidfile in pidfiles_in_dir(cfg.pid_dir))
+    let supervisor_pidfiles = pidfiles_in_dir(cfg.pid_dir);
+    let child_pidfiles = pidfiles_in_dir(cfg.child_pid_dir);
+    for (let pidfile in supervisor_pidfiles)
         kill_pidfile_process(pidfile, "");
-    for (let pidfile in pidfiles_in_dir(cfg.child_pid_dir))
+    for (let pidfile in child_pidfiles)
         kill_pidfile_process(pidfile, "");
 
-    command_success_from_args([ "sleep", "1" ]);
+    // Keep the TERM grace period when this provider had tracked processes.
+    if (length(supervisor_pidfiles) > 0 || length(child_pidfiles) > 0)
+        command_success_from_args([ "sleep", "1" ]);
 
     for (let pidfile in pidfiles_in_dir(cfg.pid_dir))
         kill_pidfile_process(pidfile, "9");

@@ -60,7 +60,7 @@ run_finish() {
   FORKOP_TEST_LOG="$WORK_DIR/log" \
   FORKOP_TEST_RELOAD_STATUS="$1" \
   FORKOP_TEST_RULESET_STATUS="${4:-1}" \
-    ucode -L "$FORKOP_LIB" "$UPDATES_UC" finish-list-update-fixture 0 1 "$2"
+    ucode -L "$FORKOP_LIB" "$UPDATES_UC" finish-list-update-fixture "${5:-0}" "${6:-1}" "$2"
 }
 
 printf 'reason=config-change\n' >"$WORK_DIR/reload.pending"
@@ -165,5 +165,20 @@ rm -f "$WORK_DIR/list-update.reload"
 ordinary_reason="$(FORKOP_LIST_UPDATE_RELOAD_FILE="$WORK_DIR/list-update.reload" \
   ucode -L "$FORKOP_LIB" "$LIFECYCLE_UC" reload-reason-fixture pending)"
 [ "$ordinary_reason" = "pending" ] || fail "normal pending reload was unexpectedly rewritten"
+
+# An aborted source transaction must not apply a new generation or lose the
+# committed files. Pending source/ruleset work must survive for the next retry.
+rm -f "$WORK_DIR/reload.pending"
+printf '1\n' >"$WORK_DIR/list-update.reload"
+printf 'refresh\n' >"$WORK_DIR/ruleset-refresh-after-list"
+: >"$WORK_DIR/reload.log"
+if run_finish 0 0 0 1 1 0; then
+  fail "aborted source transaction reported success"
+fi
+[ ! -s "$WORK_DIR/reload.log" ] || fail "aborted source transaction applied a new runtime"
+[ "$(cat "$WORK_DIR/list-update.reload")" = 1 ] || fail "abort lost pending list retry"
+[ "$(cat "$WORK_DIR/ruleset-refresh-after-list")" = refresh ] || fail "abort lost pending ruleset retry"
+[ "$(md5sum "$WORK_DIR/runtime-generation/source-1" | awk '{print $1}')" = "$generation_hash" ] ||
+  fail "aborted transaction replaced the committed generation"
 
 printf 'final list update/reload lifecycle checks passed\n'

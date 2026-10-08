@@ -1,6 +1,7 @@
 import { defineConfig } from 'tsup';
 import fs from 'fs';
 import path from 'path';
+import { compactLuCIAssets } from './scripts/compact-luci-assets';
 
 export default defineConfig({
     entry: ['src/main.ts'],
@@ -15,6 +16,10 @@ export default defineConfig({
     },
     esbuildOptions(options) {
         options.legalComments = 'none';
+        // Preserve LuCI directives and exported names; only compact whitespace.
+        options.minifyWhitespace = true;
+        options.minifyIdentifiers = false;
+        options.minifySyntax = false;
     },
     onSuccess: () => {
         const outDir =
@@ -31,5 +36,6 @@ export default defineConfig({
 
         fs.writeFileSync(file, code, 'utf8');
         console.log(`✅ Patched LuCI build: ${file}`);
+        compactLuCIAssets();
     },
 });

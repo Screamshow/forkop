@@ -500,15 +500,15 @@ function pid_is_sing_box(pid) {
     if (match(pid, /^[0-9]+$/) == null)
         return false;
 
-    return sing_box_exe_path(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ]));
+    return sing_box_exe_path(as_string(fs.readlink("/proc/" + pid + "/exe")));
 }
 
 function pid_has_current_sing_box_exe(pid) {
-    return sing_box_exe_kind(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ])) == "current";
+    return sing_box_exe_kind(as_string(fs.readlink("/proc/" + pid + "/exe"))) == "current";
 }
 
 function pid_has_deleted_sing_box_exe(pid) {
-    return sing_box_exe_kind(command_trimmed_output_from_args([ "readlink", "/proc/" + pid + "/exe" ])) == "deleted";
+    return sing_box_exe_kind(as_string(fs.readlink("/proc/" + pid + "/exe"))) == "deleted";
 }
 
 function hup_sing_box_runtime() {

@@ -1746,6 +1746,14 @@ else if (mode == "uci-get") {
     if (value != "")
         print(value, "\n");
 }
+else if (mode == "installer-dhcp-forkop-absent") {
+    // The standalone helper remains available while old package hooks run.
+    // Missing UCI evidence must not permit skipping service stop.
+    let cursor = uci_cursor();
+    if (cursor == null || cursor.load("dhcp") !== true)
+        exit(1);
+    exit(cursor.get("dhcp", "forkop") == null ? 0 : 1);
+}
 else if (mode == "dnsmasq-failsafe-restore")
     exit(dnsmasq_failsafe_restore() ? 0 : 1);
 else if (mode == "installer-cleanup-legacy")
@@ -2238,7 +2246,7 @@ forkop_install_required_space_kb() {
     missing_dependency_count=0
     for dependency in \
         ca-bundle kmod-inet-diag kmod-tun curl ucode \
-        ucode-mod-fs ucode-mod-uci kmod-nft-tproxy coreutils-base64 \
+        ucode-mod-fs ucode-mod-uci kmod-nft-tproxy \
         bind-dig nftables-json kmod-nft-nat ip-full luci-base; do
         pkg_is_installed "$dependency" ||
             missing_dependency_count=$((missing_dependency_count + 1))
@@ -2505,6 +2513,8 @@ prepare_current_update_rollback() {
 }
 
 prepare_package_init_adapter() {
+    FORKOP_INSTALLER_JSON_HELPER="$(install_json_helper_path)" || return 1
+    export FORKOP_INSTALLER_JSON_HELPER
     cat > "$TMP_DIR/package-init" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" = stop ]; then
@@ -2515,7 +2525,8 @@ if [ "${1:-}" = stop ]; then
     done
     if [ "$active" = 0 ] &&
         ! nft list table inet "${NFT_TABLE_NAME:-ForkopTable}" >/dev/null 2>&1 &&
-        ! uci -q show dhcp | grep -q '^dhcp\.forkop='; then
+        [ -r "${FORKOP_INSTALLER_JSON_HELPER:-}" ] &&
+        ucode "$FORKOP_INSTALLER_JSON_HELPER" installer-dhcp-forkop-absent; then
         exit 0
     fi
 fi
