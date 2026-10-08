@@ -28,8 +28,33 @@ function service_instances() {
         return data.dnsmasq.instances;
     } catch (e) { return null; }
 }
-function process_map() {
+function select_processes(candidates) {
     let result = {};
+    for (let path, group in candidates) {
+        let root = null;
+        for (let pid, proc in group) {
+            if (group[proc.parent] != null) continue;
+            if (root != null) return null; // Independent daemons are ambiguous.
+            root = proc;
+        }
+        if (root == null) return null;
+        for (let pid, proc in group) {
+            let seen = {};
+            while (proc.pid != root.pid) {
+                if (seen[proc.pid]) return null;
+                seen[proc.pid] = true;
+                proc = group[proc.parent];
+                if (proc == null) return null;
+            }
+        }
+        // dnsmasq's DHCP script helper inherits its executable and -C argument.
+        // Keep the parent daemon; ready() still verifies procd and DNS sockets.
+        result[path] = root;
+    }
+    return result;
+}
+function process_map() {
+    let candidates = {};
     for (let entry in fs.lsdir("/proc") || []) {
         if (match(entry, /^[0-9]+$/) == null || fs.readlink("/proc/" + entry + "/exe") != "/usr/sbin/dnsmasq")
             continue;
@@ -40,10 +65,10 @@ function process_map() {
         let stat = as_string(fs.readfile("/proc/" + entry + "/stat"));
         let fields = split(trim(substr(stat, rindex(stat, ")") + 1)), /[ \t]+/);
         if (path == "" || length(fields) < 20 || fields[0] == "Z") continue;
-        if (result[path] != null) return null; // Ambiguous ownership.
-        result[path] = { pid: entry, parent: fields[1], identity: entry + ":" + fields[19] };
+        if (candidates[path] == null) candidates[path] = {};
+        candidates[path][entry] = { pid: entry, parent: fields[1], identity: entry + ":" + fields[19] };
     }
-    return result;
+    return select_processes(candidates);
 }
 function values(v) { return type(v) == "array" ? v : (v == null || v == "" ? [] : [as_string(v)]); }
 function contains(items, value) { for (let item in items) if (item == value) return true; return false; }
@@ -167,4 +192,4 @@ function apply(init) {
     system("logger -t forkop 'dnsmasq reload not ready; falling back to restart'");
     return system("exec " + quote(init) + " restart", 15000) == 0 && wait_ready(entries, before, processes, instances, 8);
 }
-return { apply, expected_config, options, plan, process_map, service_instances, owned_loopback_socket };
+return { apply, expected_config, options, plan, process_map, select_processes, service_instances, owned_loopback_socket };

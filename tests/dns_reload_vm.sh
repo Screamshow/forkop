@@ -25,7 +25,11 @@ trap finish EXIT
 apply() {
     ucode -L /usr/lib/forkop -L /tmp -e 'let m = require("reload_candidate"); let t=clock(true); let ok=m.apply("/etc/init.d/dnsmasq"); let e=clock(true); printf("DNS_APPLY ok=%J elapsed=%.3f\n",ok,e[0]-t[0]+(e[1]-t[1])/1000000000.0); exit(ok?0:1);'
 }
+uci set 'dhcp.@dnsmasq[0].dhcpscript=/bin/true'
+uci commit dhcp
 apply
+ucode -L /usr/lib/forkop -L /tmp -e 'let m=require("reload_candidate"); let p=m.process_map(); if(p==null) die("DHCP helper caused ambiguous DNS ownership\n"); print(sprintf("DHCP_HELPER_PROCESS_MAP=%J\n",p));'
+echo DHCP_SCRIPT_HELPER_PASSED
 uci set 'dhcp.@dnsmasq[0].cachesize=117'
 uci commit dhcp
 apply
