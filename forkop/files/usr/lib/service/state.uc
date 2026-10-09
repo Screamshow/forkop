@@ -710,7 +710,19 @@ function sing_box_deleted_owned_service_runtime() {
 }
 
 function sing_box_process_conflict() {
-    return sing_box_process_count() > 0 && !sing_box_single_owned_service_runtime();
+    // Version, config validation and rule-set commands briefly use the same
+    // executable as the service. A single overlapping observation must not
+    // permanently strand a committed policy. Wait for a bounded settling
+    // window, then require the unchanged strict ownership proof again.
+    // Persistent foreign processes and stale procd identities still fail
+    // closed; no process is ignored or terminated by this check.
+    for (let attempt = 0; attempt <= 3; attempt++) {
+        if (sing_box_process_count() == 0 || sing_box_single_owned_service_runtime())
+            return false;
+        if (attempt < 3)
+            command_success_from_args([ "sleep", "1" ]);
+    }
+    return true;
 }
 
 function log_controlled_transition_failure(reason, provenance) {

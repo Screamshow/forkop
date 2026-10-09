@@ -1149,8 +1149,11 @@ function current_ui_state_json() {
     refresh_action_dirs();
 
     let capabilities = capability_flags();
-    let forkop_is_running = forkop_running() ? 1 : 0;
     let restart_blocked = module_success(STATE_UC, [ "sing-box-process-conflict" ]);
+    // Ownership checks may wait for a transient CLI process to exit. Sample
+    // health afterward, so the response describes the settled runtime rather
+    // than reporting it stopped alongside an already-cleared restart block.
+    let forkop_is_running = forkop_running() ? 1 : 0;
     // Health requires sole procd ownership, but Stop must remain available
     // when that check fails while a sing-box or Forkop nft policy remains.
     let stop_available = forkop_is_running ||

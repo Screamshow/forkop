@@ -121,3 +121,4 @@ ops/deployed-nginx/
 !/tests/installer_dhcp_detection.sh
 !/tests/xhttp_capabilities.sh
 !/tests/support_operator_migration.sh
+!/tests/singbox_transient_process.sh

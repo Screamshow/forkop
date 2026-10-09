@@ -36,6 +36,7 @@ command -v sing-box >/dev/null || fail "sing-box is not installed"
 expected_pid="$(state sing-box-service-runtime-pid)" || fail "procd has no Forkop sing-box PID"
 [ -n "$(nft list table inet ForkopTable 2>/dev/null)" ] || fail "healthy baseline has no ForkopTable"
 table_hash="$(table_policy_hash)"
+dhcp_hash="$(sha256sum /etc/config/dhcp | awk '{print $1}')"
 [ "$(process_count)" = "1" ] || fail "healthy baseline does not have exactly one sing-box process"
 state sing-box-single-owned-service-runtime || fail "healthy PID is not the sole procd-owned sing-box"
 state single-ready-sing-box-runtime || fail "healthy sing-box readiness failed"
@@ -78,6 +79,22 @@ fi
 if /usr/bin/forkop restart >/dev/null 2>&1; then
   fail "lifecycle accepted restart while sing-box ownership was ambiguous"
 fi
+if /usr/bin/forkop start >/dev/null 2>&1; then
+  fail "lifecycle accepted start while sing-box ownership was ambiguous"
+fi
+if FORKOP_INTERNAL_SERVICE_STOP=1 /usr/bin/forkop stop >/dev/null 2>&1; then
+  fail "lifecycle accepted internal stop while sing-box ownership was ambiguous"
+fi
+if FORKOP_INTERNAL_SERVICE_STOP=1 /etc/init.d/forkop stop >/dev/null 2>&1; then
+  fail "init.d accepted internal stop while sing-box ownership was ambiguous"
+fi
+[ "$(sha256sum /etc/config/dhcp | awk '{print $1}')" = "$dhcp_hash" ] ||
+  fail "ambiguous stop changed the active DNS configuration"
+/usr/bin/forkop get_ui_state >"$WORK_DIR/conflict-ui.json"
+[ "$(jsonfilter -i "$WORK_DIR/conflict-ui.json" -e '@.service.forkop.restart_blocked')" = 1 ] ||
+  fail "LuCI offered restart while sing-box ownership was ambiguous"
+[ "$(jsonfilter -i "$WORK_DIR/conflict-ui.json" -e '@.service.forkop.stop_available')" = 1 ] ||
+  fail "LuCI hid the stop action while a conflicting runtime remained"
 [ "$(table_policy_hash)" = "$table_hash" ] ||
   fail "ambiguous sing-box ownership tore down the active nft policy"
 [ "$(state sing-box-service-runtime-pid)" = "$expected_pid" ] ||
