@@ -12,6 +12,8 @@ import {
   renderSquareChartGanttIcon24,
 } from '../../../../icons';
 import { insertIf } from '../../../../helpers';
+import { store } from '../../../services';
+import { formatCoreLabel } from '../../../helpers/singBoxVariant';
 
 interface ActionProps {
   loading: boolean;
@@ -70,8 +72,11 @@ export function renderAvailableActions({
           E(
             'div',
             { class: 'fkp_diagnostic_alert__description' },
-            _(
-              'Could not confirm the sing-box process state. Check the logs before trying again.',
+            formatCoreLabel(
+              _(
+                'Could not confirm the sing-box process state. Check the logs before trying again.',
+              ),
+              store.get().diagnosticsSystemInfo,
             ),
           ),
         ]),
@@ -149,7 +154,10 @@ export function renderAvailableActions({
       renderButton({
         onClick: showSingBoxConfig.onClick,
         icon: renderCogIcon24,
-        text: _('Show sing-box config'),
+        text: formatCoreLabel(
+          _('Show sing-box config'),
+          store.get().diagnosticsSystemInfo,
+        ),
         loading: showSingBoxConfig.loading,
         disabled: showSingBoxConfig.disabled,
       }),

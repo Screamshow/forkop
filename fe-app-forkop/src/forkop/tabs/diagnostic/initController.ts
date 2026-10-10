@@ -56,6 +56,7 @@ import {
 import { isActiveLuciTab } from '../../helpers/isActiveLuciTab';
 import {
   formatSingBoxVersion,
+  formatCoreLabel,
   getSingBoxName,
   normalizeSingBoxVariantFields,
 } from '../../helpers/singBoxVariant';
@@ -757,7 +758,7 @@ async function handleShowSingBoxConfig() {
       );
 
       ui.showModal(
-        _('Show sing-box config'),
+        formatCoreLabel(_('Show sing-box config'), store.get().diagnosticsSystemInfo),
         renderModal(rawSingBoxConfigText, 'show_sing_box_config', {
           maskText: () => maskedSingBoxConfigText,
           initialAutoRefresh: false,

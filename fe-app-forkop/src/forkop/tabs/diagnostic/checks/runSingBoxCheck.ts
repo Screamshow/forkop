@@ -2,6 +2,8 @@ import { DIAGNOSTICS_CHECKS_MAP } from './contstants';
 import { ForkopShellMethods } from '../../../methods';
 import { updateCheckStore } from './updateCheckStore';
 import { getMeta } from '../helpers/getMeta';
+import { store } from '../../../services';
+import { getRustXVersion } from '../../../helpers/singBoxVariant';
 
 export async function runSingBoxCheck() {
   const { order, title, code } = DIAGNOSTICS_CHECKS_MAP.SINGBOX;
@@ -64,7 +66,9 @@ export async function runSingBoxCheck() {
       },
       {
         state: data.sing_box_version_ok ? 'success' : 'error',
-        key: _('Sing-box version is compatible (newer than 1.12.4)'),
+        key: getRustXVersion(store.get().diagnosticsSystemInfo.sing_box_version)
+          ? _('Rust X configuration compatibility confirmed')
+          : _('Sing-box version is compatible (newer than 1.12.4)'),
         value: '',
       },
       {

@@ -25,6 +25,8 @@ import {
 import { fetchServicesInfo } from '../../fetchers/fetchServicesInfo';
 import { getClashApiSecret } from '../../methods/custom/getClashApiSecret';
 import { Forkop } from '../../types';
+import { getSingBoxName } from '../../helpers/singBoxVariant';
+import { ensureSystemInfo } from '../../services/systemInfo.service';
 import {
   getCachedRuntimeUiState,
   refreshRuntimeUiState,
@@ -1801,7 +1803,7 @@ async function renderServicesInfoWidget() {
         },
       },
       {
-        key: 'Sing-box',
+        key: getSingBoxName(store.get().diagnosticsSystemInfo),
         value: servicesInfoWidget.data.singbox
           ? _('✔ Running')
           : _('✘ Stopped'),
@@ -1850,6 +1852,7 @@ async function onStoreUpdate(
     syncDashboardServiceAvailability();
     renderServicesInfoWidget();
   }
+  if (diff.diagnosticsSystemInfo) void renderServicesInfoWidget();
 }
 
 async function onPageMount() {
@@ -1859,6 +1862,7 @@ async function onPageMount() {
   dashboardMounted = true;
   dashboardMountId += 1;
   const mountId = dashboardMountId;
+  void ensureSystemInfo();
   const hasRuntimeSnapshot = Boolean(getCachedRuntimeUiState());
 
   if (!hasRuntimeSnapshot) {

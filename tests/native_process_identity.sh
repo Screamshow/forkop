@@ -13,6 +13,7 @@ UCODE
   cat <<'UCODE'
 let cases = [
     { target: "/usr/bin/sing-box", present: true, current: true, deleted: false },
+    { target: "/usr/lib/rust-x/sing-box", present: true, current: true, deleted: false },
     { target: "/usr/bin/sing-box (deleted)", present: true, current: false, deleted: true },
     { target: "/tmp/foreign/sing-box", present: true, current: true, deleted: false },
     { target: "/tmp/foreign/sing-box (deleted)", present: true, current: false, deleted: true },

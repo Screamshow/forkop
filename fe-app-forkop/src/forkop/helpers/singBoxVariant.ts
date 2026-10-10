@@ -23,6 +23,10 @@ export function getSingBoxName(value: SingBoxVariantFields) {
   return getSingBoxXVersion(value.sing_box_version) ? 'Sing-Box X' : 'Sing-box';
 }
 
+export function formatCoreLabel(label: string, value: SingBoxVariantFields) {
+  return label.replace(/sing-box/gi, getSingBoxName(value));
+}
+
 export function isExtendedSingBoxVersion(version?: string) {
   return String(version || '').includes('extended');
 }

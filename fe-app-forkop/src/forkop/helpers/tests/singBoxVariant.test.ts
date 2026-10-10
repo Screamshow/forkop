@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   formatSingBoxVersion,
+  formatCoreLabel,
   getSingBoxName,
   getSingBoxXVersion,
   getRustXVersion,
@@ -8,6 +9,21 @@ import {
 } from '../singBoxVariant';
 afterEach(() => vi.unstubAllGlobals());
 describe('sing-box X identity', () => {
+  it('uses the selected core in translated diagnostic labels', () => {
+    expect(
+      formatCoreLabel('Процесс sing-box запущен', {
+        sing_box_version: '1.14.2-rust-x.0.0.5',
+      }),
+    ).toBe('Процесс Rust X запущен');
+    expect(
+      formatCoreLabel('Sing-box checks', {
+        sing_box_version: '1.14.2-x-1.0.3',
+      }),
+    ).toBe('Sing-Box X checks');
+    expect(
+      formatCoreLabel('Sing-box checks', { sing_box_version: '1.14.2' }),
+    ).toBe('Sing-box checks');
+  });
   it('displays Rust X independently of its compatibility baseline and Go X', () => {
     const state = {
       sing_box_version: '1.14.2-rust-x.0.0.2',
