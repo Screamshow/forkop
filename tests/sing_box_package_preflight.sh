@@ -56,11 +56,13 @@ fi
 
 # Actual blocks after removal, independent of filesystem/compression.
 run sing-box-space-fixture 200000 200000 33576419 0 >/dev/null || fail 'ample free space rejected'
-run sing-box-space-fixture 32457 200000 31138816 0 >/dev/null || fail 'exact installation reserve rejected'
-if run sing-box-space-fixture 32456 200000 31138816 0 >/dev/null 2>&1; then fail 'installation reserve ignored'; fi
+run sing-box-space-fixture 30665 200000 31138816 0 >/dev/null || fail 'exact installation reserve rejected'
+if run sing-box-space-fixture 30664 200000 31138816 0 >/dev/null 2>&1; then fail 'installation reserve ignored'; fi
 if run sing-box-space-fixture 1000 200000 9941146 0 >/dev/null 2>&1; then fail 'actual flash shortage ignored'; fi
 if run sing-box-space-fixture 200000 1000 9941146 0 >/dev/null 2>&1; then fail 'tmp workspace shortage ignored'; fi
-if run sing-box-space-fixture 0 200000 9941146 0 >/dev/null 2>&1; then fail 'unknown capacity accepted'; fi
+if run sing-box-space-fixture -1 200000 9941146 0 >/dev/null 2>&1; then fail 'unknown capacity accepted'; fi
+run sing-box-rollback-space-fixture 0 200000 31000000 31000000 0 31000000 >/dev/null || fail 'compressed replacement needs no additional rollback flash'
+run sing-box-space-fixture 8700 200000 8634540 0 >/dev/null || fail 'smaller packed X blocked by obsolete 2 MiB reserve'
 
 # Existing writable core already fit. Reserve only growth above that baseline.
 run sing-box-rollback-space-fixture 39716 200000 99775488 99000000 0 0 >/dev/null || fail 'Extended rollback counted twice'
@@ -70,7 +72,6 @@ run sing-box-space-fixture 39716 200000 9941146 0 >/dev/null || fail 'packed X p
 if run sing-box-rollback-space-fixture 39716 200000 99775488 0 0 0 >/dev/null 2>&1; then fail 'ROM rollback capacity ignored'; fi
 if run sing-box-rollback-space-fixture 39716 20000 31000000 31000000 0 31000000 >/dev/null 2>&1; then fail 'compressed backup tmp shortage ignored'; fi
 # A failed opkg transaction can retain newly installed target dependencies.
-run sing-box-rollback-space-fixture 10240 200000 100000000 100000000 8388608 0 >/dev/null || fail 'exact dependency reserve rejected'
-if run sing-box-rollback-space-fixture 10239 200000 100000000 100000000 8388608 0 >/dev/null 2>&1; then fail 'dependency recovery reserve ignored'; fi
-if run sing-box-rollback-space-fixture 2047 200000 100000000 100000000 0 0 >/dev/null 2>&1; then fail 'recovery workspace reserve ignored'; fi
+run sing-box-rollback-space-fixture 8448 200000 100000000 100000000 8388608 0 >/dev/null || fail 'exact dependency reserve rejected'
+if run sing-box-rollback-space-fixture 8447 200000 100000000 100000000 8388608 0 >/dev/null 2>&1; then fail 'dependency recovery reserve ignored'; fi
 printf '%s\n' 'sing-box package metadata and storage preflight: OK'

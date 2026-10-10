@@ -47,8 +47,8 @@ grep -Fq 'for repository_file in "$APK_REPOSITORIES_FILE" "$distfeeds"' "$INSTAL
     echo "installer does not redirect both APK repository locations" >&2
     exit 1
 }
-grep -Fq 'SING_BOX_INSTALL_VARIANT="tiny"' "$INSTALLER" || {
-    echo "installer does not default to sing-box-tiny" >&2
+grep -Fq 'SING_BOX_INSTALL_VARIANT="x"' "$INSTALLER" || {
+    echo "installer does not default to sing-box X" >&2
     exit 1
 }
 grep -Fq "option mirror_base_url 'https://mirror.51343.ru'" "$CONFIG" || {

@@ -71,8 +71,8 @@ apk() {
   esac
   return 1
 }
-installed_sing_box_package | grep -Fxq 'sing-box-tiny' ||
-  fail_test "APK ownership lookup did not recognize sing-box-tiny"
+pkg_is_installed sing-box-tiny ||
+  fail_test "APK package lookup did not recognize sing-box-tiny"
 if pkg_is_installed sing-box; then
   fail_test "APK virtual sing-box dependency was mistaken for the normal sing-box package"
 fi

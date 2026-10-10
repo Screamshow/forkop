@@ -5,6 +5,28 @@ uses `--channel canary`. `canary-install.sh` downloads that same installer,
 selects canary and forwards the remaining arguments. Do not maintain a
 second copy of the installation implementation.
 
+The installer is unattended, including legacy migration and conflicting DNS
+proxy handling. Legacy configuration is backed up before migration. A fresh
+Forkop 2.0+ installation selects Sing-box X from the mirror; updates preserve
+the installed variant. Pre-2.0 releases retain their supported Tiny action.
+There is no low-space fallback to Tiny. The former `--allow-low-space-tiny`
+and `--confirm-legacy-migration` flags are accepted as deprecated no-ops.
+
+Both the installer and LuCI update use the same storage rule: measure the
+extracted backend, UI and translation payloads; require the larger of the
+new and exact rollback sets plus 256 KiB on flash. RAM is checked using the
+smaller of free tmpfs space and Linux MemAvailable, with 8 MiB workspace.
+Packages unpack directly to flash, so no additional payload copy is reserved
+in RAM. Each download has a file-size limit based on this available budget.
+Downloaded archives are not counted twice. Fresh X adds its measured packed payload and 256 KiB
+on flash. APK producer Installed-Size is ignored in favour of file sizes;
+IPK uses data.tar.gz. Dependencies are installed by the package manager,
+without a guessed allowance per missing package. Installation failure keeps
+the existing package/configuration rollback path.
+Updates with the managed compressed core also check the actual binary/library
+backup needed by older package hooks; this is additional RAM storage, not
+another copy of the Forkop package payload.
+
 On Openwrt-Mirror, keep the Git versions of both scripts in
 `/usr/local/share/forkop/` and publish them to
 `/srv/mirror/public/forkop/`. The existing `sync-forkop-mirror` service uses

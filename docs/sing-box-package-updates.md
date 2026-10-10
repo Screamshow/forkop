@@ -8,27 +8,39 @@ Before Forkop is stopped or a package is removed, the action downloads the
 target package and the exact installed package needed for rollback into `/tmp`.
 On APK systems it also stages dependencies needed after removal of the old
 variant. Package names, versions and architecture are read from the downloaded
-archives; IPK installed size is measured from the data archive as well as
-checked against its declared size. If the old version is no longer
+archives; installed size is measured from the package payload, ignoring
+inflated producer Installed-Size metadata. If the old version is no longer
 available, the change stops without modifying the running service.
 
-The flash preflight measures the unpacked target and rollback package sizes
-separately, including the dependencies staged for each side. It estimates
-the extra space needed for installation and rollback, adds 25% plus 8 MiB
-to each, and requires the larger result. The previous installed package is
-already accounted for by the measured free space, so it is not added again.
-Only a variant switch that removes the old package before installing the
-new one receives reclaim credit: 75% of the existing `/usr/bin/sing-box`
-file, when that file is verifiably in the writable layer. On
-SquashFS/overlay systems it must exist under `/overlay/upper`; on a plain
-writable root the actual file is counted. A firmware file or same-variant
-reinstall receives no credit. `/tmp` is checked separately after staging,
-with 8 MiB reserved beyond any binary backup needed for the legacy
-compressed variant.
+Storage checks use two steps shared by X, Extended, Tiny and ordinary
+sing-box, for both updates and variant changes:
 
-Switching from the compressed variant also receives writable binary credit:
-its binary is moved to `/tmp` before the target package is installed. Missing
-optional libraries contribute zero bytes to the backup size.
+1. Before stopping the service, stage the exact rollback package and required
+   dependencies. Check only additional rollback storage above the existing
+   writable files. A writable core needs no extra flash for its own rollback.
+   A core supplied by ROM does: the current rollback reinstalls its package
+   into writable storage. Check RAM separately using min(free tmpfs,
+   MemAvailable): compressed binary backups plus 8 MiB workspace; downloaded
+   archives already occupy RAM. Downloads are limited to the available budget.
+2. Remove all old sing-box packages (including the target's own old version),
+   or move the managed compressed binary to RAM, then sync and read df again.
+   Require the measured target payload and staged dependencies plus 256 KiB
+   for package metadata. On shortage, restore the staged previous variant.
+
+The payload contains the UPX-packed executable. Its decompressed runtime size
+is not flash usage. There are no percentage multipliers or estimated reclaim
+credits for target installation. Extended Compressed to X follows exactly
+this replacement path: it does not require space for two cores on flash.
+Missing optional libraries contribute zero bytes to the backup size.
+
+Extended Compressed stays archived in RAM until the old core is stopped and
+rollback is ready. The selected binary and library stream directly to staging
+files on flash, then rename into place. No extracted target binary is kept in
+tmpfs, and it is not executed alongside the old core. The target archive is
+deleted before binary validation and runtime startup. Failed extraction removes
+the partial staging file and uses the prepared rollback. Runtime memory for an
+UPX executable remains separate from storage; these checks reduce peak memory
+but cannot promise startup under arbitrary concurrent memory pressure.
 
 After a component transaction has stopped Forkop, recovery uses `start`
 instead of stopping it again through `restart`. An immediate start failure

@@ -178,23 +178,10 @@ existing_variant="$(
 grep -Fq '"$(installer_text sing_box_skip_msg)"' "$INSTALLER" ||
   fail "empty sing-box selection must skip component installation"
 
-# C: the low-space recovery path must calculate tiny-specific allowance and
-# re-check actual free space after a successful switch; it must also reject a
-# plan where tiny still cannot make enough room.
-ensure_space_block="$WORK_DIR/ensure-flash-space.sh"
-sed -n '/^ensure_flash_space()/,/^}/p' "$INSTALLER" > "$ensure_space_block"
-for contract in \
-  'tiny_required_kb=' \
-  'reclaimable_kb="$(package_reclaimable_space_kb "$previous_package"' \
-  'expected_after_kb=$((available_space + reclaimable_kb - tiny_required_kb))' \
-  'if [ "$expected_after_kb" -lt "$required_space" ]; then' \
-  'Not enough free flash space even after replacing $previous_package with sing-box-tiny' \
-  'available_space="$(available_flash_space_kb 2>/dev/null || true)"' \
-  'Flash preflight passed after switching to sing-box-tiny'; do
-  grep -Fq "$contract" "$ensure_space_block" ||
-    fail "low-space tiny recovery is missing contract: $contract"
-done
-
+# C: installation must never prompt or silently replace the installed core.
+if grep -Eq '/dev/tty|input.read\("line"\)|numbered_yes_no_prompt|package_reclaimable_space_kb|switch_sing_box_to_downloaded_tiny' "$INSTALLER"; then
+  fail "installer retained interactive input or automatic Tiny replacement"
+fi
 grep -Fq 'run_args([ bin_path, "restore_dnsmasq" ])' "$INSTALLER" ||
   fail "installer dnsmasq restore must prefer the active backend entrypoint"
 grep -Fq 'else if (mode == "dnsmasq-failsafe-restore")' "$INSTALLER" ||

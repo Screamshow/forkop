@@ -80,8 +80,8 @@ interactive_terminal_available() { return 1; }
 SING_BOX_INSTALL_VARIANT=""
 sing_box_is_present() { return 1; }
 select_sing_box_installation >/dev/null
-[ "$SING_BOX_INSTALL_VARIANT" = "tiny" ] ||
-  fail_test "fresh non-interactive installation must select sing-box-tiny"
+[ "$SING_BOX_INSTALL_VARIANT" = "x" ] ||
+  fail_test "fresh non-interactive installation must select sing-box X"
 
 SING_BOX_INSTALL_VARIANT="sentinel"
 sing_box_is_present() { return 0; }
@@ -89,16 +89,17 @@ select_sing_box_installation >/dev/null
 [ -z "$SING_BOX_INSTALL_VARIANT" ] ||
   fail_test "upgrade must preserve the installed sing-box variant"
 
-printf x >"$WORK_DIR/backend.ipk"
-printf xx >"$WORK_DIR/app.ipk"
+# Real archives with producer metadata unrelated to extracted file sizes.
+mkdir -p "$WORK_DIR/payload/usr/share" "$WORK_DIR/package"
+printf x >"$WORK_DIR/payload/usr/share/backend"
+tar -czf "$WORK_DIR/package/data.tar.gz" -C "$WORK_DIR/payload" .
+tar -czf "$WORK_DIR/backend.ipk" -C "$WORK_DIR/package" .
 FORKOP_BACKEND_FILE="$WORK_DIR/backend.ipk"
-FORKOP_APP_FILE="$WORK_DIR/app.ipk"
+FORKOP_APP_FILE="$WORK_DIR/backend.ipk"
 FORKOP_I18N_FILE=""
-pkg_is_installed() { return 0; }
+TMP_DIR="$WORK_DIR"
+PKG_IS_APK=0
 calculated_space="$(forkop_install_required_space_kb)"
-[ "$calculated_space" -eq "$((2 * PACKAGE_ARCHIVE_SPACE_FACTOR + PACKAGE_INSTALL_OVERHEAD_KB + FLASH_RESERVE_KB))" ] ||
-  fail_test "installer must calculate flash requirements from the selected downloaded packages"
-[ "$calculated_space" -lt 15360 ] ||
-  fail_test "installer must not retain the fixed 15 MB threshold"
-
+[ "$calculated_space" -eq 258 ] ||
+  fail_test "installer must use actual payloads plus 256 KiB, without multipliers"
 printf 'Installer compatibility matrix passed\n'

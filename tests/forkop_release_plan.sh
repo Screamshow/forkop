@@ -56,11 +56,11 @@ space_fixture() {
   env FORKOP_LIB="$TEST_LIB" ucode -L /usr/lib/forkop "$ACTION_UC" \
     forkop-package-space-fixture "$1" "$2" 3145728 4194304
 }
-space_fixture 6144 13312 >/dev/null || fail 'exact flash and workspace thresholds rejected'
-if space_fixture 6143 13312 >/dev/null 2>&1; then
+space_fixture 4352 8192 >/dev/null || fail 'exact flash and workspace thresholds rejected'
+if space_fixture 4351 8192 >/dev/null 2>&1; then
   fail 'insufficient flash space was accepted'
 fi
-if space_fixture 6144 13311 >/dev/null 2>&1; then
+if space_fixture 4352 8191 >/dev/null 2>&1; then
   fail 'insufficient temporary memory was accepted'
 fi
 
