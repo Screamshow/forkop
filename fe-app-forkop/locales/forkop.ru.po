@@ -2266,3 +2266,6 @@ msgstr "Не удалось автоматически восстановить 
 
 msgid "Technical details"
 msgstr "Технические детали"
+
+msgid "Rust X (experimental)"
+msgstr "Rust X (экспериментальный)"

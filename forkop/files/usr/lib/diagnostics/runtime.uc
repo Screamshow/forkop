@@ -779,37 +779,6 @@ function zapret_manager_is_installed() {
         zapret_manager_launcher_installed("/usr/bin/zmsA");
 }
 
-function system_info_cache_is_valid() {
-    let cache = read_json_file(SYSTEM_INFO_CACHE_FILE);
-    if (type(cache) != "object")
-        return false;
-    if (cache.sing_box_binary_signature != sing_box_binary_signature())
-        return false;
-    let now = int(clock()[0]);
-    let generated_at = arg_number(cache.generated_at || 0);
-    if (now > 0 && generated_at > 0 && SYSTEM_INFO_CACHE_TTL > 0 && now - generated_at >= SYSTEM_INFO_CACHE_TTL)
-        return false;
-    if (cache.forkop_version != FORKOP_VERSION || cache.luci_app_version != get_luci_app_version())
-        return false;
-
-    let zapret_manager_installed = zapret_manager_is_installed() ? 1 : 0;
-
-    let zapret_installed = 0;
-    let zapret2_installed = 0;
-    let byedpi_installed = 0;
-    if (provider_installed(ZAPRET_RUNTIME_UC))
-        zapret_installed = 1;
-    if (provider_installed(ZAPRET2_RUNTIME_UC))
-        zapret2_installed = 1;
-    if (provider_installed(BYEDPI_RUNTIME_UC))
-        byedpi_installed = 1;
-
-    return int(cache.zapret_installed || 0) == zapret_installed &&
-        int(cache.zapret2_installed || 0) == zapret2_installed &&
-        int(cache.byedpi_installed || 0) == byedpi_installed &&
-        int(cache.zapret_manager_installed || 0) == zapret_manager_installed;
-}
-
 function ensure_subscription_runtime_dirs() {
     module_success(SUBSCRIPTION_CACHE_UC, [
         "ensure-runtime-dirs"
@@ -855,11 +824,46 @@ function sing_box_package_installed_exact(package_name) {
 }
 
 function sing_box_installed_package_name() {
-    for (let package_name in [ "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
+    for (let package_name in [ "rust-x", "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
         if (sing_box_package_installed_exact(package_name))
             return package_name;
 
     return "";
+}
+
+function system_info_cache_is_valid() {
+    let cache = read_json_file(SYSTEM_INFO_CACHE_FILE);
+    if (type(cache) != "object")
+        return false;
+    if (cache.sing_box_binary_signature != sing_box_binary_signature())
+        return false;
+    // Package hooks may populate the cache while opkg still marks the new
+    // core as unpacked. Recheck identity after the transaction completes.
+    if (as_string(cache.sing_box_package) != sing_box_installed_package_name())
+        return false;
+    let now = int(clock()[0]);
+    let generated_at = arg_number(cache.generated_at || 0);
+    if (now > 0 && generated_at > 0 && SYSTEM_INFO_CACHE_TTL > 0 && now - generated_at >= SYSTEM_INFO_CACHE_TTL)
+        return false;
+    if (cache.forkop_version != FORKOP_VERSION || cache.luci_app_version != get_luci_app_version())
+        return false;
+
+    let zapret_manager_installed = zapret_manager_is_installed() ? 1 : 0;
+
+    let zapret_installed = 0;
+    let zapret2_installed = 0;
+    let byedpi_installed = 0;
+    if (provider_installed(ZAPRET_RUNTIME_UC))
+        zapret_installed = 1;
+    if (provider_installed(ZAPRET2_RUNTIME_UC))
+        zapret2_installed = 1;
+    if (provider_installed(BYEDPI_RUNTIME_UC))
+        byedpi_installed = 1;
+
+    return int(cache.zapret_installed || 0) == zapret_installed &&
+        int(cache.zapret2_installed || 0) == zapret2_installed &&
+        int(cache.byedpi_installed || 0) == byedpi_installed &&
+        int(cache.zapret_manager_installed || 0) == zapret_manager_installed;
 }
 
 function sing_box_compressed_binary() {

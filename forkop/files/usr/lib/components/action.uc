@@ -476,9 +476,12 @@ function ipk_unpacked_bytes(path) {
 }
 
 function staged_package_field(path, field) {
+    let control_archive = "(tar -xzOf " + shell_quote(path) + " control.tar.gz 2>/dev/null || " +
+        "tar -xzOf " + shell_quote(path) + " ./control.tar.gz 2>/dev/null)";
+    // Both ./control (OpenWrt SDK) and control (Rust X) are valid IPK members.
     let command = is_apk() ? command_from_args([ "apk", "--allow-untrusted", "adbdump", path ]) :
-        "(tar -xzOf " + shell_quote(path) + " control.tar.gz 2>/dev/null || " +
-        "tar -xzOf " + shell_quote(path) + " ./control.tar.gz 2>/dev/null) | tar -xzOf - ./control";
+        "(" + control_archive + " | tar -xzOf - ./control 2>/dev/null || " +
+        control_archive + " | tar -xzOf - control 2>/dev/null)";
     let metadata = command_output(command);
     if (field == "installed-size") {
         // Measure files stored on flash, including an UPX-packed executable.
@@ -662,7 +665,7 @@ function stage_apk_dependency_tree(info, removed, staged) {
 function prepare_sing_box_package_dependencies(target, rollback, previous_variant) {
     sing_box_target_dependency_files = [];
     sing_box_rollback_dependency_files = [];
-    let previous_package = previous_variant == "x" ? "sing-box-x" : previous_variant == "tiny" ? "sing-box-tiny" :
+    let previous_package = previous_variant == "rust-x" ? "rust-x" : previous_variant == "x" ? "sing-box-x" : previous_variant == "tiny" ? "sing-box-tiny" :
         previous_variant == "stable" ? "sing-box" :
         previous_variant == "extended" ? "sing-box-extended" : "";
     let removed = apk_packages_removed_with(previous_package);
@@ -780,7 +783,7 @@ function sing_box_existing_writable_bytes(previous) {
     let bytes = 0;
     let owned = previous == null ? null : split(command_output_from_args(is_apk() ?
         [ "apk", "info", "-L", previous.name ] : [ "opkg", "files", previous.name ]), "\n");
-    for (let path in [ "/usr/bin/sing-box", "/usr/lib/libcronet.so" ]) {
+    for (let path in [ "/usr/bin/sing-box", "/usr/lib/rust-x/sing-box", "/usr/lib/libcronet.so" ]) {
         // A library belonging to another package remains installed and is
         // not part of this rollback baseline.
         if (owned != null && !array_has(owned, path) && !array_has(owned, substr(path, 1)))
@@ -890,7 +893,7 @@ function run_logged_pkg_remove_sing_box_conflict(package_name, description) {
 }
 
 function remove_previous_sing_box_packages() {
-    for (let name in [ "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
+    for (let name in [ "rust-x", "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
         if (!run_logged_pkg_remove_sing_box_conflict(name, "Removing previous " + name + " package"))
             return false;
     return true;
@@ -1805,7 +1808,7 @@ function restore_file_backup(target_path, backup_path) {
 }
 
 function sing_box_variant_is_package_managed(variant) {
-    return variant == "x" || variant == "stable" || variant == "tiny" || variant == "extended";
+    return variant == "rust-x" || variant == "x" || variant == "stable" || variant == "tiny" || variant == "extended";
 }
 
 function sing_box_x_build_version(value) {
@@ -1813,14 +1816,20 @@ function sing_box_x_build_version(value) {
     return parts == null ? "" : parts[1];
 }
 
-function resolve_sing_box_x_release(version) {
+function rust_x_build_version(value) {
+    let parts = match(as_string(value), /^v?[0-9]+[.][0-9]+[.][0-9]+-rust-x[.]([0-9]+[.][0-9]+[.][0-9]+)$/);
+    return parts == null ? "" : parts[1];
+}
+
+function resolve_sing_box_x_release(version, rust) {
+    let package_name = rust ? "rust-x" : "sing-box-x";
     if (FORKOP_MIRROR_BASE_URL == "") return null;
     version = as_string(version);
     if (version != "" && match(version, /^[0-9]+[.][0-9]+[.][0-9]+$/) == null)
         return null;
-    let base = FORKOP_MIRROR_BASE_URL + "/forkop/sing-box-x/";
+    let base = FORKOP_MIRROR_BASE_URL + "/forkop/" + package_name + "/";
     let catalog = parse_json_object(http_get(base + (version == "" ? "latest.json" : "releases/" + version + "/manifest.json")));
-    if (catalog.schema != 1 || catalog.name != "sing-box-x" ||
+    if (catalog.schema != 1 || catalog.name != package_name || int(catalog.package_revision) <= 0 ||
         match(as_string(catalog.version), /^[0-9]+[.][0-9]+[.][0-9]+$/) == null ||
         (version != "" && catalog.version != version))
         return null;
@@ -1830,9 +1839,9 @@ function resolve_sing_box_x_release(version) {
         // OpenWrt APK uses aarch64 for filogic and accepts cortex-a53 packages.
         let compatible = asset.architecture == arch ||
             (is_apk() && arch == "aarch64" && asset.architecture == "aarch64_cortex-a53");
-        if (asset.package != "sing-box-x" || asset.format != format || !compatible)
+        if (asset.package != package_name || asset.format != format || !compatible)
             continue;
-        if (match(as_string(asset.name), /^sing-box-x_[A-Za-z0-9_.+-]+[.](apk|ipk)$/) == null ||
+        if (asset.name != package_name + "_" + asset.version + "_" + asset.architecture + "." + format ||
             match(as_string(asset.sha256), /^[a-f0-9]{64}$/) == null || int(asset.size) <= 0 ||
             asset.url != base + "releases/" + catalog.version + "/" + asset.name ||
             asset.version != catalog.version + (is_apk() ? "-r" : "-") + int(catalog.package_revision))
@@ -1847,11 +1856,11 @@ function stage_sing_box_x_package(release, expected_version) {
         return null;
     let path = tmp_dir + "/" + release.name;
     if (file_bytes(path) == int(release.size) && package_sha256(path) == release.sha256)
-        return staged_package_info(path, "sing-box-x", release.version);
-    if (!download_with_retry(release.url, path, "sing-box X package") ||
+        return staged_package_info(path, release.package, release.version);
+    if (!download_with_retry(release.url, path, release.package + " package") ||
         file_bytes(path) != int(release.size) || package_sha256(path) != release.sha256)
         return null;
-    return staged_package_info(path, "sing-box-x", release.version);
+    return staged_package_info(path, release.package, release.version);
 }
 
 function restore_sing_box_service_from_marker(marker) {
@@ -1940,15 +1949,15 @@ function resolve_previous_sing_box_extended_release(version) {
 }
 
 function stage_previous_sing_box_package(variant) {
-    let package_name = variant == "x" ? "sing-box-x" : variant == "tiny" ? "sing-box-tiny" : variant == "stable" ? "sing-box" :
+    let package_name = variant == "rust-x" ? "rust-x" : variant == "x" ? "sing-box-x" : variant == "tiny" ? "sing-box-tiny" : variant == "stable" ? "sing-box" :
         variant == "extended" ? "sing-box-extended" : "";
     if (package_name == "")
         return null;
     let version = installed_package_version(package_name);
     if (version == "")
         return null;
-    if (variant == "x")
-        return stage_sing_box_x_package(resolve_sing_box_x_release(replace(version, /-r?[0-9]+$/, "")), version);
+    if (variant == "x" || variant == "rust-x")
+        return stage_sing_box_x_package(resolve_sing_box_x_release(replace(version, /-r?[0-9]+$/, ""), variant == "rust-x"), version);
     if (variant != "extended")
         return stage_repository_package(package_name, version);
     let release = resolve_previous_sing_box_extended_release(version);
@@ -1995,6 +2004,7 @@ function restore_sing_box_extended_package_variant() {
     if (!download_with_retry(release.asset_url, package_file, release.asset_name))
         return false;
     prepare_sing_box_package_service_install();
+    pkg_remove_sing_box_conflict("rust-x");
     pkg_remove_sing_box_conflict("sing-box-x");
     pkg_remove_sing_box_conflict("sing-box-tiny");
     pkg_remove_sing_box_conflict("sing-box");
@@ -2024,11 +2034,11 @@ function replace_sing_box_package_variant(target_package, conflict_package, targ
 }
 
 function restore_sing_box_package_variant(previous_variant) {
-    if (previous_variant == "x") {
-        let target = stage_sing_box_x_package(resolve_sing_box_x_release(""), "");
+    if (previous_variant == "x" || previous_variant == "rust-x") {
+        let target = stage_sing_box_x_package(resolve_sing_box_x_release("", previous_variant == "rust-x"), "");
         if (target == null) return false;
-        for (let name in [ "sing-box", "sing-box-tiny", "sing-box-extended" ])
-            if (!pkg_remove_sing_box_conflict(name)) return false;
+        for (let name in [ "rust-x", "sing-box-x", "sing-box", "sing-box-tiny", "sing-box-extended" ])
+            if (name != target.name && !pkg_remove_sing_box_conflict(name)) return false;
         return pkg_install_files([ target.path ]);
     }
     if (previous_variant == "tiny")
@@ -2038,6 +2048,7 @@ function restore_sing_box_package_variant(previous_variant) {
     if (previous_variant == "extended")
         return restore_sing_box_extended_package_variant();
     if (previous_variant == "not-installed") {
+        pkg_remove_sing_box_conflict("rust-x");
         pkg_remove_sing_box_conflict("sing-box-x");
         pkg_remove_sing_box_conflict("sing-box-extended");
         pkg_remove_sing_box_conflict("sing-box-tiny");
@@ -2056,7 +2067,7 @@ function restore_sing_box_install_backup(previous_variant, backup_binary, rollba
         if (rollback_file == null)
             return restore_sing_box_package_variant(previous_variant) ||
                 (as_string(backup_binary) != "" && restore_sing_box_backup(backup_binary));
-        let package_name = previous_variant == "x" ? "sing-box-x" : previous_variant == "tiny" ? "sing-box-tiny" :
+        let package_name = previous_variant == "rust-x" ? "rust-x" : previous_variant == "x" ? "sing-box-x" : previous_variant == "tiny" ? "sing-box-tiny" :
             previous_variant == "stable" ? "sing-box" : "sing-box-extended";
         let previous_version = as_string(rollback_file) != "" ? staged_package_field(rollback_file, "version") : "";
         if (previous_version != "" && installed_package_version(package_name) == previous_version &&
@@ -2150,7 +2161,7 @@ function fail_package_sing_box_install(action, tiny, reason, current_version, la
         rollback_file
     );
 
-    let prefix = target_package == "sing-box-x" ? "Sing-box X" : tiny ? "sing-box-tiny" : "Stable sing-box";
+    let prefix = target_package == "rust-x" ? "Rust X" : target_package == "sing-box-x" ? "Sing-box X" : tiny ? "sing-box-tiny" : "Stable sing-box";
     if (restored)
         restored = restart_forkop_after_successful_change() && wait_forkop_running_after_sing_box_change();
     if (!restored)
@@ -2422,10 +2433,11 @@ function install_sing_box_extended(action, compressed) {
     action_success("sing_box", action, label + " has been installed", new_version, latest_version, 1, "latest", release.release_url);
 }
 
-function install_package_sing_box(action, tiny, x) {
-    let package_name = x ? "sing-box-x" : tiny ? "sing-box-tiny" : "sing-box";
-    let target_variant = x ? "x" : tiny ? "tiny" : "stable";
-    let label = x ? "sing-box X" : tiny ? "tiny sing-box" : "stable sing-box";
+function install_package_sing_box(action, tiny, x, rust) {
+    x = x || rust;
+    let package_name = rust ? "rust-x" : x ? "sing-box-x" : tiny ? "sing-box-tiny" : "sing-box";
+    let target_variant = rust ? "rust-x" : x ? "x" : tiny ? "tiny" : "stable";
+    let label = rust ? "Rust X" : x ? "sing-box X" : tiny ? "tiny sing-box" : "stable sing-box";
     let package_version = installed_package_version(package_name);
     let binary_version = sing_box_runtime_output("version", []);
     let current_version = package_version;
@@ -2433,7 +2445,7 @@ function install_package_sing_box(action, tiny, x) {
         current_version = binary_version;
     if (current_version == "")
         current_version = binary_version;
-    let release = x ? resolve_sing_box_x_release("") : null;
+    let release = x ? resolve_sing_box_x_release("", rust) : null;
     let latest_version = x ? as_string(release?.version) : available_package_version(package_name);
     if (latest_version == "")
         latest_version = installed_package_version(package_name);
@@ -2441,8 +2453,8 @@ function install_package_sing_box(action, tiny, x) {
     if (action == "check_update") {
         if (x) {
             if (release == null || package_version == "")
-                action_fail("sing_box", action, "Cannot resolve installed sing-box X or mirror catalog", current_version);
-            check_success_compared("sing_box", sing_box_x_build_version(binary_version), release.build_version,
+                action_fail("sing_box", action, "Cannot resolve installed " + label + " or mirror catalog", current_version);
+            check_success_compared("sing_box", (rust ? rust_x_build_version(binary_version) : sing_box_x_build_version(binary_version)), release.build_version,
                 package_version, release.version, "");
         }
         if (latest_version == "")
@@ -2460,7 +2472,7 @@ function install_package_sing_box(action, tiny, x) {
     if (latest_version == "")
         action_fail("sing_box", action, "Failed to resolve " + (tiny ? "tiny" : "stable") + " sing-box package version", current_version);
     if (x && release == null)
-        action_fail("sing_box", action, "Failed to resolve sing-box X package from mirror", current_version);
+        action_fail("sing_box", action, "Failed to resolve " + label + " package from mirror", current_version);
 
     let previous_variant = sing_box_runtime_output("variant", []);
     if (action == "install" && previous_variant == target_variant &&
@@ -2529,8 +2541,8 @@ function install_package_sing_box(action, tiny, x) {
         fail_package_sing_box_install(action, tiny, "package was installed, but sing-box binary is not available", current_version, latest_version,
             package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
     if (sing_box_runtime_success("is-extended", [ new_version ]) ||
-        (x && sing_box_x_build_version(new_version) != release.build_version))
-        fail_package_sing_box_install(action, tiny, "package was installed, but the active binary is still sing-box-extended", new_version, latest_version,
+        (x && (rust ? rust_x_build_version(new_version) : sing_box_x_build_version(new_version)) != release.build_version))
+        fail_package_sing_box_install(action, tiny, "package was installed, but active binary identity or version does not match the selected core", new_version, latest_version,
             package_name, previous_variant, backup_binary, backup_cronet, previous_marker, previous_version_state, cronet_touched, rollback_file);
     write_sing_box_variant_state(target_variant, new_version);
     if (!restart_forkop_after_successful_change() || !wait_forkop_running_after_sing_box_change())
@@ -3096,6 +3108,10 @@ function install_forkop(requested_version) {
 }
 
 function dispatch_sing_box(action) {
+    if (action == "install_rust_x") {
+        install_package_sing_box(action, false, false, true);
+        return;
+    }
     if (action == "install_x") {
         install_package_sing_box(action, false, true);
         return;
@@ -3118,7 +3134,9 @@ function dispatch_sing_box(action) {
     }
 
     let variant = sing_box_runtime_output("variant", []);
-    if (variant == "x" || variant == "not-installed")
+    if (variant == "rust-x")
+        install_package_sing_box(action, false, false, true);
+    else if (variant == "x" || variant == "not-installed")
         install_package_sing_box(action, false, true);
     else if (variant == "extended-compressed")
         install_sing_box_extended(action, true);
@@ -3260,7 +3278,7 @@ function component_action(component, action, version) {
         install_forkop(version);
     else if (component == "sing_box" && (action == "check_update" || action == "install" ||
         action == "install_extended" || action == "install_extended_compressed" ||
-        action == "install_x" || action == "install_tiny" || action == "install_stable"))
+        action == "install_rust_x" || action == "install_x" || action == "install_tiny" || action == "install_stable"))
         dispatch_sing_box(action);
     else if (component == "zapret" && (action == "check_update" || action == "install"))
         install_zapret(action);

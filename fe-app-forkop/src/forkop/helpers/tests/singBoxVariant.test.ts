@@ -3,10 +3,30 @@ import {
   formatSingBoxVersion,
   getSingBoxName,
   getSingBoxXVersion,
+  getRustXVersion,
   normalizeSingBoxVariantFields,
 } from '../singBoxVariant';
 afterEach(() => vi.unstubAllGlobals());
 describe('sing-box X identity', () => {
+  it('displays Rust X independently of its compatibility baseline and Go X', () => {
+    const state = {
+      sing_box_version: '1.14.2-rust-x.0.0.2',
+      sing_box_tiny: 1,
+      sing_box_extended: 1,
+      sing_box_compressed: 1,
+      sing_box_tailscale: 1,
+    };
+    expect(getSingBoxName(state)).toBe('Rust X');
+    expect(formatSingBoxVersion(state)).toBe('0.0.2');
+    expect(getRustXVersion('1.14.2-x-1.0.2')).toBeUndefined();
+    expect(getSingBoxXVersion(state.sing_box_version)).toBeUndefined();
+    expect(normalizeSingBoxVariantFields(state)).toMatchObject({
+      sing_box_tiny: 0,
+      sing_box_extended: 0,
+      sing_box_compressed: 0,
+      sing_box_tailscale: 1,
+    });
+  });
   it('shows X without stale Tiny and retains the upstream version', () => {
     vi.stubGlobal('_', (value: string) => value);
     const state = { sing_box_version: '1.14.2-x-1.0.0', sing_box_tiny: 1 };

@@ -215,7 +215,7 @@ function sing_box_compressed_variant_active() {
         return false;
     // A manually installed package replaces the unpackaged compressed binary
     // without updating Forkop's saved variant marker.
-    for (let name in [ "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
+    for (let name in [ "rust-x", "sing-box-x", "sing-box-extended", "sing-box-tiny", "sing-box" ])
         if (command_success_from_args([ "ucode", "-L", LIB_DIR, LIB_DIR + "/core/packages.uc", "installed", name ]))
             return false;
     return true;
@@ -335,6 +335,8 @@ function sing_box_is_tiny(version, version_output) {
     version = as_string(version);
     version_output = as_string(version_output);
 
+    if (sing_box_package_installed("rust-x") || match(version, /-rust-x[.]/) != null)
+        return false;
     if (sing_box_package_installed("sing-box-x") || match(version, /-x-[0-9]+[.]/) != null)
         return false;
 
@@ -358,6 +360,8 @@ function sing_box_variant() {
         return "extended-compressed";
 
     version = sing_box_version();
+    if (sing_box_package_installed("rust-x") || match(version, /-rust-x[.]/) != null)
+        return "rust-x";
     if (sing_box_package_installed("sing-box-x") || match(version, /-x-[0-9]+[.]/) != null)
         return "x";
     if (sing_box_is_extended(version))

@@ -2567,7 +2567,8 @@ sing_box_is_present() {
         pkg_is_installed "sing-box" ||
         pkg_is_installed "sing-box-tiny" ||
         pkg_is_installed "sing-box-extended" ||
-        pkg_is_installed "sing-box-x"
+        pkg_is_installed "sing-box-x" ||
+        pkg_is_installed "rust-x"
 }
 
 select_sing_box_installation() {

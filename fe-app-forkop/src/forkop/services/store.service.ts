@@ -230,6 +230,7 @@ export interface StoreType {
     singBoxInstallExtendedCompressed: { loading: boolean };
     singBoxInstallTiny: { loading: boolean };
     singBoxInstallX: { loading: boolean };
+    singBoxInstallRustX: { loading: boolean };
     singBoxInstallStable: { loading: boolean };
     zapretCheck: { loading: boolean };
     zapretInstall: { loading: boolean };

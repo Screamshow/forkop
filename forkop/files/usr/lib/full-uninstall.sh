@@ -14,7 +14,7 @@ TORRSERVER_DIRECT_UC="$ROOT/usr/lib/forkop/torrserver/direct.uc"
 UCODE_BIN="$ROOT/usr/bin/ucode"
 LOCK="$ROOT/tmp/forkop-full-uninstall.lock"
 COMPONENT_LOCK="$ROOT/var/run/forkop/component-action.lock"
-PACKAGES="luci-i18n-forkop-ru luci-app-forkop forkop sing-box-x sing-box sing-box-tiny sing-box-extended"
+PACKAGES="luci-i18n-forkop-ru luci-app-forkop forkop rust-x sing-box-x sing-box sing-box-tiny sing-box-extended"
 PHASE=preflight
 
 has_mirror() {

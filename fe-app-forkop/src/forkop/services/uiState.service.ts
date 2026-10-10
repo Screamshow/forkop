@@ -25,6 +25,7 @@ function getEmptyUpdatesActions(): StoreType['updatesActions'] {
     singBoxInstallExtendedCompressed: { loading: false },
     singBoxInstallTiny: { loading: false },
     singBoxInstallX: { loading: false },
+    singBoxInstallRustX: { loading: false },
     singBoxInstallStable: { loading: false },
     zapretCheck: { loading: false },
     zapretInstall: { loading: false },

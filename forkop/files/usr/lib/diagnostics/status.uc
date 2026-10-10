@@ -1129,6 +1129,8 @@ function render_flag_line(value, key, ok_message, fail_message) {
 }
 
 function sing_box_core_label(value) {
+    if (match(as_string(value.sing_box_version), /-rust-x[.]/) != null)
+        return "Rust X";
     if (flag_is_one(value.sing_box_extended) && flag_is_one(value.sing_box_compressed))
         return "extended compressed";
     if (flag_is_one(value.sing_box_extended))
@@ -1156,6 +1158,8 @@ function sing_box_version_is_known(version) {
 
 function format_sing_box_version(value, version) {
     version = as_string(version);
+    let rust = match(version, /-rust-x[.]([0-9]+[.][0-9]+[.][0-9]+)$/);
+    if (rust != null) return "Rust X " + rust[1];
     if (!sing_box_version_is_known(version))
         return version;
 

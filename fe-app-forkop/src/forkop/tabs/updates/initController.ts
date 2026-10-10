@@ -20,6 +20,7 @@ import {
   formatSingBoxVersion,
   getSingBoxName,
   getSingBoxXVersion,
+  getRustXVersion,
   normalizeSingBoxVariantFields,
 } from '../../helpers/singBoxVariant';
 import {
@@ -354,7 +355,11 @@ function patchSystemInfoAfterMutation(result: Forkop.ComponentActionResult) {
       nextSystemInfo.sing_box_tailscale = 1;
     }
 
-    if (result.action === 'install_stable' || result.action === 'install_x') {
+    if (
+      result.action === 'install_stable' ||
+      result.action === 'install_x' ||
+      result.action === 'install_rust_x'
+    ) {
       nextSystemInfo.sing_box_extended = 0;
       nextSystemInfo.sing_box_tiny = 0;
       nextSystemInfo.sing_box_compressed = 0;
@@ -849,6 +854,7 @@ function getComponentCards(): ComponentCard[] {
     Boolean(systemInfo.sing_box_extended) && !systemInfo.sing_box_compressed;
   const singBoxExtendedCompressed = Boolean(systemInfo.sing_box_compressed);
   const singBoxTiny = Boolean(systemInfo.sing_box_tiny);
+  const rustX = Boolean(getRustXVersion(systemInfo.sing_box_version));
   const singBoxX = Boolean(getSingBoxXVersion(systemInfo.sing_box_version));
 
   const forkopActions = getInstalledUpdateActions(
@@ -860,9 +866,22 @@ function getComponentCards(): ComponentCard[] {
     'sing_box',
     'singBoxCheck',
     'singBoxInstall',
-    singBoxX || singBoxTiny || singBoxExtended || singBoxExtendedCompressed,
+    rustX ||
+      singBoxX ||
+      singBoxTiny ||
+      singBoxExtended ||
+      singBoxExtendedCompressed,
   );
 
+  if (!rustX) {
+    singBoxActions.push({
+      key: 'singBoxInstallRustX',
+      text: _('Rust X (experimental)'),
+      icon: renderDownloadIcon24,
+      component: 'sing_box',
+      action: 'install_rust_x',
+    });
+  }
   if (!singBoxX) {
     singBoxActions.push({
       key: 'singBoxInstallX',
