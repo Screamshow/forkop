@@ -3,6 +3,16 @@ import { matchedConditions } from './matchedConditions';
 import { formatRouteReason } from './routeReason';
 
 describe('connection matched conditions', () => {
+  it('does not reconstruct Rust X logical or inverted matches', () => {
+    for (const mode of ['and', 'or', '!and', '!or']) {
+      expect(
+        matchedConditions(
+          `${mode}(inbound=tproxy-in domain_suffix=example.org)`,
+          { host: 'example.org' },
+        ),
+      ).toBeUndefined();
+    }
+  });
   it('filters domain families and keeps multiple matches', () => {
     expect(
       matchedConditions(

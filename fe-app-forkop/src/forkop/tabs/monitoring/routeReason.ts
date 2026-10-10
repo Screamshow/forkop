@@ -14,7 +14,11 @@ export function formatRouteReason(
   // X captures this evidence while evaluating the route, before metadata can
   // change. Prefer it to the abbreviated rule and client-side reconstruction.
   const evidence = payload.trim();
-  if (/^(?:domain|domain_suffix|domain_keyword|domain_regex|ip_cidr)=/.test(evidence))
+  if (
+    /^(?:domain|domain_suffix|domain_keyword|domain_regex|ip_cidr)=/.test(
+      evidence,
+    )
+  )
     return evidence;
 
   const tags = [...text.matchAll(/rule_set=(?:\[([^\]]*)\]|([^\s)]+))/g)]
@@ -80,6 +84,7 @@ export function formatRouteReason(
   // Keep the actual conditions for inline, device and logical rules. Do not
   // infer a list from the destination hostname or selected outbound.
   const conditions = text.replace(/\s*=>\s*.*$/, '').trim();
+  if (/^(?:!?\s*|!\(\s*)(?:and|or)\(/.test(conditions)) return conditions;
   const matched = metadata && matchedConditions(text, metadata);
   if (matched) return matched;
   if (

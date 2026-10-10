@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { formatRouteReason } from './routeReason';
 
 describe('route reason', () => {
+  it('preserves Rust X logical conditions without guessing a matching child', () => {
+    const conditions =
+      'and(inbound=tproxy-in or(domain_suffix=example.org domain_keyword=other))';
+    expect(
+      formatRouteReason(`${conditions} => route(VPN-out)`, '', undefined, {
+        host: 'example.org',
+      }),
+    ).toBe(conditions);
+  });
   it('prefers captured X evidence over truncated logical rules and final metadata', () => {
     const rule =
       'inbound=[tproxy-in tproxy6-in] domain_suffix=[dell.com 2ip.io vencord.dev...] && !(source_ip_cidr=192.0.2.1) => route(VPN-out)';
@@ -10,11 +19,22 @@ describe('route reason', () => {
       ['persistent.oaistatic.com', 'domain_suffix=oaistatic.com'],
       ['unrelated.example', 'ip_cidr=192.0.2.0/24'],
     ]) {
-      expect(formatRouteReason(rule, payload, undefined, { host, destinationIP: '' })).toBe(payload);
+      expect(
+        formatRouteReason(rule, payload, undefined, {
+          host,
+          destinationIP: '',
+        }),
+      ).toBe(payload);
     }
-    expect(formatRouteReason(rule, '', undefined, { host: 'chatgpt.com' })).toBe('Exact match unavailable');
-    expect(formatRouteReason('final', 'domain_suffix=stale.example')).toBe('Default route');
-    expect(formatRouteReason('DomainSuffix', 'example.org')).toBe('DomainSuffix: example.org');
+    expect(
+      formatRouteReason(rule, '', undefined, { host: 'chatgpt.com' }),
+    ).toBe('Exact match unavailable');
+    expect(formatRouteReason('final', 'domain_suffix=stale.example')).toBe(
+      'Default route',
+    );
+    expect(formatRouteReason('DomainSuffix', 'example.org')).toBe(
+      'DomainSuffix: example.org',
+    );
   });
   it('shows a compact fallback for the reproduced domain connection with a missing destination IP', () => {
     const rule =

@@ -58,7 +58,7 @@ export function matchedConditions(
   // Inverted/logical expressions and opaque rule sets cannot be explained
   // reliably using the connection's final metadata.
   if (
-    /\b(?:rule_set|invert)=|^\s*\(|\s(?:&&|\|\|)\s/.test(
+    /\b(?:rule_set|invert)=|^\s*!?\s*(?:\(|(?:and|or)\()|\s(?:&&|\|\|)\s/.test(
       rule.replace(/\s*=>.*$/, ''),
     )
   )
