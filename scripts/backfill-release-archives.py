@@ -6,7 +6,7 @@ import re
 import urllib.request
 
 ROOT = Path('/srv/mirror/public/forkop/updates')
-API = 'https://api.github.com/repos/Screamshow/forkop/releases'
+API = 'https://api.github.com/repos/Screamshow/forkop-x/releases'
 def fetch(url):
     request = urllib.request.Request(url, headers={'User-Agent': 'Forkop-mirror-backfill'})
     with urllib.request.urlopen(request, timeout=60) as response:

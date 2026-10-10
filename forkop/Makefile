@@ -26,7 +26,7 @@ define Package/forkop
 	DEPENDS:=+ca-bundle +kmod-inet-diag +kmod-tun +curl +ucode +ucode-mod-fs +ucode-mod-uci +kmod-nft-tproxy +bind-dig +nftables-json +kmod-nft-nat +ip-full
 	CONFLICTS:=https-dns-proxy nextdns luci-app-passwall luci-app-passwall2
 	TITLE:=Forkop backend service
-	URL:=https://github.com/Screamshow/forkop
+	URL:=https://github.com/Screamshow/forkop-x
 	PKGARCH:=all
 endef
 

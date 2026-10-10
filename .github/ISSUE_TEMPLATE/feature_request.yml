@@ -11,8 +11,8 @@ body:
         Спасибо за предложение новой функции!
         
         Перед отправкой, пожалуйста:
-        - Проверьте [существующие запросы](https://github.com/Screamshow/forkop/issues?q=is%3Aissue+label%3Aenhancement)
-        - Убедитесь, что функции не существует в [README проекта](https://github.com/Screamshow/forkop#readme)
+        - Проверьте [существующие запросы](https://github.com/Screamshow/forkop-x/issues?q=is%3Aissue+label%3Aenhancement)
+        - Убедитесь, что функции не существует в [README проекта](https://github.com/Screamshow/forkop-x#readme)
 
   - type: textarea
     id: summary

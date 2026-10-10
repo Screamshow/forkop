@@ -1,6 +1,6 @@
 # Forkop X
 
-[![Releases](https://img.shields.io/github/v/release/Screamshow/forkop?label=releases)](https://github.com/Screamshow/forkop/releases)
+[![Releases](https://img.shields.io/github/v/release/Screamshow/forkop-x?label=releases)](https://github.com/Screamshow/forkop-x/releases)
 
 > **Forkop — это бывший Podkop Plus.** Проект переименован и продолжает развиваться как независимый форк [Podkop](https://github.com/itdoginfo/podkop).
 

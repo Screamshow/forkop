@@ -31,7 +31,7 @@ export function renderWikiDisclaimer(kind: 'default' | 'error' | 'warning') {
       text: _('Open Project Page'),
       onClick: () =>
         window.open(
-          'https://github.com/Screamshow/forkop#readme',
+          'https://github.com/Screamshow/forkop-x#readme',
           '_blank',
           'noopener,noreferrer',
         ),

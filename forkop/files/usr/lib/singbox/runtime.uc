@@ -618,7 +618,7 @@ function service_listen_address_value(settings) {
             return address;
     }
 
-    log_message("Failed to determine the listening IP address. Please open an issue to report this problem: https://github.com/Screamshow/forkop/issues", "error");
+    log_message("Failed to determine the listening IP address. Please open an issue to report this problem: https://github.com/Screamshow/forkop-x/issues", "error");
     return "";
 }
 
